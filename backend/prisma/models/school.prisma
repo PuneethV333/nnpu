@@ -1,0 +1,7 @@
+model School {
+  id String @id @default(cuid())
+  name String
+  noOfStudents String
+  noGirls String
+  noBoys String
+}

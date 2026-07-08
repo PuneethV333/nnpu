@@ -1,0 +1,10 @@
+model Auth {
+  id       String @id @default(cuid())
+  user     User   @relation(fields: [userId], references: [id])
+  userId   String @unique
+  authId   String
+  password String
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now())
+}
