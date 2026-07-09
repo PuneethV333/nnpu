@@ -3,8 +3,8 @@ import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { ConfigModule } from '@nestjs/config';
 import Joi from 'joi';
-import { AuthModuleOptions } from '@nestjs/passport';
 import { AuthModule } from './auth/auth.module';
+import { RedisModule } from './redis/redis.module';
 
 @Module({
   imports: [
@@ -19,11 +19,12 @@ import { AuthModule } from './auth/auth.module';
         JWT_REFRESH_EXPIRES_IN: Joi.string().required(),
         PORT: Joi.number().default(5000),
         NODE_ENV: Joi.string().required(),
+        REDIS_URL: Joi.string().required(),
       }),
     }),
-    AuthModuleOptions,
     // UsersModule, AuthModule,
     AuthModule,
+    RedisModule,
     // ... other feature modules
   ],
   controllers: [AppController],
