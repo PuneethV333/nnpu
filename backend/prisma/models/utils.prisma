@@ -1,0 +1,32 @@
+enum Stream {
+  Science
+  Commerce
+}
+
+enum SecondLanguage {
+  Kannada
+  Hindi
+  Sanskrit
+}
+
+enum Code {
+  PCMB
+  PCMC
+  CEBA
+  SEBA
+}
+
+model Combination {
+  id     String @id @default(cuid())
+  stream Stream
+  code   Code // "PCMB", "PCMC", "CEBA", "SEBA"
+  idCode String // single-char code used in student ID: b, c, c, s respectively
+  name   String // "Physics, Chemistry, Maths, Biology"
+
+  sections Section[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([stream, idCode]) // idCode only needs to be unique within a stream
+}

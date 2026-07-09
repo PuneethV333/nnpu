@@ -1,0 +1,19 @@
+enum DayType {
+  Working
+  Holiday
+  Exam
+  Event
+  Weekend
+}
+
+model AcademicCalendarDay {
+  id    String   @id @default(cuid())
+  date  DateTime @unique @db.Date
+  type  DayType
+  label String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([type])
+}

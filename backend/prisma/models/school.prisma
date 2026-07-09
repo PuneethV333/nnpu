@@ -1,7 +1,12 @@
 model School {
-  id String @id @default(cuid())
-  name String
-  noOfStudents String
-  noGirls String
-  noBoys String
+  id           String @id @default(cuid())
+  name         String
+  noOfStudents Int    @default(0)
+  noOfGirls    Int    @default(0)
+  noOfBoys     Int    @default(0)
+  noOfTeacher  Int    @default(0)
+  users        User[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }

@@ -4,8 +4,7 @@ model PersonalDetails {
   userId     String @unique
   name       String
   profilePic String
-  class      Int    @default(1)
 
   createdAt DateTime @default(now())
-  updatedAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
