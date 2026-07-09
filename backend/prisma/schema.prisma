@@ -1,0 +1,216 @@
+// prisma/models/schema.prisma
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Role {
+  Student
+  Teacher
+  Admin
+}
+
+enum AttendanceStatus {
+  NotMarked
+  Present
+  Absent
+  Late
+}
+
+enum DayType {
+  Working
+  Holiday
+  Exam
+  Event
+  Weekend
+}
+
+model User {
+  id       String  @id @default(uuid())
+  role     Role    @default(Student)
+  isActive Boolean @default(true)
+
+  school   School? @relation(fields: [schoolId], references: [id])
+  schoolId String?
+
+  section   Section? @relation("StudentSection", fields: [sectionId], references: [id])
+  sectionId String?
+
+  auth               Auth?
+  details            PersonalDetails?
+  teachingSubjects   SectionSubject[] @relation("TeacherSubjects")
+  studentAttendances Attendance[]     @relation("StudentAttendance")
+  markedAttendances  Attendance[]     @relation("MarkedByTeacher")
+
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  classTeacherOf Section? @relation("ClassTeacherOf")
+}
+
+model Auth {
+  id       String @id @default(cuid())
+  user     User   @relation(fields: [userId], references: [id])
+  userId   String @unique
+  authId   String @unique
+  password String
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model PersonalDetails {
+  id         String @id @default(cuid())
+  user       User   @relation(fields: [userId], references: [id])
+  userId     String @unique
+  name       String
+  profilePic String
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model School {
+  id           String @id @default(cuid())
+  name         String
+  noOfStudents Int    @default(0)
+  noOfGirls    Int    @default(0)
+  noOfBoys     Int    @default(0)
+  noOfTeacher  Int    @default(0)
+  users        User[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model AcademicYear {
+  id        String    @id @default(cuid())
+  label     String    @unique // e.g. "2026-2027"
+  startDate DateTime  @db.Date
+  endDate   DateTime  @db.Date
+  sections  Section[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Class {
+  id       String    @id @default(cuid())
+  name     String
+  sections Section[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([name])
+}
+
+enum Stream {
+  Science
+  Commerce
+}
+
+enum SecondLanguage {
+  Kannada
+  Hindi
+  Sanskrit
+}
+
+model Combination {
+  id     String @id @default(cuid())
+  stream Stream
+  code   String @unique // "PCMB", "PCMC", "CEBA", "SEBA"
+  idCode String // single-char code used in student ID: b, c, c, s respectively
+  name   String // "Physics, Chemistry, Maths, Biology"
+
+  sections Section[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([stream, idCode]) // idCode only needs to be unique within a stream
+}
+
+model Section {
+  id             String         @id @default(cuid())
+  name           String
+  class          Class          @relation(fields: [classId], references: [id])
+  classId        String
+  combination    Combination    @relation(fields: [combinationId], references: [id])
+  combinationId  String
+  language       SecondLanguage
+  session        String         @default("A")
+  academicYear   AcademicYear   @relation(fields: [academicYearId], references: [id])
+  academicYearId String
+
+  classTeacher   User?   @relation("ClassTeacherOf", fields: [classTeacherId], references: [id])
+  classTeacherId String? @unique
+
+  students    User[]           @relation("StudentSection")
+  subjects    SectionSubject[]
+  attendances Attendance[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([classId, combinationId, language, session, academicYearId])
+}
+
+model Subject {
+  id       String           @id @default(cuid())
+  name     String           @unique
+  sections SectionSubject[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model SectionSubject {
+  id        String  @id @default(cuid())
+  section   Section @relation(fields: [sectionId], references: [id])
+  sectionId String
+  subject   Subject @relation(fields: [subjectId], references: [id])
+  subjectId String
+  teacher   User?   @relation("TeacherSubjects", fields: [teacherId], references: [id])
+  teacherId String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([sectionId, subjectId])
+}
+
+model AcademicCalendarDay {
+  id    String   @id @default(cuid())
+  date  DateTime @unique @db.Date
+  type  DayType
+  label String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([type])
+}
+
+model Attendance {
+  id         String           @id @default(cuid())
+  student    User             @relation("StudentAttendance", fields: [studentId], references: [id])
+  studentId  String
+  section    Section          @relation(fields: [sectionId], references: [id])
+  sectionId  String
+  date       DateTime         @db.Date
+  status     AttendanceStatus @default(NotMarked)
+  markedBy   User?            @relation("MarkedByTeacher", fields: [markedById], references: [id])
+  markedById String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([studentId, date])
+  @@index([sectionId, date])
+  @@index([studentId])
+}

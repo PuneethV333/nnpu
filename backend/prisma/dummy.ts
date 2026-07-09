@@ -16,9 +16,9 @@ require('dotenv/config');
 const bcrypt = require('bcrypt');
 const { PrismaPg } = require('@prisma/adapter-pg');
 // const { PrismaClient } = require('/generated/prisma/client'); // adjust path if needed
-const { PrismaClient } = require('../generated/prisma/client');
+const { PrismaClient } = require('../src/generated/prisma/client');
 
-const adapter = new PrismaPg({ connectionString: "postgres://3b7cdc2aa29da1d36757dbb228facd6f2d4e109d45dbf3b35cf6c239fba815e7:sk_MOYDrs_Z7-NTBsaaOiPmo@db.prisma.io:5432/postgres?sslmode=require" });
+const adapter = new PrismaPg({ connectionString: "postgres://de600ead1f3e0b11906b287a89895401eab68991ad7f800b769d37fb6aaf0df4:sk_rA_fd5GO21R6ON-4svyuC@db.prisma.io:5432/postgres?sslmode=require" });
 const prisma = new PrismaClient({ adapter });
 
 const DEFAULT_PASSWORD = 'nnpu123'; // same for every dummy user, for easy testing
