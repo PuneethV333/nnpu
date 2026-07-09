@@ -5,18 +5,16 @@
 
 generator client {
   provider = "prisma-client"
-  output   = "../generated/prisma"
+  output   = "../../generated/prisma"
 }
 
 datasource db {
   provider = "postgresql"
 }
 
-
-
 model User {
   id   String @id @default(uuid())
-  role Role   @default(student)
+  role Role   @default(Student)
 
   auth    Auth?
   details PersonalDetails?

@@ -6,6 +6,7 @@ import Joi from 'joi';
 import { AuthModule } from './auth/auth.module';
 import { RedisModule } from './redis/redis.module';
 import { LoggerModule } from './logger/logger.module';
+import { PrismaModule } from './prisma/prisma.module';
 
 @Module({
   imports: [
@@ -15,7 +16,7 @@ import { LoggerModule } from './logger/logger.module';
       validationSchema: Joi.object({
         DATABASE_URL: Joi.string().required(),
         JWT_SECRET: Joi.string().required(),
-        JWT_EXPIRES_IN: Joi.string().required(),
+        // JWT_EXPIRES_IN: Joi.string().required(),
         JWT_ACCESS_EXPIRES_IN: Joi.string().required(),
         PORT: Joi.number().default(5000),
         NODE_ENV: Joi.string().required(),
@@ -26,6 +27,7 @@ import { LoggerModule } from './logger/logger.module';
     AuthModule,
     RedisModule,
     LoggerModule,
+    PrismaModule,
     // ... other feature modules
   ],
   controllers: [AppController],
