@@ -24,7 +24,9 @@
     "forceConsistentCasingInFileNames": true,
     "noImplicitAny": false,
     "strictBindCallApply": false,
-    "noFallthroughCasesInSwitch": false
+    "noFallthroughCasesInSwitch": false,
+    "types": ["jest"],
+    "isolatedModules": true
   },
   "include": ["src/**/*.ts", "src/**/*.d.ts"]
 }

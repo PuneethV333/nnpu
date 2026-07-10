@@ -154,7 +154,7 @@ export class AuthService {
     const accessToken = await this.jwtService.signAsync(payload);
 
     return {
-      message: 'Password changeSuccessfully',
+      message: 'Password changed successfully.',
       accessToken,
       user: { id: auth.user.id, role: auth.user.role },
     };
