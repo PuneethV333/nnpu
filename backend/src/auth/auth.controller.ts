@@ -5,6 +5,7 @@ import { JwtAuthGuard } from './guard/jwt-auth.guard';
 import { CurrentUser } from './decorators/current-user.decorator';
 import { JwtPayload } from './types/jwt-payload.type';
 import { ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
+import { changePasswordDto } from './dto/change-password.dto';
 
 @Controller('auth')
 export class AuthController {
@@ -30,5 +31,16 @@ export class AuthController {
   @ApiOperation({ summary: 'Logout and invalidate current user' })
   logout(@CurrentUser() user: JwtPayload & { exp: number }) {
     return this.authService.logOut(user.jti, user.exp);
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard)
+  @Post('change-password')
+  @ApiOperation({ summary: 'change password {requires current password}' })
+  changePassWord(
+    @CurrentUser() user: JwtPayload,
+    @Body() dto: changePasswordDto,
+  ) {
+    return this.authService.changePassword(user.authId, dto);
   }
 }

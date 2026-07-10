@@ -6,6 +6,7 @@ import * as bcrypt from 'bcrypt';
 import { JwtPayload } from './types/jwt-payload.type';
 import { RedisService } from '@/redis/redis.service';
 import { randomUUID } from 'crypto';
+import { changePasswordDto } from './dto/change-password.dto';
 
 @Injectable()
 export class AuthService {
@@ -105,5 +106,36 @@ export class AuthService {
     return { message: 'Logged out successful' };
   }
 
-  async changePassword()
+  async changePassword(authId: string, dto: changePasswordDto) {
+    const auth = await this.prisma.auth.findUnique({ where: { authId } });
+
+    if (!auth) {
+      throw new UnauthorizedException('User not found');
+    }
+
+    const oldPasswordMatches = await bcrypt.compare(
+      dto.oldPassWord,
+      auth.password,
+    );
+
+    if (!oldPasswordMatches) {
+      throw new UnauthorizedException('Current password is incorrect');
+    }
+
+    const newHash = await bcrypt.hash(dto.newPassWord, 10);
+
+    await this.prisma.auth.update({
+      where: {
+        authId,
+      },
+      data: {
+        password: newHash,
+        tokenVersion: { increment: 1 },
+      },
+    });
+
+    await this.redis.del(`me:${authId}`);
+
+    return { message: 'Password changed successfully. Please log in again.' };
+  }
 }
