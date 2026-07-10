@@ -8,6 +8,7 @@ import { RedisModule } from './redis/redis.module';
 import { LoggerModule } from './logger/logger.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { CalendarModule } from './calendar/calendar.module';
+import { AttendanceModule } from './attendance/attendance.module';
 
 @Module({
   imports: [
@@ -30,6 +31,7 @@ import { CalendarModule } from './calendar/calendar.module';
     LoggerModule,
     PrismaModule,
     CalendarModule,
+    AttendanceModule,
     // ... other feature modules
   ],
   controllers: [AppController],
