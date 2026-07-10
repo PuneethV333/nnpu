@@ -3,7 +3,7 @@ import { AuthService } from './auth.service';
 import { LoginDto } from './dto/login.dto';
 import { JwtAuthGuard } from './guard/jwt-auth.guard';
 import { CurrentUser } from './decorators/current-user.decorator';
-import { JwtPayload } from './types/jwt-payload.type';
+import type { JwtPayload } from './types/jwt-payload.type';
 import { ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { changePasswordDto } from './dto/change-password.dto';
 

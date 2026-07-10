@@ -32,6 +32,7 @@ CREATE TABLE "Auth" (
     "userId" TEXT NOT NULL,
     "authId" TEXT NOT NULL,
     "password" TEXT NOT NULL,
+    "tokenVersion" INTEGER NOT NULL DEFAULT 0,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
 

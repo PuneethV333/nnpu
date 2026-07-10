@@ -18,7 +18,7 @@ const { PrismaPg } = require('@prisma/adapter-pg');
 // const { PrismaClient } = require('/generated/prisma/client'); // adjust path if needed
 const { PrismaClient } = require('../src/generated/prisma/client');
 
-const adapter = new PrismaPg({ connectionString: "postgres://de600ead1f3e0b11906b287a89895401eab68991ad7f800b769d37fb6aaf0df4:sk_rA_fd5GO21R6ON-4svyuC@db.prisma.io:5432/postgres?sslmode=require" });
+const adapter = new PrismaPg({ connectionString: "postgresql://postgres:password@localhost:5432/sms_dev" });
 const prisma = new PrismaClient({ adapter });
 
 const DEFAULT_PASSWORD = 'nnpu123'; // same for every dummy user, for easy testing

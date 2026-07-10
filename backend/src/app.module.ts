@@ -7,6 +7,7 @@ import { AuthModule } from './auth/auth.module';
 import { RedisModule } from './redis/redis.module';
 import { LoggerModule } from './logger/logger.module';
 import { PrismaModule } from './prisma/prisma.module';
+import { CalendarModule } from './calendar/calendar.module';
 
 @Module({
   imports: [
@@ -28,6 +29,7 @@ import { PrismaModule } from './prisma/prisma.module';
     RedisModule,
     LoggerModule,
     PrismaModule,
+    CalendarModule,
     // ... other feature modules
   ],
   controllers: [AppController],
