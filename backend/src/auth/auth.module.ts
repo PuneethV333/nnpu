@@ -6,6 +6,9 @@ import { AuthService } from './auth.service';
 import { AuthController } from './auth.controller';
 import { JwtAuthGuard } from './guard/jwt-auth.guard';
 import { RolesGuard } from './guard/roles.guard';
+import { RedisModule } from '@/redis/redis.module';
+import { PrismaModule } from '@/prisma/prisma.module';
+import { LoggerModule } from '@/logger/logger.module';
 
 @Module({
   imports: [
@@ -18,9 +21,10 @@ import { RolesGuard } from './guard/roles.guard';
         },
       }),
     }),
+    RedisModule,
+    PrismaModule,
+    LoggerModule,
   ],
-  // providers: [AuthService, JwtStrategy],
-  // controllers: [AuthController],
   exports: [JwtModule, JwtAuthGuard, RolesGuard],
   providers: [AuthService, JwtAuthGuard, RolesGuard],
   controllers: [AuthController],

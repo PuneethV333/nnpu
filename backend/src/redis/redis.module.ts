@@ -12,13 +12,11 @@ import { LoggerModule } from '@/logger/logger.module';
     {
       provide: REDIS_CLIENT,
       inject: [ConfigService],
-      useFactory: (config: ConfigService): RedisModule => {
+      useFactory: (config: ConfigService): Redis => {
         return new Redis(config.get<string>('REDIS_URL') as string, {
           maxRetriesPerRequest: 3,
           retryStrategy: (times) => Math.min(times * 100, 3000),
-          reconnectOnError: (err) => {
-            return err.message.includes('READONLY');
-          },
+          reconnectOnError: (err) => err.message.includes('READONLY'),
         });
       },
     },

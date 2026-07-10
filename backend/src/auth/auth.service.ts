@@ -7,6 +7,7 @@ import { JwtPayload } from './types/jwt-payload.type';
 import { RedisService } from '@/redis/redis.service';
 import { randomUUID } from 'crypto';
 import { changePasswordDto } from './dto/change-password.dto';
+import { LoggerService } from '@/logger/logger.service';
 
 @Injectable()
 export class AuthService {
@@ -14,9 +15,11 @@ export class AuthService {
     private readonly prisma: PrismaService,
     private readonly jwtService: JwtService,
     private readonly redis: RedisService,
+    private readonly logger: LoggerService,
   ) {}
 
   async login(dto: LoginDto) {
+    this.logger.log('[auth]');
     const auth = await this.prisma.auth.findUnique({
       where: { authId: dto.authId },
       include: { user: true },
@@ -47,6 +50,7 @@ export class AuthService {
   }
 
   async getMe(authId: string) {
+    this.logger.log('[get-me]');
     const cacheKey = `me:${authId}`;
     const cached = await this.redis.get(cacheKey);
 
@@ -96,6 +100,7 @@ export class AuthService {
   }
 
   async logOut(jti: string, exp: number) {
+    this.logger.warn('[logged-out]');
     const nowInSeconds = Math.floor(Date.now() / 1000);
     const ttl = exp - nowInSeconds;
 
@@ -107,7 +112,11 @@ export class AuthService {
   }
 
   async changePassword(authId: string, dto: changePasswordDto) {
-    const auth = await this.prisma.auth.findUnique({ where: { authId } });
+    this.logger.verbose('[change-pass]');
+    const auth = await this.prisma.auth.findUnique({
+      where: { authId },
+      include: { user: true },
+    });
 
     if (!auth) {
       throw new UnauthorizedException('User not found');
@@ -124,7 +133,7 @@ export class AuthService {
 
     const newHash = await bcrypt.hash(dto.newPassWord, 10);
 
-    await this.prisma.auth.update({
+    const updatedAuth = await this.prisma.auth.update({
       where: {
         authId,
       },
@@ -136,6 +145,18 @@ export class AuthService {
 
     await this.redis.del(`me:${authId}`);
 
-    return { message: 'Password changed successfully. Please log in again.' };
+    const payload: JwtPayload = {
+      authId: updatedAuth.authId,
+      role: auth.user.role,
+      jti: randomUUID(),
+      tokenVersion: updatedAuth.tokenVersion,
+    };
+    const accessToken = await this.jwtService.signAsync(payload);
+
+    return {
+      message: 'Password changeSuccessfully',
+      accessToken,
+      user: { id: auth.user.id, role: auth.user.role },
+    };
   }
 }
