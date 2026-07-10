@@ -4,22 +4,21 @@ import { JwtService } from '@nestjs/jwt';
 import { LoginDto } from './dto/login.dto';
 import * as bcrypt from 'bcrypt';
 import { JwtPayload } from './types/jwt-payload.type';
+import { RedisService } from '@/redis/redis.service';
+import { randomUUID } from 'crypto';
 
 @Injectable()
 export class AuthService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly jwtService: JwtService,
+    private readonly redis: RedisService,
   ) {}
 
   async login(dto: LoginDto) {
     const auth = await this.prisma.auth.findUnique({
-      where: {
-        authId: dto.authId,
-      },
-      include: {
-        user: true,
-      },
+      where: { authId: dto.authId },
+      include: { user: true },
     });
 
     if (!auth) {
@@ -34,25 +33,33 @@ export class AuthService {
     const payload: JwtPayload = {
       authId: auth.authId,
       role: auth.user.role,
+      jti: randomUUID(),
+      tokenVersion: auth.tokenVersion,
     };
 
     const accessToken = await this.jwtService.signAsync(payload);
 
     return {
       accessToken,
-      user: {
-        id: auth.user.id,
-        role: auth.user.role,
-      },
+      user: { id: auth.user.id, role: auth.user.role },
     };
   }
 
   async getMe(authId: string) {
-    const auth = await this.prisma.auth.findFirst({
+    const cacheKey = `me:${authId}`;
+    const cached = await this.redis.get(cacheKey);
+
+    if (cached) {
+      return {
+        source: 'redis',
+        data: cached,
+      };
+    }
+
+    const auth = await this.prisma.auth.findUnique({
       where: {
         authId,
       },
-
       select: {
         userId: true,
       },
@@ -62,9 +69,16 @@ export class AuthService {
       throw new UnauthorizedException('User not found');
     }
 
-    const user = await this.prisma.user.findFirst({
+    const user = await this.prisma.user.findUnique({
       where: {
         id: auth.userId,
+      },
+      include: {
+        details: true,
+        section: true,
+        teachingSubjects: true,
+        classTeacherOf: true,
+        school: true,
       },
     });
 
@@ -72,6 +86,24 @@ export class AuthService {
       throw new UnauthorizedException('User not found');
     }
 
-    return user;
+    await this.redis.set<typeof user>(cacheKey, user, 300);
+
+    return {
+      data: user,
+      source: 'db',
+    };
   }
+
+  async logOut(jti: string, exp: number) {
+    const nowInSeconds = Math.floor(Date.now() / 1000);
+    const ttl = exp - nowInSeconds;
+
+    if (ttl > 0) {
+      await this.redis.set(`blacklist:${jti}`, true, ttl);
+    }
+
+    return { message: 'Logged out successful' };
+  }
+
+  async changePassword()
 }
