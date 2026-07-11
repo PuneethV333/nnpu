@@ -1,9 +1,15 @@
 import { LoggerService } from '@/logger/logger.service';
 import { PrismaService } from '@/prisma/prisma.service';
 import { RedisService } from '@/redis/redis.service';
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  Injectable,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { AttendanceArray, GetMyType } from './types/getMy.type';
 import { AttendanceSummary } from './types/summary.type';
+import { MarkAttendanceDto } from './dto/mark-attendance.dto';
 
 @Injectable()
 export class AttendanceService {
@@ -12,6 +18,45 @@ export class AttendanceService {
     private readonly logger: LoggerService,
     private readonly prisma: PrismaService,
   ) {}
+
+  private async assertTeacherOwnsSection(
+    authId: string,
+    sectionId: string,
+  ): Promise<string> {
+    const auth = await this.prisma.auth.findUnique({
+      where: { authId },
+      select: { userId: true },
+    });
+
+    if (!auth) {
+      throw new UnauthorizedException('User not found');
+    }
+
+    const teacherId = auth.userId;
+
+    const section = await this.prisma.section.findUnique({
+      where: { id: sectionId },
+      select: {
+        classTeacherId: true,
+        subjects: { select: { teacherId: true } },
+      },
+    });
+
+    if (!section) {
+      throw new BadRequestException('Section not found');
+    }
+
+    const isClassTeacher = section.classTeacherId === teacherId;
+    const isSubjectTeacher = section.subjects.some(
+      (s) => s.teacherId === teacherId,
+    );
+
+    if (!isClassTeacher && !isSubjectTeacher) {
+      throw new ForbiddenException('You are not assigned to this section');
+    }
+
+    return teacherId;
+  }
 
   async getMy(authId: string, from: string, to: string): Promise<GetMyType> {
     this.logger.log('[my]');
@@ -127,5 +172,106 @@ export class AttendanceService {
     await this.redis.set<AttendanceSummary>(cacheKey, summary, 300);
 
     return { data: summary, source: 'db' };
+  }
+
+  async getRoster(sectionId: string, date: string, authId: string) {
+    this.logger.log('[roster]');
+
+    await this.assertTeacherOwnsSection(authId, sectionId);
+
+    const dateObj = new Date(date);
+
+    const calendarDay = await this.prisma.academicCalendarDay.findUnique({
+      where: { date: dateObj },
+    });
+
+    if (!calendarDay || calendarDay.type !== 'Working') {
+      throw new BadRequestException(
+        `Cannot mark attendance on a ${calendarDay?.type ?? 'undefined'} day`,
+      );
+    }
+
+    const students = await this.prisma.user.findMany({
+      where: { sectionId, role: 'Student', isActive: true },
+      select: {
+        id: true,
+        details: { select: { name: true, profilePic: true } },
+      },
+    });
+
+    if (students.length === 0) {
+      throw new BadRequestException('No students found in this section');
+    }
+
+    await this.prisma.attendance.createMany({
+      data: students.map((s) => ({
+        studentId: s.id,
+        sectionId,
+        date: dateObj,
+      })),
+      skipDuplicates: true,
+    });
+
+    const roster = await this.prisma.attendance.findMany({
+      where: { sectionId, date: dateObj },
+      include: {
+        student: {
+          select: {
+            id: true,
+            details: { select: { name: true, profilePic: true } },
+          },
+        },
+      },
+      orderBy: { student: { details: { name: 'asc' } } },
+    });
+
+    return { data: roster, source: 'db' };
+  }
+
+  async markAttendance(dto: MarkAttendanceDto, authId: string) {
+    this.logger.log('[mark]');
+
+    const teacherId = await this.assertTeacherOwnsSection(
+      authId,
+      dto.sectionId,
+    );
+
+    const dateObj = new Date(dto.date);
+
+    const calendarDay = await this.prisma.academicCalendarDay.findUnique({
+      where: { date: dateObj },
+    });
+
+    if (!calendarDay || calendarDay.type !== 'Working') {
+      throw new BadRequestException(
+        `Cannot mark attendance on a ${calendarDay?.type ?? 'undefined'} day`,
+      );
+    }
+
+    await this.prisma.$transaction(
+      dto.entries.map((entry) =>
+        this.prisma.attendance.upsert({
+          where: {
+            studentId_date: { studentId: entry.studentId, date: dateObj },
+          },
+          update: { status: entry.status, markedById: teacherId },
+          create: {
+            studentId: entry.studentId,
+            sectionId: dto.sectionId,
+            date: dateObj,
+            status: entry.status,
+            markedById: teacherId,
+          },
+        }),
+      ),
+    );
+
+    await Promise.all(
+      dto.entries.map((e) =>
+        this.redis.del(`attendance:summary:${e.studentId}`),
+      ),
+    );
+
+    return { message: `Attendance marked for ${dto.entries.length} students` };
   }
 }
