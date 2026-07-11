@@ -5,10 +5,11 @@ import { PrismaModule } from '@/prisma/prisma.module';
 import { LoggerModule } from '@/logger/logger.module';
 import { RedisModule } from '@/redis/redis.module';
 import { AuthModule } from '@/auth/auth.module';
+import { AttendanceReminderService } from './attendance-reminder.service';
 
 @Module({
   imports: [PrismaModule, LoggerModule, RedisModule, AuthModule],
   controllers: [AttendanceController],
-  providers: [AttendanceService],
+  providers: [AttendanceService, AttendanceReminderService],
 })
 export class AttendanceModule {}

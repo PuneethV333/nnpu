@@ -46,6 +46,7 @@ model User {
   studentAttendances Attendance[]     @relation("StudentAttendance")
   markedAttendances  Attendance[]     @relation("MarkedByTeacher")
   classTeacherOf     Section?         @relation("ClassTeacherOf")
+  notifications      Notification[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -227,17 +228,31 @@ enum NotificationType {
   PaymentSuccessful
 }
 
+model Notification {
+  id     String           @id @default(cuid())
+  userId String
+  user   User             @relation(fields: [userId], references: [id])
+  type   NotificationType
+  title  String
+  body   String
+  isRead Boolean          @default(false)
+
+  createdAt DateTime @default(now())
+
+  @@index([userId, isRead])
+}
+
 model RefreshToken {
-  id         String   @id @default(uuid())
+  id String @id @default(uuid())
 
-  tokenId    String   @unique
-  tokenHash  String
+  tokenId   String @unique
+  tokenHash String
 
-  authId     String
-  auth       Auth @relation(fields: [authId], references: [authId])
+  authId String
+  auth   Auth   @relation(fields: [authId], references: [authId])
 
-  expiresAt  DateTime
-  createdAt  DateTime @default(now())
+  expiresAt DateTime
+  createdAt DateTime @default(now())
 
   @@index([authId])
 }
