@@ -6,6 +6,7 @@ import { CurrentUser } from './decorators/current-user.decorator';
 import type { JwtPayload } from './types/jwt-payload.type';
 import { ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { changePasswordDto } from './dto/change-password.dto';
+import { refreshDto } from '@/attendance/dto/get-me.dto';
 import { Throttle } from '@nestjs/throttler';
 
 @Controller('auth')
@@ -17,6 +18,13 @@ export class AuthController {
   @ApiOperation({ summary: 'Login with school/auth ID and password' })
   login(@Body() dto: LoginDto) {
     return this.authService.login(dto);
+  }
+
+  @Post('refresh')
+  @Throttle({ default: { limit: 20, ttl: 60000 } })
+  @ApiOperation({ summary: 'Exchange a refresh token for a new token pair' })
+  refresh(@Body() dto: refreshDto) {
+    return this.authService.refresh(dto);
   }
 
   @ApiBearerAuth()

@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unsafe-assignment */
 /* eslint-disable @typescript-eslint/unbound-method */
 import { Test, TestingModule } from '@nestjs/testing';
 import { UnauthorizedException } from '@nestjs/common';
@@ -37,6 +38,13 @@ describe('AuthService', () => {
               update: jest.fn(),
             },
             user: {
+              findUnique: jest.fn(),
+            },
+            // FIX: was missing entirely — issueTokens()/changePassword() need this
+            refreshToken: {
+              create: jest.fn(),
+              delete: jest.fn(),
+              deleteMany: jest.fn(),
               findUnique: jest.fn(),
             },
           },
@@ -95,10 +103,12 @@ describe('AuthService', () => {
       ).rejects.toThrow(UnauthorizedException);
     });
 
-    it('returns an accessToken and user on successful login', async () => {
+    it('returns an accessToken, refreshToken, and user on successful login', async () => {
       (prisma.auth.findUnique as jest.Mock).mockResolvedValue(mockAuth);
       (bcrypt.compare as jest.Mock).mockResolvedValue(true);
+      (bcrypt.hash as jest.Mock).mockResolvedValue('hashed-secret');
       (jwtService.signAsync as jest.Mock).mockResolvedValue('signed-token');
+      (prisma.refreshToken.create as jest.Mock).mockResolvedValue({});
 
       const result = await service.login({
         authId: mockAuth.authId,
@@ -107,6 +117,7 @@ describe('AuthService', () => {
 
       expect(result).toEqual({
         accessToken: 'signed-token',
+        refreshToken: expect.any(String),
         user: { id: mockAuth.user.id, role: mockAuth.user.role },
       });
       expect(jwtService.signAsync).toHaveBeenCalledWith(
@@ -116,6 +127,7 @@ describe('AuthService', () => {
           tokenVersion: mockAuth.tokenVersion,
         }),
       );
+      expect(prisma.refreshToken.create).toHaveBeenCalled();
     });
   });
 
@@ -173,7 +185,7 @@ describe('AuthService', () => {
   describe('logOut', () => {
     it('blacklists the token for the remaining ttl', async () => {
       const nowInSeconds = Math.floor(Date.now() / 1000);
-      const exp = nowInSeconds + 600; // 10 min left
+      const exp = nowInSeconds + 600;
 
       const result = await service.logOut('some-jti', exp);
 
@@ -187,7 +199,7 @@ describe('AuthService', () => {
 
     it('does not blacklist if the token is already expired', async () => {
       const nowInSeconds = Math.floor(Date.now() / 1000);
-      const exp = nowInSeconds - 10; // already expired
+      const exp = nowInSeconds - 10;
 
       await service.logOut('some-jti', exp);
 
@@ -219,7 +231,7 @@ describe('AuthService', () => {
       ).rejects.toThrow(UnauthorizedException);
     });
 
-    it('updates password, increments tokenVersion, and returns a new token', async () => {
+    it('updates password, revokes old refresh tokens, and returns a new token pair', async () => {
       (prisma.auth.findUnique as jest.Mock).mockResolvedValue(mockAuth);
       (bcrypt.compare as jest.Mock).mockResolvedValue(true);
       (bcrypt.hash as jest.Mock).mockResolvedValue('new-hashed-password');
@@ -228,6 +240,10 @@ describe('AuthService', () => {
         password: 'new-hashed-password',
         tokenVersion: 1,
       });
+      (prisma.refreshToken.deleteMany as jest.Mock).mockResolvedValue({
+        count: 1,
+      });
+      (prisma.refreshToken.create as jest.Mock).mockResolvedValue({});
       (jwtService.signAsync as jest.Mock).mockResolvedValue('new-token');
 
       const result = await service.changePassword(mockAuth.authId, {
@@ -242,10 +258,14 @@ describe('AuthService', () => {
           tokenVersion: { increment: 1 },
         },
       });
+      expect(prisma.refreshToken.deleteMany).toHaveBeenCalledWith({
+        where: { authId: mockAuth.authId },
+      });
       expect(redis.del).toHaveBeenCalledWith(`me:${mockAuth.authId}`);
       expect(result).toEqual({
         message: 'Password changed successfully.',
         accessToken: 'new-token',
+        refreshToken: expect.any(String),
         user: { id: mockAuth.user.id, role: mockAuth.user.role },
       });
     });

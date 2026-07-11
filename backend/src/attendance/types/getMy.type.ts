@@ -1,4 +1,4 @@
-import { AttendanceStatus } from '@/generated/prisma/enums';
+import { AttendanceStatus, Role } from '@/generated/prisma/enums';
 import { z } from 'zod';
 
 export const attendanceSchema = z.object({
@@ -20,3 +20,14 @@ export const getMySchema = z.object({
 export type Attendance = z.infer<typeof attendanceSchema>;
 export type AttendanceArray = z.infer<typeof attendanceArraySchema>;
 export type GetMyType = z.infer<typeof getMySchema>;
+
+export const loginSchema = z.object({
+  accessToken: z.string(),
+  refreshToken: z.string(),
+  user: z.object({
+    id: z.string(),
+    role: z.enum(Role),
+  }),
+});
+
+export type login = z.infer<typeof loginSchema>;

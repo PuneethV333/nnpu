@@ -8,6 +8,7 @@ import { getMyAttendanceDto } from './dto/get-me.dto';
 import { RolesGuard } from '@/auth/guard/roles.guard';
 import { Roles } from '@/auth/decorators/roles.decorator';
 import { MarkAttendanceDto } from './dto/mark-attendance.dto';
+import { Throttle } from '@nestjs/throttler';
 
 @ApiTags('attendance')
 @ApiBearerAuth()
@@ -17,6 +18,7 @@ export class AttendanceController {
 
   @UseGuards(JwtAuthGuard)
   @Get('get-me')
+  @Throttle({ default: { limit: 60, ttl: 60000 } })
   @ApiOperation({
     summary:
       'returns my attendance based on from and to from query {query is required }',
@@ -30,6 +32,7 @@ export class AttendanceController {
 
   @UseGuards(JwtAuthGuard)
   @Get('summary')
+  @Throttle({ default: { limit: 60, ttl: 60000 } })
   @ApiOperation({
     summary:
       'returns summery of my attendance based on from and to from query {query is required }',
@@ -44,6 +47,7 @@ export class AttendanceController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('Teacher')
   @Get('roster')
+  @Throttle({ default: { limit: 60, ttl: 60000 } })
   @ApiOperation({
     summary: 'Get or create attendance roster for a section+date',
   })
@@ -57,6 +61,7 @@ export class AttendanceController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('Teacher')
   @Post('mark')
+  @Throttle({ default: { limit: 10, ttl: 60000 } })
   @ApiOperation({ summary: 'Bulk mark/update attendance for a section+date' })
   markAttendance(
     @Body() dto: MarkAttendanceDto,

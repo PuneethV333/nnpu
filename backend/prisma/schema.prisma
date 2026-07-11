@@ -59,8 +59,9 @@ model Auth {
   password     String
   tokenVersion Int    @default(0)
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  refreshTokens RefreshToken[]
 }
 
 model PersonalDetails {
@@ -214,4 +215,29 @@ model Attendance {
   @@unique([studentId, date])
   @@index([sectionId, date])
   @@index([studentId])
+}
+
+enum NotificationType {
+  AttendancePending
+  AttendanceUpdated
+  MarksPublished
+  NewAnnouncement
+  TimetableUpdated
+  FeeDue
+  PaymentSuccessful
+}
+
+model RefreshToken {
+  id         String   @id @default(uuid())
+
+  tokenId    String   @unique
+  tokenHash  String
+
+  authId     String
+  auth       Auth @relation(fields: [authId], references: [authId])
+
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+
+  @@index([authId])
 }

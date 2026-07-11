@@ -5,9 +5,13 @@ import { LoginDto } from './dto/login.dto';
 import * as bcrypt from 'bcrypt';
 import { JwtPayload } from './types/jwt-payload.type';
 import { RedisService } from '@/redis/redis.service';
-import { randomUUID } from 'crypto';
+import { randomBytes, randomUUID } from 'crypto';
 import { changePasswordDto } from './dto/change-password.dto';
 import { LoggerService } from '@/logger/logger.service';
+import { addDays } from 'date-fns';
+import { refreshDto } from '@/attendance/dto/get-me.dto';
+import { login } from '@/attendance/types/getMy.type';
+import { Role } from '@/generated/prisma/enums';
 
 @Injectable()
 export class AuthService {
@@ -18,7 +22,37 @@ export class AuthService {
     private readonly logger: LoggerService,
   ) {}
 
-  async login(dto: LoginDto) {
+  private async issueTokens(
+    authId: string,
+    role: Role,
+    tokenVersion: number,
+  ): Promise<{ accessToken: string; refreshToken: string }> {
+    const payload: JwtPayload = {
+      authId,
+      role,
+      jti: randomUUID(),
+      tokenVersion,
+    };
+
+    const accessToken = await this.jwtService.signAsync(payload);
+    const tokenId = randomUUID();
+    const tokenSecret = randomBytes(64).toString('hex');
+    const refreshToken = `${tokenId}.${tokenSecret}`;
+    const tokenHash = await bcrypt.hash(tokenSecret, 10);
+
+    await this.prisma.refreshToken.create({
+      data: {
+        tokenId,
+        tokenHash,
+        authId,
+        expiresAt: addDays(new Date(), 30),
+      },
+    });
+
+    return { accessToken, refreshToken };
+  }
+
+  async login(dto: LoginDto): Promise<login> {
     this.logger.log('[auth]');
     const auth = await this.prisma.auth.findUnique({
       where: { authId: dto.authId },
@@ -34,19 +68,51 @@ export class AuthService {
       throw new UnauthorizedException('Invalid school ID or password');
     }
 
-    const payload: JwtPayload = {
-      authId: auth.authId,
-      role: auth.user.role,
-      jti: randomUUID(),
-      tokenVersion: auth.tokenVersion,
-    };
-
-    const accessToken = await this.jwtService.signAsync(payload);
+    const { accessToken, refreshToken } = await this.issueTokens(
+      auth.authId,
+      auth.user.role,
+      auth.tokenVersion,
+    );
 
     return {
       accessToken,
+      refreshToken,
       user: { id: auth.user.id, role: auth.user.role },
     };
+  }
+
+  async refresh(dto: refreshDto) {
+    const [tokenId, tokenSecret] = dto.refreshToken.split('.');
+
+    const refresh = await this.prisma.refreshToken.findUnique({
+      where: { tokenId },
+      include: { auth: { include: { user: true } } },
+    });
+
+    if (!refresh) {
+      throw new UnauthorizedException();
+    }
+
+    if (refresh.expiresAt < new Date()) {
+      throw new UnauthorizedException();
+    }
+
+    const valid = await bcrypt.compare(tokenSecret, refresh.tokenHash);
+    if (!valid) {
+      throw new UnauthorizedException();
+    }
+
+    // FIX: no longer routes through login(); issues tokens directly,
+    // so no fake password is ever passed anywhere.
+    const { accessToken, refreshToken } = await this.issueTokens(
+      refresh.auth.authId,
+      refresh.auth.user.role,
+      refresh.auth.tokenVersion,
+    );
+
+    await this.prisma.refreshToken.delete({ where: { tokenId } });
+
+    return { accessToken, refreshToken };
   }
 
   async getMe(authId: string) {
@@ -55,19 +121,12 @@ export class AuthService {
     const cached = await this.redis.get(cacheKey);
 
     if (cached) {
-      return {
-        source: 'redis',
-        data: cached,
-      };
+      return { source: 'redis', data: cached };
     }
 
     const auth = await this.prisma.auth.findUnique({
-      where: {
-        authId,
-      },
-      select: {
-        userId: true,
-      },
+      where: { authId },
+      select: { userId: true },
     });
 
     if (!auth) {
@@ -75,9 +134,7 @@ export class AuthService {
     }
 
     const user = await this.prisma.user.findUnique({
-      where: {
-        id: auth.userId,
-      },
+      where: { id: auth.userId },
       include: {
         details: true,
         section: true,
@@ -91,12 +148,9 @@ export class AuthService {
       throw new UnauthorizedException('User not found');
     }
 
-    await this.redis.set<typeof user>(cacheKey, user, 300);
+    await this.redis.set(cacheKey, user, 300);
 
-    return {
-      data: user,
-      source: 'db',
-    };
+    return { data: user, source: 'db' };
   }
 
   async logOut(jti: string, exp: number) {
@@ -134,28 +188,29 @@ export class AuthService {
     const newHash = await bcrypt.hash(dto.newPassWord, 10);
 
     const updatedAuth = await this.prisma.auth.update({
-      where: {
-        authId,
-      },
+      where: { authId },
       data: {
         password: newHash,
         tokenVersion: { increment: 1 },
       },
     });
 
+    // FIX: revoke all existing refresh tokens on password change,
+    // otherwise a stolen refresh token still works after a password reset.
+    await this.prisma.refreshToken.deleteMany({ where: { authId } });
+
     await this.redis.del(`me:${authId}`);
 
-    const payload: JwtPayload = {
-      authId: updatedAuth.authId,
-      role: auth.user.role,
-      jti: randomUUID(),
-      tokenVersion: updatedAuth.tokenVersion,
-    };
-    const accessToken = await this.jwtService.signAsync(payload);
+    const { accessToken, refreshToken } = await this.issueTokens(
+      updatedAuth.authId,
+      auth.user.role,
+      updatedAuth.tokenVersion,
+    );
 
     return {
       message: 'Password changed successfully.',
       accessToken,
+      refreshToken,
       user: { id: auth.user.id, role: auth.user.role },
     };
   }
