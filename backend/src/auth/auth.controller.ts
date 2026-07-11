@@ -6,12 +6,14 @@ import { CurrentUser } from './decorators/current-user.decorator';
 import type { JwtPayload } from './types/jwt-payload.type';
 import { ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { changePasswordDto } from './dto/change-password.dto';
+import { Throttle } from '@nestjs/throttler';
 
 @Controller('auth')
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
   @Post('login')
+  @Throttle({ default: { limit: 5, ttl: 60000 } })
   @ApiOperation({ summary: 'Login with school/auth ID and password' })
   login(@Body() dto: LoginDto) {
     return this.authService.login(dto);
@@ -36,6 +38,7 @@ export class AuthController {
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard)
   @Post('change-password')
+  @Throttle({ default: { ttl: 60000, limit: 5 } })
   @ApiOperation({ summary: 'change password {requires current password}' })
   changePassWord(
     @CurrentUser() user: JwtPayload,

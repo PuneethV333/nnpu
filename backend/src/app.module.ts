@@ -9,6 +9,9 @@ import { LoggerModule } from './logger/logger.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { CalendarModule } from './calendar/calendar.module';
 import { AttendanceModule } from './attendance/attendance.module';
+import { NotificationModule } from './notification/notification.module';
+import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
+import { APP_GUARD } from '@nestjs/core';
 
 @Module({
   imports: [
@@ -25,6 +28,12 @@ import { AttendanceModule } from './attendance/attendance.module';
         REDIS_URL: Joi.string().required(),
       }),
     }),
+    ThrottlerModule.forRoot([
+      {
+        ttl: 60000,
+        limit: 100,
+      },
+    ]),
     // UsersModule, AuthModule,
     AuthModule,
     RedisModule,
@@ -32,9 +41,16 @@ import { AttendanceModule } from './attendance/attendance.module';
     PrismaModule,
     CalendarModule,
     AttendanceModule,
+    NotificationModule,
     // ... other feature modules
   ],
   controllers: [AppController],
-  providers: [AppService],
+  providers: [
+    AppService,
+    {
+      provide: APP_GUARD,
+      useClass: ThrottlerGuard,
+    },
+  ],
 })
 export class AppModule {}

@@ -19,45 +19,6 @@ export class AttendanceService {
     private readonly prisma: PrismaService,
   ) {}
 
-  private async assertTeacherOwnsSection(
-    authId: string,
-    sectionId: string,
-  ): Promise<string> {
-    const auth = await this.prisma.auth.findUnique({
-      where: { authId },
-      select: { userId: true },
-    });
-
-    if (!auth) {
-      throw new UnauthorizedException('User not found');
-    }
-
-    const teacherId = auth.userId;
-
-    const section = await this.prisma.section.findUnique({
-      where: { id: sectionId },
-      select: {
-        classTeacherId: true,
-        subjects: { select: { teacherId: true } },
-      },
-    });
-
-    if (!section) {
-      throw new BadRequestException('Section not found');
-    }
-
-    const isClassTeacher = section.classTeacherId === teacherId;
-    const isSubjectTeacher = section.subjects.some(
-      (s) => s.teacherId === teacherId,
-    );
-
-    if (!isClassTeacher && !isSubjectTeacher) {
-      throw new ForbiddenException('You are not assigned to this section');
-    }
-
-    return teacherId;
-  }
-
   async getMy(authId: string, from: string, to: string): Promise<GetMyType> {
     this.logger.log('[my]');
 
@@ -174,10 +135,10 @@ export class AttendanceService {
     return { data: summary, source: 'db' };
   }
 
-  async getRoster(sectionId: string, date: string, authId: string) {
+  async getRoster(sectionId: string, date: string) {
     this.logger.log('[roster]');
 
-    await this.assertTeacherOwnsSection(authId, sectionId);
+    // await this.assertTeacherOwnsSection(authId, sectionId);
 
     const dateObj = new Date(date);
 
@@ -231,11 +192,16 @@ export class AttendanceService {
   async markAttendance(dto: MarkAttendanceDto, authId: string) {
     this.logger.log('[mark]');
 
-    const teacherId = await this.assertTeacherOwnsSection(
-      authId,
-      dto.sectionId,
-    );
+    const auth = await this.prisma.auth.findUnique({
+      where: { authId },
+      select: { userId: true },
+    });
 
+    if (!auth) {
+      throw new UnauthorizedException('User not found');
+    }
+
+    const teacherId = auth.userId;
     const dateObj = new Date(dto.date);
 
     const calendarDay = await this.prisma.academicCalendarDay.findUnique({
@@ -248,22 +214,53 @@ export class AttendanceService {
       );
     }
 
+    const existingRows = await this.prisma.attendance.findMany({
+      where: {
+        sectionId: dto.sectionId,
+        date: dateObj,
+        studentId: { in: dto.entries.map((e) => e.studentId) },
+      },
+    });
+
+    const rowMap = new Map(existingRows.map((r) => [r.studentId, r]));
+
+    for (const entry of dto.entries) {
+      const existing = rowMap.get(entry.studentId);
+      if (existing?.markedAt) {
+        const hoursSinceMarked =
+          (Date.now() - existing.markedAt.getTime()) / (1000 * 60 * 60);
+        if (hoursSinceMarked > 24) {
+          throw new ForbiddenException(
+            `Attendance for ${dto.date} is locked (marked more than 24 hours ago)`,
+          );
+        }
+      }
+    }
+
+    const now = new Date();
+
     await this.prisma.$transaction(
-      dto.entries.map((entry) =>
-        this.prisma.attendance.upsert({
+      dto.entries.map((entry) => {
+        const existing = rowMap.get(entry.studentId);
+        return this.prisma.attendance.upsert({
           where: {
             studentId_date: { studentId: entry.studentId, date: dateObj },
           },
-          update: { status: entry.status, markedById: teacherId },
+          update: {
+            status: entry.status,
+            markedById: teacherId,
+            markedAt: existing?.markedAt ?? now,
+          },
           create: {
             studentId: entry.studentId,
             sectionId: dto.sectionId,
             date: dateObj,
             status: entry.status,
             markedById: teacherId,
+            markedAt: now,
           },
-        }),
-      ),
+        });
+      }),
     );
 
     await Promise.all(
@@ -273,5 +270,38 @@ export class AttendanceService {
     );
 
     return { message: `Attendance marked for ${dto.entries.length} students` };
+  }
+
+  async getAttendanceStatus(sectionId: string, date: string) {
+    this.logger.log('[attendance-status]');
+
+    const dateObj = new Date(date);
+
+    const calendarDay = await this.prisma.academicCalendarDay.findUnique({
+      where: { date: dateObj },
+    });
+
+    if (!calendarDay || calendarDay.type !== 'Working') {
+      throw new BadRequestException(
+        `Cannot mark attendance on a ${calendarDay?.type ?? 'undefined'} day`,
+      );
+    }
+
+    const rows = await this.prisma.attendance.findMany({
+      where: { sectionId, date: dateObj },
+      select: { status: true, markedAt: true },
+    });
+
+    const isMarked =
+      rows.length > 0 && rows.every((r) => r.status !== 'NotMarked');
+    const firstMarkedAt = rows.find((r) => r.markedAt)?.markedAt ?? null;
+
+    const isLocked = firstMarkedAt
+      ? Date.now() - firstMarkedAt.getTime() > 24 * 60 * 60 * 1000
+      : false;
+
+    return {
+      data: { isMarked, isLocked, markedAt: firstMarkedAt },
+    };
   }
 }

@@ -50,9 +50,8 @@ export class AttendanceController {
   getRoster(
     @Query('sectionId') sectionId: string,
     @Query('date') date: string,
-    @CurrentUser() user: JwtPayload,
   ) {
-    return this.attendanceService.getRoster(sectionId, date, user.authId);
+    return this.attendanceService.getRoster(sectionId, date);
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)
@@ -64,5 +63,18 @@ export class AttendanceController {
     @CurrentUser() user: JwtPayload,
   ) {
     return this.attendanceService.markAttendance(dto, user.authId);
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('Teacher')
+  @Get('status')
+  @ApiOperation({
+    summary: 'Check if attendance is marked/locked for a section+date',
+  })
+  getStatus(
+    @Query('sectionId') sectionId: string,
+    @Query('date') date: string,
+  ) {
+    return this.attendanceService.getAttendanceStatus(sectionId, date);
   }
 }

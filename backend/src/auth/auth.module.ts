@@ -9,6 +9,7 @@ import { RolesGuard } from './guard/roles.guard';
 import { RedisModule } from '@/redis/redis.module';
 import { PrismaModule } from '@/prisma/prisma.module';
 import { LoggerModule } from '@/logger/logger.module';
+// import { ThrottlerModule } from '@nestjs/throttler';
 
 @Module({
   imports: [
