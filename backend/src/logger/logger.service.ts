@@ -1,50 +1,43 @@
 import { Injectable, LoggerService as NestLoggerService } from '@nestjs/common';
-import chalk from 'chalk';
+import pino from 'pino';
+
+const isDev = process.env.NODE_ENV !== 'production';
+
+const logger = pino({
+  level: isDev ? 'debug' : 'info',
+  transport: isDev
+    ? {
+        target: 'pino-pretty',
+        options: {
+          colorize: true,
+          levelFirst: true,
+          translateTime: 'HH:MM:ss',
+          ignore: 'pid,hostname',
+          singleLine: true,
+        },
+      }
+    : undefined, // structured JSON in production, no transport overhead
+});
 
 @Injectable()
 export class LoggerService implements NestLoggerService {
-  private timestamp() {
-    return new Date().toISOString();
-  }
-
   log(message: string, context?: string) {
-    console.log(
-      chalk.green(
-        `[${this.timestamp()}] [LOG]${context ? ` [${context}]` : ''} ${message}`,
-      ),
-    );
+    logger.info({ context }, message);
   }
 
   error(message: string, trace?: string, context?: string) {
-    console.error(
-      chalk.red(
-        `[${this.timestamp()}] [ERROR]${context ? ` [${context}]` : ''} ${message}`,
-      ),
-    );
-    if (trace) console.error(trace);
+    logger.error({ context, trace }, message);
   }
 
   warn(message: string, context?: string) {
-    console.warn(
-      chalk.yellow(
-        `[${this.timestamp()}] [WARN]${context ? ` [${context}]` : ''} ${message}`,
-      ),
-    );
+    logger.warn({ context }, message);
   }
 
   debug(message: string, context?: string) {
-    console.debug(
-      chalk.blue(
-        `[${this.timestamp()}] [DEBUG]${context ? ` [${context}]` : ''} ${message}`,
-      ),
-    );
+    logger.debug({ context }, message);
   }
 
   verbose(message: string, context?: string) {
-    console.log(
-      chalk.gray(
-        `[${this.timestamp()}] [VERBOSE]${context ? ` [${context}]` : ''} ${message}`,
-      ),
-    );
+    logger.trace({ context }, message);
   }
 }
