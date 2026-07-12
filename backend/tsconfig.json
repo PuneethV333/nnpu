@@ -25,8 +25,13 @@
     "noImplicitAny": false,
     "strictBindCallApply": false,
     "noFallthroughCasesInSwitch": false,
-    "types": ["jest","node"],
-    "isolatedModules": true,
+    "types": ["jest", "node"],
+    "isolatedModules": true
   },
-  "include": ["src/**/*.ts", "src/**/*.d.ts"]
+  "include": [
+    "src/**/*.ts",
+    "src/**/*.d.ts",
+    "prisma.config.ts",
+    "prisma/dummy.ts"
+  ]
 }

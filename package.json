@@ -5,5 +5,10 @@
   },
   "scripts": {
     "prepare": "husky"
+  },
+  "lint-staged": {
+    "backend/**/*.ts": [
+      "bash -c 'cd backend && eslint --fix'"
+    ]
   }
 }
