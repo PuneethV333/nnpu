@@ -9,9 +9,9 @@ import { randomBytes, randomUUID } from 'crypto';
 import { changePasswordDto } from './dto/change-password.dto';
 import { LoggerService } from '@/logger/logger.service';
 import { addDays } from 'date-fns';
-import { refreshDto } from '@/attendance/dto/get-me.dto';
-import { login } from '@/attendance/types/getMy.type';
 import { Role } from '@/generated/prisma/enums';
+import { login } from './types/get-me.type';
+import { refreshDto } from './dto/refresh.dto';
 
 @Injectable()
 export class AuthService {
@@ -82,7 +82,12 @@ export class AuthService {
   }
 
   async refresh(dto: refreshDto) {
-    const [tokenId, tokenSecret] = dto.refreshToken.split('.');
+    const part = dto.refreshToken.split('.');
+
+    if (part.length !== 2) {
+      throw new UnauthorizedException('Invalid refresh token');
+    }
+    const [tokenId, tokenSecret] = part;
 
     const refresh = await this.prisma.refreshToken.findUnique({
       where: { tokenId },

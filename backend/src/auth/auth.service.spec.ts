@@ -270,4 +270,84 @@ describe('AuthService', () => {
       });
     });
   });
+
+  describe('refresh', () => {
+    const mockRefreshRecord = {
+      tokenId: 'token-1',
+      tokenHash: 'hashed-secret',
+      authId: mockAuth.authId,
+      expiresAt: new Date(Date.now() + 1000 * 60 * 60), // 1hr from now
+      auth: {
+        authId: mockAuth.authId,
+        tokenVersion: 0,
+        user: { id: 'user-1', role: 'Student' },
+      },
+    };
+
+    it('throws UnauthorizedException if refreshToken is malformed (no dot)', async () => {
+      await expect(
+        service.refresh({ refreshToken: 'not-a-valid-token' }),
+      ).rejects.toThrow(UnauthorizedException);
+    });
+
+    it('throws UnauthorizedException if refreshToken has too many parts', async () => {
+      await expect(service.refresh({ refreshToken: 'a.b.c' })).rejects.toThrow(
+        UnauthorizedException,
+      );
+    });
+
+    it('throws UnauthorizedException if tokenId is not found', async () => {
+      (prisma.refreshToken.findUnique as jest.Mock).mockResolvedValue(null);
+
+      await expect(
+        service.refresh({ refreshToken: 'token-1.some-secret' }),
+      ).rejects.toThrow(UnauthorizedException);
+    });
+
+    it('throws UnauthorizedException if token is expired', async () => {
+      (prisma.refreshToken.findUnique as jest.Mock).mockResolvedValue({
+        ...mockRefreshRecord,
+        expiresAt: new Date(Date.now() - 1000), // already expired
+      });
+
+      await expect(
+        service.refresh({ refreshToken: 'token-1.some-secret' }),
+      ).rejects.toThrow(UnauthorizedException);
+    });
+
+    it('throws UnauthorizedException if secret does not match hash', async () => {
+      (prisma.refreshToken.findUnique as jest.Mock).mockResolvedValue(
+        mockRefreshRecord,
+      );
+      (bcrypt.compare as jest.Mock).mockResolvedValue(false);
+
+      await expect(
+        service.refresh({ refreshToken: 'token-1.wrong-secret' }),
+      ).rejects.toThrow(UnauthorizedException);
+    });
+
+    it('issues a new token pair and deletes the old refresh token on success', async () => {
+      (prisma.refreshToken.findUnique as jest.Mock).mockResolvedValue(
+        mockRefreshRecord,
+      );
+      (bcrypt.compare as jest.Mock).mockResolvedValue(true);
+      (bcrypt.hash as jest.Mock).mockResolvedValue('new-hashed-secret');
+      (jwtService.signAsync as jest.Mock).mockResolvedValue('new-access-token');
+      (prisma.refreshToken.create as jest.Mock).mockResolvedValue({});
+      (prisma.refreshToken.delete as jest.Mock).mockResolvedValue({});
+
+      const result = await service.refresh({
+        refreshToken: 'token-1.correct-secret',
+      });
+
+      expect(result).toEqual({
+        accessToken: 'new-access-token',
+        refreshToken: expect.any(String),
+      });
+      expect(prisma.refreshToken.delete).toHaveBeenCalledWith({
+        where: { tokenId: 'token-1' },
+      });
+      expect(prisma.refreshToken.create).toHaveBeenCalled();
+    });
+  });
 });
