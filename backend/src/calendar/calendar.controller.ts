@@ -1,4 +1,3 @@
-// src/calendar/calendar.controller.ts
 import {
   Body,
   Controller,
@@ -14,7 +13,7 @@ import { RolesGuard } from '@/auth/guard/roles.guard';
 import { Roles } from '@/auth/decorators/roles.decorator';
 import { CalendarService } from './calendar.service';
 import { GenerateCalendarDto } from './dto/generate-calendar.dto';
-import { DayType } from '@/generated/prisma/enums';
+import { OverrideDayDto } from './dto/override-day.dto';
 
 @ApiTags('calendar')
 @ApiBearerAuth()
@@ -40,10 +39,7 @@ export class CalendarController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('Admin')
   @Post('day/:date/override')
-  overrideDay(
-    @Param('date') date: string,
-    @Body() dto: { type: DayType; label?: string },
-  ) {
+  overrideDay(@Param('date') date: string, @Body() dto: OverrideDayDto) {
     return this.calendarService.overrideDay(date, dto.type, dto.label);
   }
 }

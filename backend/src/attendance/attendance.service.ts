@@ -138,8 +138,6 @@ export class AttendanceService {
   async getRoster(sectionId: string, date: string) {
     this.logger.log('[roster]');
 
-    // await this.assertTeacherOwnsSection(authId, sectionId);
-
     const dateObj = new Date(date);
 
     const calendarDay = await this.prisma.academicCalendarDay.findUnique({

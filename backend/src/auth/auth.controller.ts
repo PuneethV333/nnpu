@@ -6,8 +6,8 @@ import { CurrentUser } from './decorators/current-user.decorator';
 import type { JwtPayload } from './types/jwt-payload.type';
 import { ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { changePasswordDto } from './dto/change-password.dto';
-import { refreshDto } from '@/attendance/dto/get-me.dto';
 import { Throttle } from '@nestjs/throttler';
+import { refreshDto } from './dto/refresh.dto';
 
 @Controller('auth')
 export class AuthController {

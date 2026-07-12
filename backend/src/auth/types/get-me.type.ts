@@ -1,4 +1,4 @@
-import { Role } from '@/generated/prisma/browser';
+import { Role } from '@/generated/prisma/enums';
 import { z } from 'zod';
 
 export const loginSchema = z.object({

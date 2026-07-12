@@ -28,9 +28,9 @@ export class MarkAttendanceDto {
   @IsDateString()
   date!: string;
 
-  @ApiProperty({ type: [MarkAttendanceDto] })
+  @ApiProperty({ type: [MarkEntryDto] })
   @IsArray()
   @ValidateNested({ each: true })
-  @Type(() => MarkAttendanceDto)
+  @Type(() => MarkEntryDto)
   entries!: MarkEntryDto[];
 }
