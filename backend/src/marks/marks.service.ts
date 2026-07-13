@@ -2,6 +2,7 @@ import { LoggerService } from '@/logger/logger.service';
 import { PrismaService } from '@/prisma/prisma.service';
 import {
   BadRequestException,
+  ForbiddenException,
   Injectable,
   UnauthorizedException,
 } from '@nestjs/common';
@@ -15,22 +16,43 @@ export class MarksService {
     private readonly prisma: PrismaService,
   ) {}
 
-  private async resolveUserId(authId: string): Promise<string> {
+  private async resolveUser(
+    authId: string,
+  ): Promise<{ userId: string; role: string }> {
     const auth = await this.prisma.auth.findUnique({
       where: { authId },
-      select: { userId: true },
+      select: { userId: true, user: { select: { role: true } } },
     });
 
     if (!auth) {
       throw new UnauthorizedException('user not found');
     }
 
-    return auth.userId;
+    return { userId: auth.userId, role: auth.user.role };
+  }
+
+  private async assertAssignedTeacher(
+    sectionId: string,
+    subjectId: string,
+    userId: string,
+    role: string,
+  ): Promise<void> {
+    if (role === 'Admin') return;
+
+    const sectionSubject = await this.prisma.sectionSubject.findUnique({
+      where: { sectionId_subjectId: { sectionId, subjectId } },
+    });
+
+    if (!sectionSubject || sectionSubject.teacherId !== userId) {
+      throw new ForbiddenException(
+        'You are not the assigned teacher for this subject',
+      );
+    }
   }
 
   async createAssessment(dto: CreateAssessmentDto, authId: string) {
     this.logger.log('[create-assessment]');
-    await this.resolveUserId(authId);
+    const { userId, role } = await this.resolveUser(authId);
 
     const subject = await this.prisma.subject.findUnique({
       where: { id: dto.subjectId },
@@ -45,6 +67,13 @@ export class MarksService {
         `${subject.name} does not have a practical component`,
       );
     }
+
+    await this.assertAssignedTeacher(
+      dto.sectionId,
+      dto.subjectId,
+      userId,
+      role,
+    );
 
     return this.prisma.assessment.create({
       data: {
@@ -67,8 +96,8 @@ export class MarksService {
   }
 
   async enterMarks(dto: EnterMarksDto, authId: string) {
-    this.logger.log('[entre-marks]');
-    const teacherId = await this.resolveUserId(authId);
+    this.logger.log('[enter-marks]');
+    const { userId, role } = await this.resolveUser(authId);
 
     const assessment = await this.prisma.assessment.findUnique({
       where: { id: dto.assessmentId },
@@ -77,6 +106,13 @@ export class MarksService {
     if (!assessment) {
       throw new BadRequestException('Assessment not found');
     }
+
+    await this.assertAssignedTeacher(
+      assessment.sectionId,
+      assessment.subjectId,
+      userId,
+      role,
+    );
 
     const overMax = dto.entries.find(
       (e) => e.marksObtained > assessment.maxMarks,
@@ -100,14 +136,14 @@ export class MarksService {
           update: {
             marksObtained: entry.marksObtained,
             remarks: entry.remarks,
-            enteredById: teacherId,
+            enteredById: userId,
           },
           create: {
             studentId: entry.studentId,
             assessmentId: dto.assessmentId,
             marksObtained: entry.marksObtained,
             remarks: entry.remarks,
-            enteredById: teacherId,
+            enteredById: userId,
           },
         }),
       ),
@@ -118,7 +154,7 @@ export class MarksService {
 
   async getMyMarks(authId: string, subjectId?: string) {
     this.logger.log('[my-marks]');
-    const studentId = await this.resolveUserId(authId);
+    const { userId: studentId } = await this.resolveUser(authId);
 
     return this.prisma.mark.findMany({
       where: {
@@ -130,8 +166,17 @@ export class MarksService {
     });
   }
 
-  async getFinalReport(studentId: string, subjectId: string) {
+  async getFinalReport(studentId: string, subjectId: string, authId: string) {
     this.logger.log('[final-report]');
+    const { userId, role } = await this.resolveUser(authId);
+
+    const isSelf = role === 'Student' && userId === studentId;
+    const isStaff = role === 'Teacher' || role === 'Admin';
+
+    if (!isSelf && !isStaff) {
+      throw new ForbiddenException('You are not allowed to view this report');
+    }
+
     const marks = await this.prisma.mark.findMany({
       where: {
         studentId,

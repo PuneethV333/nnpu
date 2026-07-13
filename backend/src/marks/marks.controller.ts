@@ -75,7 +75,8 @@ export class MarksController {
   getFinalReport(
     @Param('studentId') studentId: string,
     @Param('subjectId') subjectId: string,
+    @CurrentUser() user: JwtPayload,
   ) {
-    return this.marksService.getFinalReport(studentId, subjectId);
+    return this.marksService.getFinalReport(studentId, subjectId, user.authId);
   }
 }

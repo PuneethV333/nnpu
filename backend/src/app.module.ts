@@ -15,6 +15,7 @@ import { APP_GUARD } from '@nestjs/core';
 import { ScheduleModule } from '@nestjs/schedule';
 import { FirebaseModule } from './firebase/firebase.module';
 import { MarksModule } from './marks/marks.module';
+import { FeesModule } from './fees/fees.module';
 
 @Module({
   imports: [
@@ -32,6 +33,8 @@ import { MarksModule } from './marks/marks.module';
         FIREBASE_PROJECT_ID: Joi.string().required(),
         FIREBASE_CLIENT_EMAIL: Joi.string().required(),
         FIREBASE_PRIVATE_KEY: Joi.string().required(),
+        RAZORPAY_KEY_ID: Joi.string().required(),
+        RAZORPAY_KEY_SECRET: Joi.string().required(),
       }),
     }),
     ThrottlerModule.forRoot([
@@ -51,6 +54,7 @@ import { MarksModule } from './marks/marks.module';
     NotificationModule,
     FirebaseModule,
     MarksModule,
+    FeesModule,
     // ... other feature modules
   ],
   controllers: [AppController],

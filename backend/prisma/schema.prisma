@@ -51,8 +51,10 @@ model User {
   studentMarks       Mark[]           @relation("StudentMarks")
   enteredMarks       Mark[]           @relation("MarksEnteredBy")
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  invoices  Invoice[]
+  payments  Payment[]
 }
 
 model Auth {
@@ -99,8 +101,9 @@ model AcademicYear {
   endDate   DateTime  @db.Date
   sections  Section[]
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  feeStructures FeeStructure[]
 }
 
 model Class {
@@ -159,9 +162,10 @@ model Section {
   subjects    SectionSubject[]
   attendances Attendance[]
 
-  createdAt   DateTime     @default(now())
-  updatedAt   DateTime     @updatedAt
-  assessments Assessment[]
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  assessments   Assessment[]
+  feeStructures FeeStructure[]
 
   @@unique([classId, combinationId, language, session, academicYearId])
 }
@@ -325,4 +329,76 @@ model Mark {
 
   @@unique([studentId, assessmentId])
   @@index([studentId])
+}
+
+enum InvoiceStatus {
+  Pending
+  Partial
+  Paid
+}
+
+enum PaymentStatus {
+  Pending
+  Success
+  Failed
+}
+
+model FeeStructure {
+  id             String       @id @default(cuid())
+  sectionId      String
+  section        Section      @relation(fields: [sectionId], references: [id])
+  academicYearId String
+  academicYear   AcademicYear @relation(fields: [academicYearId], references: [id])
+
+  tuitionFee   Int
+  examFee      Int @default(0)
+  transportFee Int @default(0)
+  hostelFee    Int @default(0)
+  otherFee     Int @default(0)
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  invoices  Invoice[]
+
+  @@unique([sectionId, academicYearId])
+}
+
+model Invoice {
+  id             String       @id @default(cuid())
+  studentId      String
+  student        User         @relation(fields: [studentId], references: [id])
+  feeStructureId String
+  feeStructure   FeeStructure @relation(fields: [feeStructureId], references: [id])
+
+  totalAmount Int
+  paidAmount  Int           @default(0)
+  status      InvoiceStatus @default(Pending)
+  dueDate     DateTime      @db.Date
+  description String?
+
+  payments Payment[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([studentId, feeStructureId])
+}
+
+model Payment {
+  id                String        @id @default(cuid())
+  invoice           Invoice       @relation(fields: [invoiceId], references: [id])
+  invoiceId         String
+  student           User?         @relation(fields: [studentId], references: [id])
+  studentId         String?
+  amount            Int
+  razorpayOrderId   String?       @unique
+  razorpayPaymentId String?       @unique
+  razorpaySignature String?
+  status            PaymentStatus @default(Pending)
+  paidAt            DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([invoiceId])
 }
