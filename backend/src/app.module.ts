@@ -14,6 +14,7 @@ import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { APP_GUARD } from '@nestjs/core';
 import { ScheduleModule } from '@nestjs/schedule';
 import { FirebaseModule } from './firebase/firebase.module';
+import { MarksModule } from './marks/marks.module';
 
 @Module({
   imports: [
@@ -49,6 +50,7 @@ import { FirebaseModule } from './firebase/firebase.module';
     AttendanceModule,
     NotificationModule,
     FirebaseModule,
+    MarksModule,
     // ... other feature modules
   ],
   controllers: [AppController],
