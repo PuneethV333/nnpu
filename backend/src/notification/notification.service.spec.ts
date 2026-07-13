@@ -20,6 +20,7 @@ describe('NotificationService', () => {
           useValue: {
             auth: { findUnique: jest.fn() },
             notification: { findMany: jest.fn(), updateMany: jest.fn() },
+            deviceToken: { upsert: jest.fn() },
           },
         },
         {
@@ -94,6 +95,48 @@ describe('NotificationService', () => {
       expect(prisma.notification.updateMany).toHaveBeenCalledWith({
         where: { id: 'notif-1', userId: mockAuth.userId },
         data: { isRead: true },
+      });
+    });
+  });
+
+  describe('registerDevice', () => {
+    it('throws UnauthorizedException if auth record not found', async () => {
+      (prisma.auth.findUnique as jest.Mock).mockResolvedValue(null);
+
+      await expect(
+        service.registerDevice('missing', {
+          token: 'device-token',
+          platform: 'android',
+        }),
+      ).rejects.toThrow(UnauthorizedException);
+    });
+
+    it('upserts the device token for the resolved user', async () => {
+      (prisma.auth.findUnique as jest.Mock).mockResolvedValue(mockAuth);
+      const mockDeviceToken = {
+        id: 'dt1',
+        userId: mockAuth.userId,
+        token: 'device-token',
+        platform: 'android',
+      };
+      (prisma.deviceToken.upsert as jest.Mock).mockResolvedValue(
+        mockDeviceToken,
+      );
+
+      const result = await service.registerDevice('nnputeacher1', {
+        token: 'device-token',
+        platform: 'android',
+      });
+
+      expect(result).toEqual(mockDeviceToken);
+      expect(prisma.deviceToken.upsert).toHaveBeenCalledWith({
+        where: { token: 'device-token' },
+        update: { userId: mockAuth.userId, platform: 'android' },
+        create: {
+          userId: mockAuth.userId,
+          token: 'device-token',
+          platform: 'android',
+        },
       });
     });
   });

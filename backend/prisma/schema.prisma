@@ -47,6 +47,7 @@ model User {
   markedAttendances  Attendance[]     @relation("MarkedByTeacher")
   classTeacherOf     Section?         @relation("ClassTeacherOf")
   notifications      Notification[]
+  deviceTokens       DeviceToken[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -255,4 +256,22 @@ model RefreshToken {
   createdAt DateTime @default(now())
 
   @@index([authId])
+}
+
+enum Platform {
+  android
+  ios
+}
+
+model DeviceToken {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id])
+  token String @unique
+  platform Platform
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  @@index([userId])
 }

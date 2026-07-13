@@ -6,9 +6,16 @@ import { LoggerModule } from '@/logger/logger.module';
 import { RedisModule } from '@/redis/redis.module';
 import { AuthModule } from '@/auth/auth.module';
 import { AttendanceReminderService } from './attendance-reminder.service';
+import { FirebaseModule } from '@/firebase/firebase.module';
 
 @Module({
-  imports: [PrismaModule, LoggerModule, RedisModule, AuthModule],
+  imports: [
+    PrismaModule,
+    LoggerModule,
+    RedisModule,
+    AuthModule,
+    FirebaseModule,
+  ],
   controllers: [AttendanceController],
   providers: [AttendanceService, AttendanceReminderService],
 })

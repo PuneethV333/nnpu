@@ -1,6 +1,7 @@
 import { LoggerService } from '@/logger/logger.service';
 import { PrismaService } from '@/prisma/prisma.service';
 import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { RegisterDeviceDto } from './dto/register-device.dto';
 
 @Injectable()
 export class NotificationService {
@@ -41,5 +42,24 @@ export class NotificationService {
       where: { id: notificationId, userId: auth.userId },
       data: { isRead: true },
     });
+  }
+
+  async registerDevice(authId: string, dto: RegisterDeviceDto) {
+    const auth = await this.prisma.auth.findUnique({
+      where: { authId },
+      select: { userId: true },
+    });
+
+    if (!auth) {
+      throw new UnauthorizedException('user not found');
+    }
+
+    const res = await this.prisma.deviceToken.upsert({
+      where: { token: dto.token },
+      update: { userId: auth.userId, platform: dto.platform },
+      create: { userId: auth.userId, token: dto.token, platform: dto.platform },
+    });
+
+    return res;
   }
 }

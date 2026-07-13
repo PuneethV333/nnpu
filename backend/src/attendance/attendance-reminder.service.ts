@@ -2,12 +2,14 @@ import { Injectable } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { PrismaService } from '@/prisma/prisma.service';
 import { LoggerService } from '@/logger/logger.service';
+import { FirebaseService } from '@/firebase/firebase.service';
 
 @Injectable()
 export class AttendanceReminderService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly logger: LoggerService,
+    private readonly firebase: FirebaseService,
   ) {}
 
   @Cron('30 9 * * 1-6') // 9:30 AM, Mon–Sat — adjust to your school week
@@ -63,6 +65,42 @@ export class AttendanceReminderService {
         body: `Attendance for ${s.class.name}-${s.name} hasn't been marked yet.`,
       })),
     });
+
+    const teacherIds = pending.map((s) => s.classTeacherId as string);
+    const deviceTokens = await this.prisma.deviceToken.findMany({
+      where: { userId: { in: teacherIds } },
+    });
+
+    const tokensByTeacher = new Map<string, string[]>();
+    for (const dt of deviceTokens) {
+      const list = tokensByTeacher.get(dt.userId) ?? [];
+      list.push(dt.token);
+      tokensByTeacher.set(dt.userId, list);
+    }
+
+    const results = await Promise.all(
+      pending.map((s) => {
+        const tokens = tokensByTeacher.get(s.classTeacherId as string) ?? [];
+        return this.firebase.sendPush(
+          tokens,
+          'Attendance not taken',
+          `${s.class.name}-${s.name} attendance is pending.`,
+        );
+      }),
+    );
+
+    const allInvalidTokens = results
+      .filter((r): r is NonNullable<typeof r> => !!r)
+      .flatMap((r) => r.invalidTokens);
+
+    if (allInvalidTokens.length > 0) {
+      await this.prisma.deviceToken.deleteMany({
+        where: { token: { in: allInvalidTokens } },
+      });
+      this.logger.log(
+        `[attendance-reminder] cleaned up ${allInvalidTokens.length} invalid device tokens`,
+      );
+    }
 
     this.logger.log(
       `[attendance-reminder] notified ${pending.length} class teachers`,

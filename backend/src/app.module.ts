@@ -13,6 +13,7 @@ import { NotificationModule } from './notification/notification.module';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { APP_GUARD } from '@nestjs/core';
 import { ScheduleModule } from '@nestjs/schedule';
+import { FirebaseModule } from './firebase/firebase.module';
 
 @Module({
   imports: [
@@ -27,6 +28,9 @@ import { ScheduleModule } from '@nestjs/schedule';
         PORT: Joi.number().default(5000),
         NODE_ENV: Joi.string().required(),
         REDIS_URL: Joi.string().required(),
+        FIREBASE_PROJECT_ID: Joi.string().required(),
+        FIREBASE_CLIENT_EMAIL: Joi.string().required(),
+        FIREBASE_PRIVATE_KEY: Joi.string().required(),
       }),
     }),
     ThrottlerModule.forRoot([
@@ -44,6 +48,7 @@ import { ScheduleModule } from '@nestjs/schedule';
     CalendarModule,
     AttendanceModule,
     NotificationModule,
+    FirebaseModule,
     // ... other feature modules
   ],
   controllers: [AppController],
