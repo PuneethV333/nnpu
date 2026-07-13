@@ -48,6 +48,8 @@ model User {
   classTeacherOf     Section?         @relation("ClassTeacherOf")
   notifications      Notification[]
   deviceTokens       DeviceToken[]
+  studentMarks       Mark[]           @relation("StudentMarks")
+  enteredMarks       Mark[]           @relation("MarksEnteredBy")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -157,16 +159,20 @@ model Section {
   subjects    SectionSubject[]
   attendances Attendance[]
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  assessments Assessment[]
 
   @@unique([classId, combinationId, language, session, academicYearId])
 }
 
 model Subject {
-  id       String           @id @default(cuid())
-  name     String           @unique
-  sections SectionSubject[]
+  id           String  @id @default(cuid())
+  name         String  @unique
+  hasPractical Boolean @default(false)
+
+  sections    SectionSubject[]
+  assessments Assessment[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -264,14 +270,59 @@ enum Platform {
 }
 
 model DeviceToken {
-  id     String @id @default(cuid())
-  userId String
-  user   User   @relation(fields: [userId], references: [id])
-  token String @unique
+  id       String   @id @default(cuid())
+  userId   String
+  user     User     @relation(fields: [userId], references: [id])
+  token    String   @unique
   platform Platform
-  
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
-  
+
   @@index([userId])
+}
+
+enum AssessmentCategory {
+  UnitTest
+  MidTerm
+  FinalTheory
+  FinalPractical
+  Internal
+}
+
+model Assessment {
+  id        String             @id @default(cuid())
+  name      String
+  category  AssessmentCategory
+  subjectId String
+  subject   Subject            @relation(fields: [subjectId], references: [id])
+  sectionId String
+  section   Section            @relation(fields: [sectionId], references: [id])
+  maxMarks  Int
+  date      DateTime?          @db.Date
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  marks Mark[]
+
+  @@index([sectionId, subjectId])
+}
+
+model Mark {
+  id            String     @id @default(cuid())
+  student       User       @relation("StudentMarks", fields: [studentId], references: [id])
+  studentId     String
+  assessment    Assessment @relation(fields: [assessmentId], references: [id])
+  assessmentId  String
+  marksObtained Float
+  remarks       String?
+  enteredBy     User?      @relation("MarksEnteredBy", fields: [enteredById], references: [id])
+  enteredById   String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([studentId, assessmentId])
+  @@index([studentId])
 }
