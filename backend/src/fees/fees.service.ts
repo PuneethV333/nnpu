@@ -266,6 +266,7 @@ export class FeesService {
     await this.prisma.payment.create({
       data: {
         invoiceId,
+        method: 'RAZORPAY',
         studentId: invoice.studentId,
         amount: pendingAmount,
         razorpayOrderId: order.id,
@@ -290,7 +291,6 @@ export class FeesService {
       razorpay_payment_id,
       razorpay_signature,
     );
-
     if (!isValid) {
       this.logger.error('Razorpay signature verification failed');
       throw new BadRequestException('Invalid signature');
@@ -300,10 +300,19 @@ export class FeesService {
       where: { razorpayOrderId: razorpay_order_id },
       include: { invoice: true },
     });
-
     if (!payment) throw new NotFoundException('Payment record not found');
 
-    if (payment.status === 'Success') {
+    const claim = await this.prisma.payment.updateMany({
+      where: { id: payment.id, status: { not: 'Success' } },
+      data: {
+        razorpayPaymentId: razorpay_payment_id,
+        razorpaySignature: razorpay_signature,
+        status: 'Success',
+        paidAt: new Date(),
+      },
+    });
+
+    if (claim.count === 0) {
       this.logger.log(
         `Payment ${razorpay_payment_id} already processed — skipping`,
       );
@@ -314,29 +323,14 @@ export class FeesService {
     const newStatus =
       newPaidAmount >= payment.invoice.totalAmount ? 'Paid' : 'Partial';
 
-    await this.prisma.$transaction([
-      this.prisma.payment.update({
-        where: { id: payment.id },
-        data: {
-          razorpayPaymentId: razorpay_payment_id,
-          razorpaySignature: razorpay_signature,
-          status: 'Success',
-          paidAt: new Date(),
-        },
-      }),
-      this.prisma.invoice.update({
-        where: { id: payment.invoiceId },
-        data: {
-          paidAmount: { increment: payment.amount },
-          status: newStatus,
-        },
-      }),
-    ]);
+    await this.prisma.invoice.update({
+      where: { id: payment.invoiceId },
+      data: { paidAmount: { increment: payment.amount }, status: newStatus },
+    });
 
     this.logger.log(
       `Payment successful: ${razorpay_payment_id} for invoice ${payment.invoiceId}`,
     );
-
     return { alreadyProcessed: false };
   }
 }

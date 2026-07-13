@@ -384,21 +384,39 @@ model Invoice {
   @@unique([studentId, feeStructureId])
 }
 
+enum PaymentMethod {
+  RAZORPAY
+  CASH
+  UPI
+  CHEQUE
+  BANK_TRANSFER
+}
+
 model Payment {
-  id                String        @id @default(cuid())
-  invoice           Invoice       @relation(fields: [invoiceId], references: [id])
-  invoiceId         String
-  student           User?         @relation(fields: [studentId], references: [id])
-  studentId         String?
-  amount            Int
-  razorpayOrderId   String?       @unique
-  razorpayPaymentId String?       @unique
+  id String @id @default(cuid())
+
+  invoiceId String
+  invoice   Invoice @relation(fields: [invoiceId], references: [id])
+
+  studentId String
+  student   User   @relation(fields: [studentId], references: [id])
+
+  amount Int
+
+  method PaymentMethod
+  status PaymentStatus @default(Pending)
+
+  reference String?
+
+  razorpayOrderId   String? @unique
+  razorpayPaymentId String? @unique
   razorpaySignature String?
-  status            PaymentStatus @default(Pending)
-  paidAt            DateTime?
+
+  paidAt DateTime?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@index([invoiceId])
+  @@index([studentId])
 }
