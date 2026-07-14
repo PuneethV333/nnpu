@@ -1,13 +1,18 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Get,
+  Headers,
   Param,
   Patch,
   Post,
   Query,
+  Req,
   UseGuards,
 } from '@nestjs/common';
+import type { RawBodyRequest } from '@nestjs/common';
+
 import { FeesService } from './fees.service';
 import { JwtAuthGuard } from '@/auth/guard/jwt-auth.guard';
 import { RolesGuard } from '@/auth/guard/roles.guard';
@@ -19,6 +24,7 @@ import { GenerateInvoicesDto } from './dto/generate-invoices.dto';
 import { HandleRazorpayWebhookDto } from './dto/handle-razorpay-webhook.dto';
 import type { JwtPayload } from '@/auth/types/jwt-payload.type';
 import { CurrentUser } from '@/auth/decorators/current-user.decorator';
+import { Request } from 'express';
 
 @Controller('fees')
 export class FeesController {
@@ -102,12 +108,6 @@ export class FeesController {
     return this.feesService.createPaymentOrder(id, user.authId);
   }
 
-  // NOTE: this verifies the client-side checkout callback signature
-  // (order_id|payment_id HMAC), which is why it's authenticated like any
-  // other user action. If you instead want Razorpay's servers calling you
-  // directly on a true webhook, that endpoint must be PUBLIC (no JWT) and
-  // verify the raw request body against X-Razorpay-Signature using your
-  // webhook secret — don't reuse this guard setup for that case.
   @UseGuards(JwtAuthGuard)
   @Post('payments/verify')
   @ApiOperation({
@@ -115,5 +115,19 @@ export class FeesController {
   })
   verifyPayment(@Body() dto: HandleRazorpayWebhookDto) {
     return this.feesService.verifyPayment(dto);
+  }
+
+  @Post('webhook/razorpay')
+  @ApiOperation({
+    summary: 'Razorpay server-to-server webhook (public, signature-verified)',
+  })
+  handleWebhook(
+    @Req() req: RawBodyRequest<Request>,
+    @Headers('x-razorpay-signature') signature: string,
+  ) {
+    if (!req.rawBody) {
+      throw new BadRequestException('Missing raw body');
+    }
+    return this.feesService.handleWebhookEvent(req.rawBody, signature);
   }
 }

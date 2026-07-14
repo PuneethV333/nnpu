@@ -1,3 +1,5 @@
+/* eslint-disable @typescript-eslint/no-unsafe-member-access */
+/* eslint-disable @typescript-eslint/no-unsafe-assignment */
 import { LoggerService } from '@/logger/logger.service';
 import { PrismaService } from '@/prisma/prisma.service';
 import {
@@ -15,6 +17,7 @@ import { RazorpayService } from './razorpay.service';
 import { Role } from '@/generated/prisma/enums';
 import { ConfigService } from '@nestjs/config';
 import { HandleRazorpayWebhookDto } from './dto/handle-razorpay-webhook.dto';
+import { createHmac } from 'crypto';
 
 @Injectable()
 export class FeesService {
@@ -332,5 +335,82 @@ export class FeesService {
       `Payment successful: ${razorpay_payment_id} for invoice ${payment.invoiceId}`,
     );
     return { alreadyProcessed: false };
+  }
+
+  async handleWebhookEvent(rawBody: Buffer, signature: string) {
+    this.logger.log('[razorpay-webhook] received');
+
+    const expectedSignature = createHmac(
+      'sha256',
+      this.config.get<string>('RAZORPAY_WEBHOOK_SECRET')!,
+    )
+      .update(rawBody)
+      .digest('hex');
+
+    if (expectedSignature !== signature) {
+      this.logger.error('[razorpay-webhook] invalid signature');
+      throw new BadRequestException('Invalid webhook signature');
+    }
+
+    const event = JSON.parse(rawBody.toString('utf8'));
+
+    if (event.event !== 'payment.captured') {
+      this.logger.log(`[razorpay-webhook] ignoring event type: ${event.event}`);
+      return { received: true };
+    }
+
+    const paymentEntity = event.payload?.payment?.entity;
+    const orderId = paymentEntity?.order_id;
+    const paymentId = paymentEntity?.id;
+
+    if (!orderId || !paymentId) {
+      this.logger.error(
+        '[razorpay-webhook] malformed payload, missing order_id/payment_id',
+      );
+      return { received: true };
+    }
+
+    const payment = await this.prisma.payment.findFirst({
+      where: { razorpayOrderId: orderId },
+      include: { invoice: true },
+    });
+
+    if (!payment) {
+      this.logger.error(
+        `[razorpay-webhook] no payment record for order ${orderId}`,
+      );
+      return { received: true };
+    }
+
+    const claim = await this.prisma.payment.updateMany({
+      where: { id: payment.id, status: { not: 'Success' } },
+      data: {
+        razorpayPaymentId: paymentId as string,
+        status: 'Success',
+        paidAt: new Date(),
+      },
+    });
+
+    if (claim.count === 0) {
+      this.logger.log(
+        `[razorpay-webhook] payment ${paymentId} already processed — skipping`,
+      );
+      return { received: true };
+    }
+
+    const newPaidAmount = payment.invoice.paidAmount + payment.amount;
+    const newStatus =
+      newPaidAmount >= payment.invoice.totalAmount ? 'Paid' : 'Partial';
+
+    await this.prisma.invoice.update({
+      where: { id: payment.invoiceId },
+      data: { paidAmount: { increment: payment.amount }, status: newStatus },
+    });
+
+    this.logger.log(
+      `[razorpay-webhook] payment confirmed: ${paymentId} for invoice ${payment.invoiceId}`,
+    );
+
+    return { received: true };
   }
 }

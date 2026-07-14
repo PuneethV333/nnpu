@@ -35,6 +35,7 @@ import { FeesModule } from './fees/fees.module';
         FIREBASE_PRIVATE_KEY: Joi.string().required(),
         RAZORPAY_KEY_ID: Joi.string().required(),
         RAZORPAY_KEY_SECRET: Joi.string().required(),
+        RAZORPAY_WEBHOOK_SECRET: Joi.string().required(),
       }),
     }),
     ThrottlerModule.forRoot([

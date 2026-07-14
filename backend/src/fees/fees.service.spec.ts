@@ -15,6 +15,7 @@ import { FeesService } from './fees.service';
 import { LoggerService } from '@/logger/logger.service';
 import { PrismaService } from '@/prisma/prisma.service';
 import { RazorpayService } from './razorpay.service';
+import { createHmac } from 'crypto';
 
 describe('FeesService', () => {
   let service: FeesService;
@@ -407,7 +408,7 @@ describe('FeesService', () => {
         invoiceId: 'inv-1',
         invoice: { paidAmount: 100, totalAmount: 100 },
       });
-      // simulates: another request already flipped status to Success first
+
       mockPrisma.payment.updateMany.mockResolvedValue({ count: 0 });
 
       const result = await service.verifyPayment(payload);
@@ -458,6 +459,125 @@ describe('FeesService', () => {
         data: { paidAmount: { increment: 40 }, status: 'Partial' },
       });
       expect(result).toEqual({ alreadyProcessed: false });
+    });
+  });
+
+  // fees.service.spec.ts — add this describe block alongside the existing ones
+
+  describe('handleWebhookEvent', () => {
+    const validPayload = {
+      event: 'payment.captured',
+      payload: {
+        payment: {
+          entity: {
+            id: 'pay_webhook_1',
+            order_id: 'order_1',
+          },
+        },
+      },
+    };
+
+    const rawBody = (obj: unknown) => Buffer.from(JSON.stringify(obj), 'utf8');
+
+    const signBody = (body: Buffer, secret: string) =>
+      createHmac('sha256', secret).update(body).digest('hex');
+
+    beforeEach(() => {
+      mockConfig.get.mockImplementation((key: string) => {
+        if (key === 'RAZORPAY_WEBHOOK_SECRET') return 'test-webhook-secret';
+        return undefined;
+      });
+    });
+
+    it('throws BadRequestException on an invalid signature', async () => {
+      const body = rawBody(validPayload);
+
+      await expect(
+        service.handleWebhookEvent(body, 'wrong-signature'),
+      ).rejects.toThrow(BadRequestException);
+      expect(mockPrisma.payment.findFirst).not.toHaveBeenCalled();
+    });
+
+    it('acknowledges but ignores non-payment.captured events', async () => {
+      const body = rawBody({ ...validPayload, event: 'payment.failed' });
+      const signature = signBody(body, 'test-webhook-secret');
+
+      const result = await service.handleWebhookEvent(body, signature);
+
+      expect(result).toEqual({ received: true });
+      expect(mockPrisma.payment.findFirst).not.toHaveBeenCalled();
+    });
+
+    it('acknowledges without throwing if the payload is malformed (missing order_id)', async () => {
+      const malformed = {
+        event: 'payment.captured',
+        payload: { payment: { entity: { id: 'pay_1' } } }, // no order_id
+      };
+      const body = rawBody(malformed);
+      const signature = signBody(body, 'test-webhook-secret');
+
+      const result = await service.handleWebhookEvent(body, signature);
+
+      expect(result).toEqual({ received: true });
+      expect(mockPrisma.payment.findFirst).not.toHaveBeenCalled();
+    });
+
+    it('acknowledges if no matching payment record is found for the order id', async () => {
+      const body = rawBody(validPayload);
+      const signature = signBody(body, 'test-webhook-secret');
+      mockPrisma.payment.findFirst.mockResolvedValue(null);
+
+      const result = await service.handleWebhookEvent(body, signature);
+
+      expect(result).toEqual({ received: true });
+      expect(mockPrisma.payment.updateMany).not.toHaveBeenCalled();
+    });
+
+    it('is idempotent: no-ops if the payment was already marked Success (e.g., client-verify won the race)', async () => {
+      const body = rawBody(validPayload);
+      const signature = signBody(body, 'test-webhook-secret');
+
+      mockPrisma.payment.findFirst.mockResolvedValue({
+        id: 'p-1',
+        amount: 100,
+        invoiceId: 'inv-1',
+        invoice: { paidAmount: 100, totalAmount: 100 },
+      });
+      mockPrisma.payment.updateMany.mockResolvedValue({ count: 0 });
+
+      const result = await service.handleWebhookEvent(body, signature);
+
+      expect(result).toEqual({ received: true });
+      expect(mockPrisma.invoice.update).not.toHaveBeenCalled();
+    });
+
+    it('confirms the payment and updates the invoice when the webhook wins the race', async () => {
+      const body = rawBody(validPayload);
+      const signature = signBody(body, 'test-webhook-secret');
+
+      mockPrisma.payment.findFirst.mockResolvedValue({
+        id: 'p-1',
+        amount: 100,
+        invoiceId: 'inv-1',
+        invoice: { paidAmount: 0, totalAmount: 100 },
+      });
+      mockPrisma.payment.updateMany.mockResolvedValue({ count: 1 });
+      mockPrisma.invoice.update.mockResolvedValue({});
+
+      const result = await service.handleWebhookEvent(body, signature);
+
+      expect(mockPrisma.payment.updateMany).toHaveBeenCalledWith({
+        where: { id: 'p-1', status: { not: 'Success' } },
+        data: expect.objectContaining({
+          razorpayPaymentId: 'pay_webhook_1',
+          status: 'Success',
+        }),
+      });
+      expect(mockPrisma.invoice.update).toHaveBeenCalledWith({
+        where: { id: 'inv-1' },
+        data: { paidAmount: { increment: 100 }, status: 'Paid' },
+      });
+      expect(result).toEqual({ received: true });
     });
   });
 });
