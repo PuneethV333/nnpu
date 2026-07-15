@@ -16,6 +16,7 @@ import { ScheduleModule } from '@nestjs/schedule';
 import { FirebaseModule } from './firebase/firebase.module';
 import { MarksModule } from './marks/marks.module';
 import { FeesModule } from './fees/fees.module';
+import { ReportCardModule } from './report-card/report-card.module';
 
 @Module({
   imports: [
@@ -56,6 +57,7 @@ import { FeesModule } from './fees/fees.module';
     FirebaseModule,
     MarksModule,
     FeesModule,
+    ReportCardModule,
     // ... other feature modules
   ],
   controllers: [AppController],

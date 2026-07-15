@@ -54,6 +54,13 @@ export class MarksService {
     this.logger.log('[create-assessment]');
     const { userId, role } = await this.resolveUser(authId);
 
+    await this.assertAssignedTeacher(
+      dto.sectionId,
+      dto.subjectId,
+      userId,
+      role,
+    );
+
     const subject = await this.prisma.subject.findUnique({
       where: { id: dto.subjectId },
     });
@@ -67,13 +74,6 @@ export class MarksService {
         `${subject.name} does not have a practical component`,
       );
     }
-
-    await this.assertAssignedTeacher(
-      dto.sectionId,
-      dto.subjectId,
-      userId,
-      role,
-    );
 
     return this.prisma.assessment.create({
       data: {

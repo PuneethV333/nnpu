@@ -51,10 +51,11 @@ model User {
   studentMarks       Mark[]           @relation("StudentMarks")
   enteredMarks       Mark[]           @relation("MarksEnteredBy")
 
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
-  invoices  Invoice[]
-  payments  Payment[]
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  invoices    Invoice[]
+  payments    Payment[]
+  reportCards ReportCard[]
 }
 
 model Auth {
@@ -104,6 +105,7 @@ model AcademicYear {
   createdAt     DateTime       @default(now())
   updatedAt     DateTime       @updatedAt
   feeStructures FeeStructure[]
+  reportCards   ReportCard[]
 }
 
 model Class {
@@ -419,4 +421,27 @@ model Payment {
 
   @@index([invoiceId])
   @@index([studentId])
+}
+
+enum ReportCardStatus {
+  Pending
+  Processing
+  Ready
+  Failed
+}
+
+model ReportCard {
+  id             String           @id @default(cuid())
+  studentId      String
+  student        User             @relation(fields: [studentId], references: [id])
+  academicYearId String
+  academicYear   AcademicYear     @relation(fields: [academicYearId], references: [id])
+  status         ReportCardStatus @default(Pending)
+  url            String?
+  failureReason  String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([studentId, academicYearId])
 }

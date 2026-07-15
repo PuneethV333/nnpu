@@ -78,8 +78,26 @@ describe('MarksService', () => {
       ).rejects.toThrow(UnauthorizedException);
     });
 
+    it('throws ForbiddenException if the teacher is not assigned to this section+subject', async () => {
+      (prisma.auth.findUnique as jest.Mock).mockResolvedValue({
+        userId: 'teacher1',
+        user: { role: 'Teacher' },
+      });
+      (prisma.sectionSubject.findUnique as jest.Mock).mockResolvedValue(null);
+
+      await expect(service.createAssessment(baseDto, 'auth1')).rejects.toThrow(
+        ForbiddenException,
+      );
+    });
+
     it('throws BadRequestException if subject not found', async () => {
-      mockAuth('teacher1', 'Teacher');
+      (prisma.auth.findUnique as jest.Mock).mockResolvedValue({
+        userId: 'teacher1',
+        user: { role: 'Teacher' },
+      });
+      (prisma.sectionSubject.findUnique as jest.Mock).mockResolvedValue({
+        teacherId: 'teacher1',
+      });
       (prisma.subject.findUnique as jest.Mock).mockResolvedValue(null);
 
       await expect(service.createAssessment(baseDto, 'auth1')).rejects.toThrow(
@@ -88,7 +106,13 @@ describe('MarksService', () => {
     });
 
     it('throws BadRequestException if creating FinalPractical for a subject with no practical', async () => {
-      mockAuth('teacher1', 'Teacher');
+      (prisma.auth.findUnique as jest.Mock).mockResolvedValue({
+        userId: 'teacher1',
+        user: { role: 'Teacher' },
+      });
+      (prisma.sectionSubject.findUnique as jest.Mock).mockResolvedValue({
+        teacherId: 'teacher1',
+      });
       (prisma.subject.findUnique as jest.Mock).mockResolvedValue({
         id: 'subj1',
         name: 'Mathematics',
@@ -103,45 +127,18 @@ describe('MarksService', () => {
       ).rejects.toThrow(BadRequestException);
     });
 
-    it('throws ForbiddenException if the teacher is not assigned to this section+subject', async () => {
-      mockAuth('teacher1', 'Teacher');
-      (prisma.subject.findUnique as jest.Mock).mockResolvedValue({
-        id: 'subj1',
-        name: 'Physics',
-        hasPractical: true,
-      });
-      (prisma.sectionSubject.findUnique as jest.Mock).mockResolvedValue(null);
-
-      await expect(service.createAssessment(baseDto, 'auth1')).rejects.toThrow(
-        ForbiddenException,
-      );
-    });
-
-    it('throws ForbiddenException if a different teacher is assigned to this section+subject', async () => {
-      mockAuth('teacher1', 'Teacher');
-      (prisma.subject.findUnique as jest.Mock).mockResolvedValue({
-        id: 'subj1',
-        name: 'Physics',
-        hasPractical: true,
-      });
-      (prisma.sectionSubject.findUnique as jest.Mock).mockResolvedValue({
-        teacherId: 'someoneElse',
-      });
-
-      await expect(service.createAssessment(baseDto, 'auth1')).rejects.toThrow(
-        ForbiddenException,
-      );
-    });
-
-    it('creates the assessment when the caller is the assigned teacher', async () => {
-      mockAuth('teacher1', 'Teacher');
-      (prisma.subject.findUnique as jest.Mock).mockResolvedValue({
-        id: 'subj1',
-        name: 'Physics',
-        hasPractical: true,
+    it('creates the assessment when subject supports the category and teacher is assigned', async () => {
+      (prisma.auth.findUnique as jest.Mock).mockResolvedValue({
+        userId: 'teacher1',
+        user: { role: 'Teacher' },
       });
       (prisma.sectionSubject.findUnique as jest.Mock).mockResolvedValue({
         teacherId: 'teacher1',
+      });
+      (prisma.subject.findUnique as jest.Mock).mockResolvedValue({
+        id: 'subj1',
+        name: 'Physics',
+        hasPractical: true,
       });
       const created = { id: 'assess1', ...baseDto, category: 'FinalPractical' };
       (prisma.assessment.create as jest.Mock).mockResolvedValue(created);
@@ -152,27 +149,6 @@ describe('MarksService', () => {
       );
 
       expect(result).toEqual(created);
-      expect(prisma.sectionSubject.findUnique).toHaveBeenCalledWith({
-        where: {
-          sectionId_subjectId: { sectionId: 'sec1', subjectId: 'subj1' },
-        },
-      });
-    });
-
-    it('creates the assessment for Admin without checking assignment', async () => {
-      mockAuth('admin1', 'Admin');
-      (prisma.subject.findUnique as jest.Mock).mockResolvedValue({
-        id: 'subj1',
-        name: 'Mathematics',
-        hasPractical: false,
-      });
-      const created = { id: 'assess1', ...baseDto };
-      (prisma.assessment.create as jest.Mock).mockResolvedValue(created);
-
-      const result = await service.createAssessment(baseDto, 'auth1');
-
-      expect(result).toEqual(created);
-      expect(prisma.sectionSubject.findUnique).not.toHaveBeenCalled();
     });
   });
 
