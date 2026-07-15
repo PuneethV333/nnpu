@@ -13,7 +13,6 @@ describe('MarksService', () => {
   let service: MarksService;
   let prisma: jest.Mocked<PrismaService>;
 
-  // Convenience helper: mocks auth.findUnique's shape (userId + nested role)
   const mockAuth = (userId: string, role: string) =>
     (prisma.auth.findUnique as jest.Mock).mockResolvedValue({
       userId,

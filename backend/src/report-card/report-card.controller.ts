@@ -4,6 +4,7 @@ import { JwtAuthGuard } from '@/auth/guard/jwt-auth.guard';
 import { RolesGuard } from '@/auth/guard/roles.guard';
 import { Roles } from '@/auth/decorators/roles.decorator';
 import { ReportCardService } from './report-card.service';
+import { Throttle } from '@nestjs/throttler';
 
 @ApiTags('report-card')
 @ApiBearerAuth()
@@ -14,6 +15,7 @@ export class ReportCardController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('Admin', 'Teacher')
   @Post(':studentId/:academicYearId/generate')
+  @Throttle({ default: { limit: 3, ttl: 60000 } })
   requestGeneration(
     @Param('studentId') studentId: string,
     @Param('academicYearId') academicYearId: string,
@@ -23,6 +25,7 @@ export class ReportCardController {
 
   @UseGuards(JwtAuthGuard)
   @Get(':studentId/:academicYearId/status')
+  @Throttle({ default: { limit: 60, ttl: 60000 } })
   getStatus(
     @Param('studentId') studentId: string,
     @Param('academicYearId') academicYearId: string,

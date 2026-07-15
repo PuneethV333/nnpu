@@ -73,6 +73,7 @@ export class AttendanceController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('Teacher')
   @Get('status')
+  @Throttle({ default: { limit: 60, ttl: 60000 } })
   @ApiOperation({
     summary: 'Check if attendance is marked/locked for a section+date',
   })

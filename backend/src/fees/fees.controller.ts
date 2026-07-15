@@ -25,6 +25,7 @@ import { HandleRazorpayWebhookDto } from './dto/handle-razorpay-webhook.dto';
 import type { JwtPayload } from '@/auth/types/jwt-payload.type';
 import { CurrentUser } from '@/auth/decorators/current-user.decorator';
 import { Request } from 'express';
+import { SkipThrottle, Throttle } from '@nestjs/throttler';
 
 @Controller('fees')
 export class FeesController {
@@ -33,6 +34,7 @@ export class FeesController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('Admin')
   @Post('structure')
+  @Throttle({ default: { limit: 20, ttl: 60000 } })
   @ApiOperation({
     summary: 'Create a fee structure for a section+academic year',
   })
@@ -56,6 +58,7 @@ export class FeesController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('Admin')
   @Patch('structure/:id')
+  @Throttle({ default: { limit: 20, ttl: 60000 } })
   @ApiOperation({
     summary: 'Update a fee structure (only before any invoices exist)',
   })
@@ -69,6 +72,7 @@ export class FeesController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('Admin')
   @Post('invoices/generate')
+  @Throttle({ default: { limit: 5, ttl: 60000 } })
   @ApiOperation({
     summary:
       "Generate invoices for every active student in a fee structure's section",
@@ -110,6 +114,7 @@ export class FeesController {
 
   @UseGuards(JwtAuthGuard)
   @Post('payments/verify')
+  @Throttle({ default: { limit: 10, ttl: 60000 } })
   @ApiOperation({
     summary: 'Verify a Razorpay payment after checkout completes client-side',
   })
@@ -118,6 +123,7 @@ export class FeesController {
   }
 
   @Post('webhook/razorpay')
+  @SkipThrottle()
   @ApiOperation({
     summary: 'Razorpay server-to-server webhook (public, signature-verified)',
   })

@@ -17,6 +17,7 @@ import { FirebaseModule } from './firebase/firebase.module';
 import { MarksModule } from './marks/marks.module';
 import { FeesModule } from './fees/fees.module';
 import { ReportCardModule } from './report-card/report-card.module';
+import { OnboardingModule } from './onboarding/onboarding.module';
 
 @Module({
   imports: [
@@ -37,6 +38,7 @@ import { ReportCardModule } from './report-card/report-card.module';
         RAZORPAY_KEY_ID: Joi.string().required(),
         RAZORPAY_KEY_SECRET: Joi.string().required(),
         RAZORPAY_WEBHOOK_SECRET: Joi.string().required(),
+        CORS_ORIGINS: Joi.string().optional(),
       }),
     }),
     ThrottlerModule.forRoot([
@@ -46,7 +48,6 @@ import { ReportCardModule } from './report-card/report-card.module';
       },
     ]),
     ScheduleModule.forRoot(),
-    // UsersModule, AuthModule,
     AuthModule,
     RedisModule,
     LoggerModule,
@@ -58,7 +59,7 @@ import { ReportCardModule } from './report-card/report-card.module';
     MarksModule,
     FeesModule,
     ReportCardModule,
-    // ... other feature modules
+    OnboardingModule,
   ],
   controllers: [AppController],
   providers: [

@@ -16,6 +16,7 @@ import { CreateAssessmentDto } from './dto/create-assessment.dto';
 import { CurrentUser } from '@/auth/decorators/current-user.decorator';
 import type { JwtPayload } from '@/auth/types/jwt-payload.type';
 import { EnterMarksDto } from './dto/enter-marks.dto';
+import { Throttle } from '@nestjs/throttler';
 
 @Controller('marks')
 export class MarksController {
@@ -24,6 +25,7 @@ export class MarksController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('Teacher', 'Admin')
   @Post('assessment')
+  @Throttle({ default: { limit: 20, ttl: 60000 } })
   @ApiOperation({
     summary: 'Create an assessment (Unit Test, Mid Term, Final, Internal)',
   })
@@ -36,6 +38,7 @@ export class MarksController {
 
   @UseGuards(JwtAuthGuard)
   @Get('assessment')
+  @Throttle({ default: { limit: 60, ttl: 60000 } })
   @ApiOperation({
     summary: 'List assessments for a section (optionally filtered by subject)',
   })
@@ -49,6 +52,7 @@ export class MarksController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('Teacher', 'Admin')
   @Post('enter')
+  @Throttle({ default: { limit: 10, ttl: 60000 } })
   @ApiOperation({ summary: 'Bulk enter/update marks for an assessment' })
   enterMarks(@Body() dto: EnterMarksDto, @CurrentUser() user: JwtPayload) {
     return this.marksService.enterMarks(dto, user.authId);
@@ -56,6 +60,7 @@ export class MarksController {
 
   @UseGuards(JwtAuthGuard)
   @Get('me')
+  @Throttle({ default: { limit: 60, ttl: 60000 } })
   @ApiOperation({
     summary: 'Get my own marks (optionally filtered by subject)',
   })
@@ -68,6 +73,7 @@ export class MarksController {
 
   @UseGuards(JwtAuthGuard)
   @Get('report/:studentId/:subjectId')
+  @Throttle({ default: { limit: 30, ttl: 60000 } })
   @ApiOperation({
     summary:
       'Get final report (theory+practical+internal) for a student+subject',
