@@ -1,0 +1,23 @@
+import { SecondLanguage, Stream } from '@/generated/prisma/enums';
+import { BadRequestException } from '@nestjs/common';
+
+export const STREAM_CODE: Record<Stream, string> = {
+  Science: 'SCI',
+  Commerce: 'COM',
+};
+
+export const LANG_CODE: Record<SecondLanguage, string> = {
+  Kannada: 'KN',
+  Hindi: 'HI',
+  Sanskrit: 'SK',
+};
+
+// Extracts the PU year digit from Class.name (assumes name contains "1" or "2", e.g. "PU1", "1st PUC")
+export function extractPuYear(className: string): string {
+  const match = className.match(/[12]/);
+  if (!match)
+    throw new BadRequestException(
+      `Cannot derive PU year from class name "${className}"`,
+    );
+  return match[0];
+}

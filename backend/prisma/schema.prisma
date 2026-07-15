@@ -445,3 +445,10 @@ model ReportCard {
 
   @@unique([studentId, academicYearId])
 }
+
+model IdSequence {
+  id        String @id // bucket key, e.g. "nnpu-1-SCI-PCMB-25-KN-A"
+  lastValue Int    @default(0)
+
+  updatedAt DateTime @updatedAt
+}

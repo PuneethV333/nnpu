@@ -10,6 +10,7 @@ import {
 import { AttendanceArray, GetMyType } from './types/getMy.type';
 import { AttendanceSummary } from './types/summary.type';
 import { MarkAttendanceDto } from './dto/mark-attendance.dto';
+import { Cron, CronExpression } from '@nestjs/schedule';
 
 @Injectable()
 export class AttendanceService {
@@ -18,6 +19,48 @@ export class AttendanceService {
     private readonly logger: LoggerService,
     private readonly prisma: PrismaService,
   ) {}
+
+  @Cron(CronExpression.EVERY_DAY_AT_6AM)
+  async seedDailyAttendance() {
+    this.logger.log('[cron-seed-attendance] starting');
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const calendarDay = await this.prisma.academicCalendarDay.findUnique({
+      where: { date: today },
+    });
+
+    if (!calendarDay || calendarDay.type !== 'Working') {
+      this.logger.log(
+        `[cron-seed-attendance] skipping — today is ${calendarDay?.type ?? 'undefined'}`,
+      );
+      return;
+    }
+
+    const students = await this.prisma.user.findMany({
+      where: { role: 'Student', isActive: true, sectionId: { not: null } },
+      select: { id: true, sectionId: true },
+    });
+
+    if (students.length === 0) {
+      this.logger.log('[cron-seed-attendance] no active students found');
+      return;
+    }
+
+    const result = await this.prisma.attendance.createMany({
+      data: students.map((s) => ({
+        studentId: s.id,
+        sectionId: s.sectionId as string,
+        date: today,
+      })),
+      skipDuplicates: true,
+    });
+
+    this.logger.log(
+      `[cron-seed-attendance] seeded ${result.count} attendance rows for ${today.toISOString().slice(0, 10)}`,
+    );
+  }
 
   async getMy(authId: string, from: string, to: string): Promise<GetMyType> {
     this.logger.log('[my]');
