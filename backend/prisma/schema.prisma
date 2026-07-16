@@ -1,7 +1,6 @@
 generator client {
-  provider     = "prisma-client"
+  provider     = "prisma-client-js"
   output       = "../src/generated/prisma"
-  moduleFormat = "cjs"
 }
 
 datasource db {
@@ -29,6 +28,17 @@ enum DayType {
   Weekend
 }
 
+enum Stream {
+  Science
+  Commerce
+}
+
+enum SecondLanguage {
+  Kannada
+  Hindi
+  Sanskrit
+}
+
 model User {
   id       String  @id @default(uuid())
   role     Role    @default(Student)
@@ -39,6 +49,13 @@ model User {
 
   section   Section? @relation("StudentSection", fields: [sectionId], references: [id])
   sectionId String?
+
+  // Combination + language now belong to the student, not the Section,
+  // so a single Section (physical session) can hold a mix of combinations
+  // and languages.
+  combination   Combination?    @relation(fields: [combinationId], references: [id])
+  combinationId String?
+  language      SecondLanguage?
 
   auth               Auth?
   details            PersonalDetails?
@@ -119,17 +136,6 @@ model Class {
   @@unique([name])
 }
 
-enum Stream {
-  Science
-  Commerce
-}
-
-enum SecondLanguage {
-  Kannada
-  Hindi
-  Sanskrit
-}
-
 model Combination {
   id     String @id @default(cuid())
   stream Stream
@@ -137,7 +143,7 @@ model Combination {
   idCode String
   name   String
 
-  sections Section[]
+  students User[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -146,15 +152,12 @@ model Combination {
 }
 
 model Section {
-  id             String         @id @default(cuid())
+  id             String       @id @default(cuid())
   name           String
-  class          Class          @relation(fields: [classId], references: [id])
+  class          Class        @relation(fields: [classId], references: [id])
   classId        String
-  combination    Combination    @relation(fields: [combinationId], references: [id])
-  combinationId  String
-  language       SecondLanguage
-  session        String         @default("A")
-  academicYear   AcademicYear   @relation(fields: [academicYearId], references: [id])
+  session        String       @default("A")
+  academicYear   AcademicYear @relation(fields: [academicYearId], references: [id])
   academicYearId String
 
   classTeacher   User?   @relation("ClassTeacherOf", fields: [classTeacherId], references: [id])
@@ -169,7 +172,10 @@ model Section {
   assessments   Assessment[]
   feeStructures FeeStructure[]
 
-  @@unique([classId, combinationId, language, session, academicYearId])
+  // No longer scoped by combination/language — a session can mix combinations
+  // and languages, so uniqueness is purely physical: one section per
+  // class/session-letter/academic year.
+  @@unique([classId, session, academicYearId])
 }
 
 model Subject {
@@ -447,7 +453,7 @@ model ReportCard {
 }
 
 model IdSequence {
-  id        String @id // bucket key, e.g. "nnpu-1-SCI-PCMB-25-KN-A"
+  id        String @id // bucket key, e.g. "nnpu-1-S-B-25-K-A"
   lastValue Int    @default(0)
 
   updatedAt DateTime @updatedAt

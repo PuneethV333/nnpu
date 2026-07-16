@@ -2,14 +2,21 @@ import { SecondLanguage, Stream } from '@/generated/prisma/enums';
 import { BadRequestException } from '@nestjs/common';
 
 export const STREAM_CODE: Record<Stream, string> = {
-  Science: 'SCI',
-  Commerce: 'COM',
+  Science: 'S',
+  Commerce: 'C',
 };
 
 export const LANG_CODE: Record<SecondLanguage, string> = {
-  Kannada: 'KN',
-  Hindi: 'HI',
-  Sanskrit: 'SK',
+  Kannada: 'K',
+  Hindi: 'H',
+  Sanskrit: 'S',
+};
+
+export const COMBO_CODE: Record<string, string> = {
+  PCMB: 'B',
+  PCMC: 'C',
+  CEBA: 'C',
+  SEBA: 'S',
 };
 
 // Extracts the PU year digit from Class.name (assumes name contains "1" or "2", e.g. "PU1", "1st PUC")

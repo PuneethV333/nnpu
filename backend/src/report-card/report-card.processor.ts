@@ -88,7 +88,8 @@ export class ReportCardProcessor
         where: { id: studentId },
         include: {
           details: true,
-          section: { include: { class: true, combination: true } },
+          section: { include: { class: true } },
+          combination: true,
         },
       });
 
@@ -140,9 +141,7 @@ export class ReportCardProcessor
 
       const studentName = escapeHtml(student?.details?.name ?? '');
       const className = escapeHtml(student?.section?.class.name ?? '');
-      const combinationName = escapeHtml(
-        student?.section?.combination.name ?? '',
-      );
+      const combinationName = escapeHtml(student?.combination?.name ?? '');
 
       const html = `
 <!DOCTYPE html>

@@ -8,6 +8,10 @@ import { JwtAuthGuard } from '@/auth/guard/jwt-auth.guard';
 import { RolesGuard } from '@/auth/guard/roles.guard';
 import { Roles } from '@/auth/decorators/roles.decorator';
 import { CreateStudentDto } from './dto/create-student.dto';
+import { CreateTeacherDto } from './dto/create-teacher.dto';
+import { CreateAdminDto } from './dto/create-admin.dto';
+import { CreateAcademicYearDto } from './dto/create-academic-year.dto';
+import { CreateSectionDto } from './dto/create-section.dto';
 
 @Controller('onboarding')
 export class OnboardingController {
@@ -31,5 +35,46 @@ export class OnboardingController {
   })
   createStudent(@Body() dto: CreateStudentDto) {
     return this.onboardingService.createStudent(dto);
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('Admin')
+  @Post('create-teacher')
+  @ApiOperation({
+    summary: 'Creates a teacher',
+  })
+  createTeacher(@Body() dto: CreateTeacherDto) {
+    return this.onboardingService.createTeacher(dto);
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('Admin')
+  @Post('create-admin')
+  @ApiOperation({
+    summary: 'Creates an admin',
+  })
+  createAdmin(@Body() dto: CreateAdminDto) {
+    return this.onboardingService.createAdmin(dto);
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('Admin')
+  @Post('create-academic-year')
+  @ApiOperation({
+    summary: 'Creates an academic year',
+  })
+  createAcademicYear(@Body() dto: CreateAcademicYearDto) {
+    return this.onboardingService.createAcademicYear(dto);
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('Admin')
+  @Post('create-section')
+  @ApiOperation({
+    summary:
+      'Creates a section (session) for a class + combination + language + academic year',
+  })
+  createSection(@Body() dto: CreateSectionDto) {
+    return this.onboardingService.createSection(dto);
   }
 }

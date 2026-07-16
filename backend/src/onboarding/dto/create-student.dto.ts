@@ -18,7 +18,7 @@ export class CreateStudentDto {
 
   @IsString()
   @IsNotEmpty()
-  subjectCode!: string; // e.g. "PCMB" — resolves to Combination.idCode
+  subjectCode!: string;
 
   @IsIn(['Kannada', 'Hindi', 'Sanskrit'])
   language!: string;

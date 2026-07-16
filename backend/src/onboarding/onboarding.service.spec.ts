@@ -205,15 +205,20 @@ describe('OnboardingService', () => {
     };
 
     beforeEach(() => {
-      // stub resolveSection so createStudent tests don't re-test its internals
       jest
         .spyOn(service, 'resolveSection')
         .mockResolvedValue(mockSection as any);
+
+      tx.combination.findFirst.mockResolvedValue({
+        id: 'combo-1',
+        idCode: 'PCMB',
+        stream: 'Science',
+      });
     });
 
     it('generates the correct authId and creates User/Auth/PersonalDetails', async () => {
       tx.idSequence.upsert.mockResolvedValue({
-        id: 'nnpu-1-SCI-PCMB-25-KN-A',
+        id: 'nnpu-1-S-B-25-K-A',
         lastValue: 1,
       });
       tx.user.create.mockResolvedValue({ id: 'user-1' });
@@ -223,8 +228,8 @@ describe('OnboardingService', () => {
       const result = await service.createStudent(dto);
 
       expect(tx.idSequence.upsert).toHaveBeenCalledWith({
-        where: { id: 'nnpu-1-SCI-PCMB-25-KN-A' },
-        create: { id: 'nnpu-1-SCI-PCMB-25-KN-A', lastValue: 1 },
+        where: { id: 'nnpu-1-S-B-25-K-A' },
+        create: { id: 'nnpu-1-S-B-25-K-A', lastValue: 1 },
         update: { lastValue: { increment: 1 } },
       });
 
@@ -235,13 +240,15 @@ describe('OnboardingService', () => {
           role: 'Student',
           schoolId: dto.schoolId,
           sectionId: mockSection.id,
+          combinationId: 'combo-1',
+          language: 'Kannada',
         },
       });
 
       expect(tx.auth.create).toHaveBeenCalledWith({
         data: {
           userId: 'user-1',
-          authId: 'nnpu1SCIPCMB25KNA001',
+          authId: 'nnpu1SB25KA001',
           password: 'hashed_nnpu123',
         },
       });
@@ -256,20 +263,20 @@ describe('OnboardingService', () => {
 
       expect(result).toEqual({
         userId: 'user-1',
-        authId: 'nnpu1SCIPCMB25KNA001',
+        authId: 'nnpu1SB25KA001',
       });
     });
 
     it('pads serial correctly for higher sequence values', async () => {
       tx.idSequence.upsert.mockResolvedValue({
-        id: 'nnpu-1-SCI-PCMB-25-KN-A',
+        id: 'nnpu-1-S-B-25-K-A',
         lastValue: 47,
       });
       tx.user.create.mockResolvedValue({ id: 'user-2' });
 
       const result = await service.createStudent(dto);
 
-      expect(result.authId).toBe('nnpu1SCIPCMB25KNA047');
+      expect(result.authId).toBe('nnpu1SB25KA047');
     });
 
     it('propagates NotFoundException from resolveSection without creating anything', async () => {
