@@ -1,4 +1,4 @@
-import { SecondLanguage, Stream } from '@/generated/prisma/enums';
+import { SecondLanguage, Stream } from '@/generated/prisma';
 import { BadRequestException } from '@nestjs/common';
 
 export const STREAM_CODE: Record<Stream, string> = {

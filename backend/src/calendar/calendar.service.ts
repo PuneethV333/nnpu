@@ -2,7 +2,7 @@ import { LoggerService } from '@/logger/logger.service';
 import { PrismaService } from '@/prisma/prisma.service';
 import { Injectable } from '@nestjs/common';
 import { GenerateCalendarDto } from './dto/generate-calendar.dto';
-import { DayType } from '@/generated/prisma/enums';
+import { DayType } from '@/generated/prisma';
 
 @Injectable()
 export class CalendarService {

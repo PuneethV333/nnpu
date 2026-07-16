@@ -7,7 +7,7 @@ import {
   IsString,
   Min,
 } from 'class-validator';
-import { AssessmentCategory } from '@/generated/prisma/enums';
+import { AssessmentCategory } from '@/generated/prisma';
 
 export class CreateAssessmentDto {
   @ApiProperty({ example: 'Unit Test 1' })

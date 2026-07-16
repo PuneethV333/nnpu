@@ -16,7 +16,7 @@ import { ScheduleModule } from '@nestjs/schedule';
 import { FirebaseModule } from './firebase/firebase.module';
 import { MarksModule } from './marks/marks.module';
 import { FeesModule } from './fees/fees.module';
-import { ReportCardModule } from './report-card/report-card.module';
+// import { ReportCardModule } from './report-card/report-card.module';
 import { OnboardingModule } from './onboarding/onboarding.module';
 
 @Module({
@@ -37,7 +37,7 @@ import { OnboardingModule } from './onboarding/onboarding.module';
         FIREBASE_PRIVATE_KEY: Joi.string().required(),
         RAZORPAY_KEY_ID: Joi.string().required(),
         RAZORPAY_KEY_SECRET: Joi.string().required(),
-        RAZORPAY_WEBHOOK_SECRET: Joi.string().required(),
+        RAZORPAY_WEBHOOK_SECRET: Joi.string().optional(),
         CORS_ORIGINS: Joi.string().optional(),
       }),
     }),
@@ -58,7 +58,7 @@ import { OnboardingModule } from './onboarding/onboarding.module';
     FirebaseModule,
     MarksModule,
     FeesModule,
-    ReportCardModule,
+    // ReportCardModule,
     OnboardingModule,
   ],
   controllers: [AppController],

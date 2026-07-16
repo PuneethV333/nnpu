@@ -13,8 +13,8 @@ import { CreateAcademicYearDto } from './dto/create-academic-year.dto';
 import { CreateSectionDto } from './dto/create-section.dto';
 import * as bcrypt from 'bcrypt';
 import { COMBO_CODE, LANG_CODE, STREAM_CODE } from './helper/helper';
-import { Prisma } from '@/generated/prisma/client';
-import { SecondLanguage } from '@/generated/prisma/enums';
+import { Prisma } from '@/generated/prisma';
+import { SecondLanguage } from '@/generated/prisma';
 
 const STAFF_ROLE_CODE: Record<'Teacher' | 'Admin', string> = {
   Teacher: 'T',

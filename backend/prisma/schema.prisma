@@ -312,6 +312,7 @@ model Assessment {
   section   Section            @relation(fields: [sectionId], references: [id])
   maxMarks  Int
   date      DateTime?          @db.Date
+  
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

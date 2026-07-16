@@ -14,7 +14,7 @@ import { CreateFeeStructureDto } from './dto/create-fee-structure.dto';
 import { UpdateFeeStructureDto } from './dto/update-fee-structure.dto';
 import { GenerateInvoicesDto } from './dto/generate-invoices.dto';
 import { RazorpayService } from './razorpay.service';
-import { Role } from '@/generated/prisma/enums';
+import { Role } from '@/generated/prisma';
 import { ConfigService } from '@nestjs/config';
 import { HandleRazorpayWebhookDto } from './dto/handle-razorpay-webhook.dto';
 import { createHmac } from 'crypto';

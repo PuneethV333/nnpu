@@ -6,6 +6,7 @@ import { ReportCardController } from './report-card.controller';
 import { PrismaModule } from '@/prisma/prisma.module';
 import { LoggerModule } from '@/logger/logger.module';
 import { NotificationModule } from '@/notification/notification.module';
+import { AuthModule } from '@/auth/auth.module';
 
 @Module({
   imports: [
@@ -13,6 +14,7 @@ import { NotificationModule } from '@/notification/notification.module';
     PrismaModule,
     LoggerModule,
     NotificationModule,
+    AuthModule,
   ],
   controllers: [ReportCardController],
   providers: [ReportCardService, ReportCardProcessor],

@@ -4,9 +4,10 @@ import { OnboardingController } from './onboarding.controller';
 import { LoggerModule } from '@/logger/logger.module';
 import { RedisModule } from '@/redis/redis.module';
 import { PrismaModule } from '@/prisma/prisma.module';
+import { AuthModule } from '@/auth/auth.module';
 
 @Module({
-  imports: [LoggerModule, RedisModule, PrismaModule],
+  imports: [LoggerModule, RedisModule, PrismaModule, AuthModule],
   controllers: [OnboardingController],
   providers: [OnboardingService],
 })

@@ -9,7 +9,7 @@ import { randomBytes, randomUUID } from 'crypto';
 import { changePasswordDto } from './dto/change-password.dto';
 import { LoggerService } from '@/logger/logger.service';
 import { addDays } from 'date-fns';
-import { Role } from '@/generated/prisma/enums';
+import { Role } from '@/generated/prisma';
 import { login } from './types/get-me.type';
 import { refreshDto } from './dto/refresh.dto';
 

@@ -1,6 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { IsEnum, IsOptional, IsString } from 'class-validator';
-import { DayType } from '@/generated/prisma/enums';
+import { DayType } from '@/generated/prisma';
 
 export class OverrideDayDto {
   @ApiProperty({ enum: DayType })

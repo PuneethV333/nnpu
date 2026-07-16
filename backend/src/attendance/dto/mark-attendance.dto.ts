@@ -1,4 +1,4 @@
-import { AttendanceStatus } from '@/generated/prisma/enums';
+import { AttendanceStatus } from '@/generated/prisma';
 import { ApiProperty } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import {

@@ -1,4 +1,4 @@
-import { Role } from '@/generated/prisma/enums';
+import { Role } from '@/generated/prisma';
 import { z } from 'zod';
 
 export const loginSchema = z.object({

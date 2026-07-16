@@ -1,4 +1,4 @@
-import { DayType } from '@/generated/prisma/enums';
+import { DayType } from '@/generated/prisma';
 import { ApiProperty } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import {

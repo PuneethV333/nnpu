@@ -1,6 +1,3 @@
-/* eslint-disable @typescript-eslint/no-unsafe-argument */
-/* eslint-disable @typescript-eslint/no-unsafe-assignment */
-/* eslint-disable @typescript-eslint/no-unsafe-member-access */
 import { Processor, WorkerHost } from '@nestjs/bullmq';
 import { Injectable, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { Job } from 'bullmq';
@@ -98,8 +95,7 @@ export class ReportCardProcessor
           studentId,
           assessment: {
             category: { in: ['FinalTheory', 'FinalPractical', 'Internal'] },
-
-            academicYearId,
+            section: { academicYearId },
           },
         },
         include: { assessment: { include: { subject: true } } },
