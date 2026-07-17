@@ -9,7 +9,8 @@ import React, {
 import { CurrentUser, Role } from "$/types/auth";
 import { tokenStore } from "$/store/tokenStore";
 import * as authApi from "$/api/auth";
-import { onSessionExpired } from "../api/client";
+import { onSessionExpired } from "$/api/client";
+
 type AuthState = {
   isLoading: boolean;
   isAuthenticated: boolean;
@@ -59,7 +60,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     (async () => {
       const accessToken = await tokenStore.getAccessToken();
       if (!accessToken) {
-        setState((s) => ({ ...s, isLoading: false }));
+        await clearSession();
         return;
       }
 
