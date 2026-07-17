@@ -8,7 +8,7 @@ const Index = () => {
 
   if (isLoading) {
     return (
-      <View className="flex-1 items-center justify-content-center bg-gray-50">
+      <View className="flex-1 items-center justify-content-center">
         <ActivityIndicator size="large" color="#000" />
       </View>
     );
