@@ -1,12 +1,12 @@
 import { View, Text } from 'react-native'
 import React from 'react'
 
-const Profile = () => {
+const Marks = () => {
   return (
     <View>
-      <Text>profile</Text>
+      <Text>marks</Text>
     </View>
   )
 }
 
-export default Profile
+export default Marks

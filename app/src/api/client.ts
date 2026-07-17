@@ -24,22 +24,20 @@ api.interceptors.request.use(async (config: InternalAxiosRequestConfig) => {
   return config;
 })
 
-const refreshClient = create({
-  baseURL: backendUrl,
-  timeout: 15000
-})
+const refreshClient = create({ baseURL: backendUrl, timeout: 15000 });
 
-let refreshPromise: Promise<string | null> | null = null
+let refreshPromise: Promise<string | null> | null = null;
 
-const refreshAccessToken = async () => {
+async function refreshAccessToken(): Promise<string | null> {
   const refreshToken = await tokenStore.getRefreshToken();
-  if (!refreshAccessToken) return null;
+  if (!refreshToken) return null;
 
-  const res = await refreshClient.post('/auth/refresh', { refreshToken });
+  const res = await refreshClient.post("/auth/refresh", { refreshToken });
   const parsed = RefreshResponseSchema.parse(res.data);
   await tokenStore.saveTokens(parsed.accessToken, parsed.refreshToken);
   return parsed.accessToken;
 }
+
 
 api.interceptors.response.use(
   (response) => response,

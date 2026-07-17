@@ -30,13 +30,13 @@ async function bootstrap() {
 
   app.use(compression());
 
-  const allowedOrigins = (configService.get<string>('CORS_ORIGINS') ?? '')
-    .split(',')
-    .map((o) => o.trim())
-    .filter(Boolean);
+  // const allowedOrigins = (configService.get<string>('CORS_ORIGINS') ?? '')
+  //   .split(',')
+  //   .map((o) => o.trim())
+  //   .filter(Boolean);
 
   app.enableCors({
-    origin: allowedOrigins.length > 0 ? allowedOrigins : false,
+    origin: true,
     credentials: true,
     methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE'],
   });

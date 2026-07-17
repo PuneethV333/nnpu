@@ -39,6 +39,7 @@ export const styles = StyleSheet.create({
   title: {
     color: "#fff",
     fontSize: 26,
+    fontFamily:"inter_semi",
     fontWeight: "700",
     textShadowColor: "rgba(0,0,0,0.35)",
     textShadowOffset: { width: 0, height: 1 },
