@@ -9,15 +9,6 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 const tabBar = components.tabBar;
 
-type TabIconProps = {
-  focused: boolean;
-  icon: keyof typeof Ionicons.glyphMap;
-  title: string;
-};
-
-// Swaps "-outline" for the filled variant when active, e.g.
-// "home-outline" -> "home". Falls back to the outline icon
-// if a filled version doesn't exist in the glyph map.
 const getIconName = (
   icon: keyof typeof Ionicons.glyphMap,
   focused: boolean,
