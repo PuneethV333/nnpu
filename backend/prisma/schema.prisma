@@ -1,6 +1,6 @@
 generator client {
-  provider     = "prisma-client-js"
-  output       = "../src/generated/prisma"
+  provider = "prisma-client-js"
+  output   = "../src/generated/prisma"
 }
 
 datasource db {
@@ -39,6 +39,13 @@ enum SecondLanguage {
   Sanskrit
 }
 
+enum AnnouncementTypes {
+  Holiday
+  TimetableUpdate
+  ResultUpdate
+  Normal
+}
+
 model User {
   id       String  @id @default(uuid())
   role     Role    @default(Student)
@@ -68,11 +75,12 @@ model User {
   studentMarks       Mark[]           @relation("StudentMarks")
   enteredMarks       Mark[]           @relation("MarksEnteredBy")
 
-  createdAt   DateTime     @default(now())
-  updatedAt   DateTime     @updatedAt
-  invoices    Invoice[]
-  payments    Payment[]
-  reportCards ReportCard[]
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  invoices      Invoice[]
+  payments      Payment[]
+  reportCards   ReportCard[]
+  announcements Announcement[] @relation("AnnouncementsAuthored")
 }
 
 model Auth {
@@ -108,8 +116,9 @@ model School {
   noOfTeacher  Int    @default(0)
   users        User[]
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  announcements Announcement[]
 }
 
 model AcademicYear {
@@ -171,6 +180,7 @@ model Section {
   updatedAt     DateTime       @updatedAt
   assessments   Assessment[]
   feeStructures FeeStructure[]
+  announcements Announcement[]
 
   // No longer scoped by combination/language — a session can mix combinations
   // and languages, so uniqueness is purely physical: one section per
@@ -312,7 +322,6 @@ model Assessment {
   section   Section            @relation(fields: [sectionId], references: [id])
   maxMarks  Int
   date      DateTime?          @db.Date
-  
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -454,8 +463,33 @@ model ReportCard {
 }
 
 model IdSequence {
-  id        String @id // bucket key, e.g. "nnpu-1-S-B-25-K-A"
+  id        String @id
   lastValue Int    @default(0)
 
   updatedAt DateTime @updatedAt
+}
+
+model Announcement {
+  id       String            @id @default(cuid())
+  title    String
+  body     String
+  isPinned Boolean           @default(false)
+  type     AnnouncementTypes @default(Normal)
+
+  author   User   @relation("AnnouncementsAuthored", fields: [authorId], references: [id])
+  authorId String
+
+  // null school/section = platform-wide; school-only = school-wide;
+  // school+section = scoped to one class section
+  school   School? @relation(fields: [schoolId], references: [id])
+  schoolId String?
+
+  section   Section? @relation(fields: [sectionId], references: [id])
+  sectionId String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([schoolId, createdAt])
+  @@index([sectionId, createdAt])
 }

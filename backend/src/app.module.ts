@@ -18,6 +18,7 @@ import { MarksModule } from './marks/marks.module';
 import { FeesModule } from './fees/fees.module';
 // import { ReportCardModule } from './report-card/report-card.module';
 import { OnboardingModule } from './onboarding/onboarding.module';
+import { AnnouncementModule } from './announcement/announcement.module';
 
 @Module({
   imports: [
@@ -60,6 +61,7 @@ import { OnboardingModule } from './onboarding/onboarding.module';
     FeesModule,
     // ReportCardModule,
     OnboardingModule,
+    AnnouncementModule,
   ],
   controllers: [AppController],
   providers: [

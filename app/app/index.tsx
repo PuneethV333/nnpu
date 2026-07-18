@@ -7,6 +7,8 @@ import "@/global.css";
 const Index = () => {
   const { isLoading, isAuthenticated } = useAuth();
 
+  
+  
   if (isLoading) {
     return (
       <View className="flex-1 items-center justify-content-center">
@@ -15,7 +17,7 @@ const Index = () => {
     );
   }
 
-  return <Redirect href={isAuthenticated ? "/(tabs)/home" : "/(auth)/login"} />;
+  return <Redirect href={!isAuthenticated ? "/(tabs)/home" : "/(auth)/login"} />;
 };
 
 export default Index;
