@@ -29,3 +29,8 @@ export const components = {
         itemPaddingVertical: spacing[2],
     },
 } as const;
+
+const tabBar = components.tabBar
+
+export const getTabBarClearance = (insetBottom: number) =>
+  tabBar.height + Math.max(insetBottom, tabBar.horizontalInset);
