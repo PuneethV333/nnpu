@@ -1,5 +1,9 @@
 import { PrismaService } from '@/prisma/prisma.service';
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { LoginDto } from './dto/login.dto';
 import * as bcrypt from 'bcrypt';
@@ -218,5 +222,86 @@ export class AuthService {
       refreshToken,
       user: { id: auth.user.id, role: auth.user.role },
     };
+  }
+
+  async getStudentProfile(authId: string) {
+    const auth = await this.prisma.auth.findUnique({ where: { authId } });
+    if (!auth) throw new UnauthorizedException('user not found');
+
+    const user = await this.prisma.user.findUnique({
+      where: { id: auth.userId },
+      select: {
+        role: true,
+        language: true,
+        details: { select: { name: true, profilePic: true } },
+        school: { select: { name: true } },
+        combination: { select: { name: true, stream: true } },
+        section: {
+          select: {
+            name: true,
+            class: { select: { name: true } },
+            classTeacher: {
+              select: { details: { select: { name: true } } },
+            },
+          },
+        },
+      },
+    });
+
+    if (!user) throw new NotFoundException('profile not found');
+    return user;
+  }
+
+  async getTeacherProfile(authId: string) {
+    const auth = await this.prisma.auth.findUnique({ where: { authId } });
+    if (!auth) throw new UnauthorizedException('user not found');
+
+    const user = await this.prisma.user.findUnique({
+      where: { id: auth.userId },
+      select: {
+        role: true,
+        details: { select: { name: true, profilePic: true } },
+        school: { select: { name: true } },
+        teachingSubjects: {
+          select: {
+            subject: { select: { name: true } },
+            section: {
+              select: { name: true, class: { select: { name: true } } },
+            },
+          },
+        },
+        classTeacherOf: {
+          select: { name: true, class: { select: { name: true } } },
+        },
+      },
+    });
+
+    if (!user) throw new NotFoundException('profile not found');
+    return user;
+  }
+
+  async getAdminProfile(authId: string) {
+    const auth = await this.prisma.auth.findUnique({ where: { authId } });
+    if (!auth) throw new UnauthorizedException('user not found');
+
+    const user = await this.prisma.user.findUnique({
+      where: { id: auth.userId },
+      select: {
+        role: true,
+        details: { select: { name: true, profilePic: true } },
+        school: {
+          select: {
+            name: true,
+            noOfStudents: true,
+            noOfTeacher: true,
+            noOfBoys: true,
+            noOfGirls: true,
+          },
+        },
+      },
+    });
+
+    if (!user) throw new NotFoundException('profile not found');
+    return user;
   }
 }

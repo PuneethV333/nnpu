@@ -57,9 +57,6 @@ model User {
   section   Section? @relation("StudentSection", fields: [sectionId], references: [id])
   sectionId String?
 
-  // Combination + language now belong to the student, not the Section,
-  // so a single Section (physical session) can hold a mix of combinations
-  // and languages.
   combination   Combination?    @relation(fields: [combinationId], references: [id])
   combinationId String?
   language      SecondLanguage?
@@ -75,12 +72,13 @@ model User {
   studentMarks       Mark[]           @relation("StudentMarks")
   enteredMarks       Mark[]           @relation("MarksEnteredBy")
 
-  createdAt     DateTime       @default(now())
-  updatedAt     DateTime       @updatedAt
-  invoices      Invoice[]
-  payments      Payment[]
-  reportCards   ReportCard[]
-  announcements Announcement[] @relation("AnnouncementsAuthored")
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  invoices       Invoice[]
+  payments       Payment[]
+  reportCards    ReportCard[]
+  announcements  Announcement[]  @relation("AnnouncementsAuthored")
+  timetableSlots TimetableSlot[]
 }
 
 model Auth {
@@ -154,10 +152,73 @@ model Combination {
 
   students User[]
 
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  timetableSlots TimetableSlot[]
+
+  @@unique([stream, idCode])
+}
+
+enum Week {
+  MONDAY
+  TUESDAY
+  WEDNESDAY
+  THURSDAY
+  FRIDAY
+  SATURDAY
+}
+
+model Timetable {
+  id        String  @id @default(cuid())
+  sectionId String
+  section   Section @relation(fields: [sectionId], references: [id])
+
+  slots TimetableSlot[]
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@unique([stream, idCode])
+  @@unique([sectionId])
+}
+
+model Period {
+  id        String   @id @default(cuid())
+  stream    Stream
+  order     Int      @unique
+  startTime DateTime @db.Time
+  endTime   DateTime @db.Time
+  isBreak   Boolean  @default(false)
+  label     String?
+
+  slots TimetableSlot[]
+}
+
+model TimetableSlot {
+  id        String  @id @default(cuid())
+  sectionId String
+  section   Section @relation(fields: [sectionId], references: [id])
+  periodId  String
+  period    Period  @relation(fields: [periodId], references: [id])
+  day       Week
+
+  // null = applies to the whole section (e.g. PHY, MATHS)
+  // set = this parallel class only applies to students matching it
+  language      SecondLanguage?
+  combinationId String?
+  combination   Combination?    @relation(fields: [combinationId], references: [id])
+
+  subjectId String
+  subject   Subject @relation(fields: [subjectId], references: [id])
+
+  teacherId String?
+  teacher   User?   @relation(fields: [teacherId], references: [id])
+
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+  timetable   Timetable? @relation(fields: [timetableId], references: [id])
+  timetableId String?
+
+  @@index([sectionId, day, periodId])
 }
 
 model Section {
@@ -176,11 +237,13 @@ model Section {
   subjects    SectionSubject[]
   attendances Attendance[]
 
-  createdAt     DateTime       @default(now())
-  updatedAt     DateTime       @updatedAt
-  assessments   Assessment[]
-  feeStructures FeeStructure[]
-  announcements Announcement[]
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  assessments    Assessment[]
+  feeStructures  FeeStructure[]
+  announcements  Announcement[]
+  timetable      Timetable?
+  timetableSlots TimetableSlot[]
 
   // No longer scoped by combination/language — a session can mix combinations
   // and languages, so uniqueness is purely physical: one section per
@@ -196,8 +259,9 @@ model Subject {
   sections    SectionSubject[]
   assessments Assessment[]
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  timetableSlots TimetableSlot[]
 }
 
 model SectionSubject {
