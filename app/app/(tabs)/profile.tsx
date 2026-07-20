@@ -15,8 +15,6 @@ const Profile = () => {
     case 'Teacher':
       return <Teacher/>
   }
-  
-  
 }
 
 export default Profile

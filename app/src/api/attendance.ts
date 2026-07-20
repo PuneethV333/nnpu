@@ -1,6 +1,11 @@
-// import type { attendanceSummery } from "../types/attendance";
-// import { api } from "./client";
+import { getMySchema, GetMyType } from '@/src/types/attendance';
+import { api } from './client';
 
-// export const attendanceSummery = async (from:Date,to=Date):Promise<attendanceSummery> => {
-//   const res = await api.get(`/attendance/summary?from=${from}&to=${to}`)
-// }
+export const getAttendance = async (
+  from: string,
+  to: string,
+): Promise<GetMyType> => {
+  return getMySchema.parse(
+    (await api.get('/attendance/get-me', { params: { from, to } })).data,
+  );
+};
