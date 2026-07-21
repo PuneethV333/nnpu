@@ -45,3 +45,5 @@ app-example
 .claude/settings.local.json
 .vscode
 
+google-services.json
+GoogleService-Info.plist

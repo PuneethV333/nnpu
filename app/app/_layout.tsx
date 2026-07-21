@@ -12,6 +12,7 @@ import {
   Inter_700Bold,
 } from "@expo-google-fonts/inter";
 import '../global.css'
+import { usePushRegistration } from "@/src/hooks/usePushRegistration";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -23,6 +24,7 @@ const queryClient = new QueryClient({
 });
 
 export default function RootLayout() {
+  usePushRegistration();
   useEffect(() => {
     SplashScreen.preventAutoHideAsync();
   }, []);
