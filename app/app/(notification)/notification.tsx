@@ -45,7 +45,7 @@ const NotificationRow = ({ item, onPress }: { item: Notification; onPress: () =>
 );
 
 const NotificationsPage = () => {
-  const { data, isLoading } = useGetNotifications();
+  const { data } = useGetNotifications();
   const { mutate: markRead } = useMarkNotificationRead();
 
   const notifications = USE_DUMMY ? dummyNotifications : data;

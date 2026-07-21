@@ -4,7 +4,6 @@ import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
 import { useAuth } from './useAuth';
 import { useRegisterDevice } from './useNotifications';
-import { shouldAppendNotFound } from 'expo-router/build/global-state/utils';
 
 export const usePushRegistration = () => {
   const { isAuthenticated } = useAuth();

@@ -23,8 +23,18 @@ const queryClient = new QueryClient({
   },
 });
 
+function AppShell() {
+  usePushRegistration(); // now genuinely inside AuthProvider
+
+  return (
+    <>
+      <StatusBar style="auto" />
+      <Slot />
+    </>
+  );
+}
+
 export default function RootLayout() {
-  usePushRegistration();
   useEffect(() => {
     SplashScreen.preventAutoHideAsync();
   }, []);
@@ -50,8 +60,7 @@ export default function RootLayout() {
     <SafeAreaProvider>
       <QueryClientProvider client={queryClient}>
         <AuthProvider>
-          <StatusBar style="auto" />
-          <Slot />
+          <AppShell />
         </AuthProvider>
       </QueryClientProvider>
     </SafeAreaProvider>
