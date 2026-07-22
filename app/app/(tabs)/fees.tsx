@@ -1,7 +1,7 @@
 import React,{useState} from 'react';
 import {  Text, ScrollView, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import RazorpayCheckout from 'react-native-razorpay'; // npm i react-native-razorpay
+import RazorpayCheckout from 'react-native-razorpay';
 import { useGetMyInvoices, useCreatePaymentOrder, useVerifyPayment } from '@/src/hooks/useFees';
 import { Invoice } from '@/src/types/fees';
 import { dummyInvoices } from '@/constants/dummy/fees';

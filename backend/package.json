@@ -41,6 +41,7 @@
     "cookie-parser": "^1.4.7",
     "date-fns": "^4.4.0",
     "firebase-admin": "^14.1.0",
+    "googleapis": "^173.0.0",
     "helmet": "^8.3.0",
     "ioredis": "^5.11.1",
     "joi": "^18.2.3",
@@ -127,5 +128,16 @@
     "*.ts": [
       "eslint --fix"
     ]
+  },
+  "allowScripts": {
+    "@prisma/engines@7.8.0": true,
+    "prisma@7.8.0": true,
+    "bcrypt@6.0.0": true,
+    "esbuild@0.28.1": true,
+    "protobufjs@7.6.5": true,
+    "puppeteer@24.43.1": true,
+    "@firebase/util@1.15.1": true,
+    "msgpackr-extract@3.0.4": true,
+    "unrs-resolver@1.12.2": true
   }
 }

@@ -100,6 +100,7 @@ model PersonalDetails {
   userId     String @unique
   name       String
   profilePic String
+  email      String @unique
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -126,10 +127,11 @@ model AcademicYear {
   endDate   DateTime  @db.Date
   sections  Section[]
 
-  createdAt     DateTime       @default(now())
-  updatedAt     DateTime       @updatedAt
-  feeStructures FeeStructure[]
-  reportCards   ReportCard[]
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  feeStructures    FeeStructure[]
+  reportCards      ReportCard[]
+  enrollmentDrives EnrollmentDrive[]
 }
 
 model Class {
@@ -201,8 +203,8 @@ model TimetableSlot {
   period    Period  @relation(fields: [periodId], references: [id])
   day       Week
 
-  // null = applies to the whole section (e.g. PHY, MATHS)
-  // set = this parallel class only applies to students matching it
+  
+  
   language      SecondLanguage?
   combinationId String?
   combination   Combination?    @relation(fields: [combinationId], references: [id])
@@ -245,9 +247,9 @@ model Section {
   timetable      Timetable?
   timetableSlots TimetableSlot[]
 
-  // No longer scoped by combination/language — a session can mix combinations
-  // and languages, so uniqueness is purely physical: one section per
-  // class/session-letter/academic year.
+  
+  
+  
   @@unique([classId, session, academicYearId])
 }
 
@@ -543,8 +545,8 @@ model Announcement {
   author   User   @relation("AnnouncementsAuthored", fields: [authorId], references: [id])
   authorId String
 
-  // null school/section = platform-wide; school-only = school-wide;
-  // school+section = scoped to one class section
+  
+  
   school   School? @relation(fields: [schoolId], references: [id])
   schoolId String?
 
@@ -556,4 +558,62 @@ model Announcement {
 
   @@index([schoolId, createdAt])
   @@index([sectionId, createdAt])
+}
+
+enum EnrollmentDriveStatus {
+  Open
+  Closed
+  Processed
+}
+
+enum EnrollmentSubmissionStatus {
+  Pending
+  Promoted
+  Rejected
+}
+
+model EnrollmentDrive {
+  id             String       @id @default(cuid())
+  academicYear   AcademicYear @relation(fields: [academicYearId], references: [id])
+  academicYearId String
+
+  formId String 
+
+  opensAt  DateTime
+  closesAt DateTime
+
+  status EnrollmentDriveStatus @default(Open)
+
+  submissions EnrollmentSubmission[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([academicYearId])
+}
+
+model EnrollmentSubmission {
+  id      String          @id @default(cuid())
+  drive   EnrollmentDrive @relation(fields: [driveId], references: [id])
+  driveId String
+
+  name  String
+  email String
+
+  stream        Stream
+  session       String 
+  combinationId String?
+  language      SecondLanguage?
+
+  submittedAt DateTime 
+
+  status EnrollmentSubmissionStatus @default(Pending)
+
+  promotedUserId String? @unique 
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([driveId, status])
+  @@index([email])
 }

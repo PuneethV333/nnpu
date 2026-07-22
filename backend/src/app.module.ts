@@ -20,6 +20,8 @@ import { FeesModule } from './fees/fees.module';
 import { OnboardingModule } from './onboarding/onboarding.module';
 import { AnnouncementModule } from './announcement/announcement.module';
 import { TimeTableModule } from './time-table/time-table.module';
+import { EnrollmentModule } from './enrollment/enrollment.module';
+import { GoogleModule } from './google/google.module';
 
 @Module({
   imports: [
@@ -41,6 +43,10 @@ import { TimeTableModule } from './time-table/time-table.module';
         RAZORPAY_KEY_SECRET: Joi.string().required(),
         RAZORPAY_WEBHOOK_SECRET: Joi.string().optional(),
         CORS_ORIGINS: Joi.string().optional(),
+        CLIENT_ID: Joi.string().optional(),
+        CLIENT_SECRET: Joi.string().optional(),
+        REFRESH_TOKEN: Joi.string().optional(),
+        ACCESS_TOKEN: Joi.string().optional(),
       }),
     }),
     ThrottlerModule.forRoot([
@@ -64,6 +70,8 @@ import { TimeTableModule } from './time-table/time-table.module';
     OnboardingModule,
     AnnouncementModule,
     TimeTableModule,
+    EnrollmentModule,
+    GoogleModule,
   ],
   controllers: [AppController],
   providers: [
