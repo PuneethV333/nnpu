@@ -120,7 +120,7 @@ model School {
   announcements Announcement[]
 }
 
-model AcademicYear {
+model  AcademicYear {
   id        String    @id @default(cuid())
   label     String    @unique
   startDate DateTime  @db.Date
@@ -577,7 +577,8 @@ model EnrollmentDrive {
   academicYear   AcademicYear @relation(fields: [academicYearId], references: [id])
   academicYearId String
 
-  formId String 
+  formId      String
+  questionMap Json
 
   opensAt  DateTime
   closesAt DateTime

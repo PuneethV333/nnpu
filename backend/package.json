@@ -31,7 +31,7 @@
     "@nestjs/swagger": "^11.4.5",
     "@nestjs/throttler": "^6.5.0",
     "@prisma/adapter-pg": "^7.8.0",
-    "@prisma/client": "^7.8.0",
+    "@prisma/client": "^7.9.0",
     "bcrypt": "^6.0.0",
     "bullmq": "^5.80.2",
     "class-transformer": "^0.5.1",
@@ -46,6 +46,7 @@
     "ioredis": "^5.11.1",
     "joi": "^18.2.3",
     "jsonwebtoken": "^9.0.3",
+    "nodemailer": "^9.0.3",
     "passport": "^0.7.0",
     "passport-jwt": "^4.0.1",
     "pdfkit": "^0.19.1",
@@ -75,6 +76,7 @@
     "@types/jest": "^30.0.0",
     "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "^24.0.0",
+    "@types/nodemailer": "^8.0.1",
     "@types/passport-jwt": "^4.0.1",
     "@types/pdfkit": "^0.17.6",
     "@types/pdfmake": "^0.3.3",
@@ -87,7 +89,7 @@
     "jest": "^30.4.2",
     "lint-staged": "^17.0.8",
     "prettier": "^3.4.2",
-    "prisma": "^7.8.0",
+    "prisma": "^7.9.0",
     "source-map-support": "^0.5.21",
     "supertest": "^7.0.0",
     "ts-jest": "^29.4.11",
@@ -130,14 +132,15 @@
     ]
   },
   "allowScripts": {
-    "@prisma/engines@7.8.0": true,
-    "prisma@7.8.0": true,
     "bcrypt@6.0.0": true,
     "esbuild@0.28.1": true,
     "protobufjs@7.6.5": true,
     "puppeteer@24.43.1": true,
     "@firebase/util@1.15.1": true,
     "msgpackr-extract@3.0.4": true,
-    "unrs-resolver@1.12.2": true
+    "unrs-resolver@1.12.2": true,
+    "@prisma/engines@7.9.0": true,
+    "prisma@7.9.0": true,
+    "@scarf/scarf@1.4.0": true
   }
 }

@@ -15,6 +15,7 @@ import * as bcrypt from 'bcrypt';
 import { COMBO_CODE, LANG_CODE, STREAM_CODE } from './helper/helper';
 import { Prisma } from '@/generated/prisma';
 import { SecondLanguage } from '@/generated/prisma';
+import { CreateSectionsBulkDto } from './dto/create-sections-bulk.dto';
 
 const STAFF_ROLE_CODE: Record<'Teacher' | 'Admin', string> = {
   Teacher: 'T',
@@ -133,6 +134,7 @@ export class OnboardingService {
           userId: user.id,
           name: dto.name,
           profilePic: dto.profilePic ?? '',
+          email: '',
         },
       });
 
@@ -176,6 +178,7 @@ export class OnboardingService {
           userId: user.id,
           name: dto.name,
           profilePic: dto.profilePic ?? '',
+          email: '',
         },
       });
 
@@ -217,9 +220,6 @@ export class OnboardingService {
     }
   }
 
-  // Creates a single Section ("session") — now a purely physical/roll
-  // grouping. Combination and language live on the student (User), so one
-  // Section can freely mix PCMB, PCMC, different languages, etc.
   async createSection(dto: CreateSectionDto) {
     this.logger.log('[creating-section]');
 
@@ -259,5 +259,59 @@ export class OnboardingService {
       }
       throw err;
     }
+  }
+
+  async createSectionsBulk(dto: CreateSectionsBulkDto) {
+    this.logger.log('[creating-sections-bulk]');
+
+    const classRecord = await this.prisma.class.findUnique({
+      where: { name: dto.classYear },
+    });
+    if (!classRecord) {
+      throw new NotFoundException(`Class "${dto.classYear}" not found`);
+    }
+
+    const academicYear = await this.prisma.academicYear.findUnique({
+      where: { id: dto.academicYearId },
+    });
+    if (!academicYear) {
+      throw new NotFoundException(
+        `Academic year "${dto.academicYearId}" not found`,
+      );
+    }
+
+    const created: string[] = [];
+    const skipped: string[] = [];
+
+    // Sequential, not $transaction — a duplicate session shouldn't roll back
+    // the ones that succeeded; each session is independent.
+    for (const session of dto.sessions) {
+      try {
+        await this.prisma.section.create({
+          data: {
+            name: `${classRecord.name}-${session}`,
+            classId: classRecord.id,
+            session,
+            academicYearId: academicYear.id,
+          },
+        });
+        created.push(session);
+      } catch (err) {
+        if (
+          err instanceof Prisma.PrismaClientKnownRequestError &&
+          err.code === 'P2002'
+        ) {
+          skipped.push(session); // already exists — idempotent re-run
+          continue;
+        }
+        throw err;
+      }
+    }
+
+    return {
+      message: `${created.length} section(s) created, ${skipped.length} already existed`,
+      created,
+      skipped,
+    };
   }
 }

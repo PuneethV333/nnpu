@@ -258,6 +258,7 @@ describe('OnboardingService', () => {
           userId: 'user-1',
           name: dto.name,
           profilePic: '',
+          email: '',
         },
       });
 

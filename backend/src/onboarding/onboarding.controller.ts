@@ -12,6 +12,7 @@ import { CreateTeacherDto } from './dto/create-teacher.dto';
 import { CreateAdminDto } from './dto/create-admin.dto';
 import { CreateAcademicYearDto } from './dto/create-academic-year.dto';
 import { CreateSectionDto } from './dto/create-section.dto';
+import { CreateSectionsBulkDto } from './dto/create-sections-bulk.dto';
 
 @Controller('onboarding')
 export class OnboardingController {
@@ -45,6 +46,16 @@ export class OnboardingController {
   })
   createTeacher(@Body() dto: CreateTeacherDto) {
     return this.onboardingService.createTeacher(dto);
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('Admin')
+  @Post('create-sections-bulk')
+  @ApiOperation({
+    summary: 'Creates multiple sections at once for a class + academic year',
+  })
+  createSectionsBulk(@Body() dto: CreateSectionsBulkDto) {
+    return this.onboardingService.createSectionsBulk(dto);
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)

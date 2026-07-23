@@ -12,7 +12,6 @@ export class TimetableService {
   constructor(private prisma: PrismaService) {}
   private getCurrentWeekDay(): Week {
     const map: Week[] = [
-      Week.SUNDAY,
       Week.MONDAY,
       Week.TUESDAY,
       Week.WEDNESDAY,

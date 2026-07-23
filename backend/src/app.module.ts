@@ -22,6 +22,7 @@ import { AnnouncementModule } from './announcement/announcement.module';
 import { TimeTableModule } from './time-table/time-table.module';
 import { EnrollmentModule } from './enrollment/enrollment.module';
 import { GoogleModule } from './google/google.module';
+import { MailModule } from './mail/mail.module';
 
 @Module({
   imports: [
@@ -47,6 +48,12 @@ import { GoogleModule } from './google/google.module';
         CLIENT_SECRET: Joi.string().optional(),
         REFRESH_TOKEN: Joi.string().optional(),
         ACCESS_TOKEN: Joi.string().optional(),
+        SMTP_HOST: Joi.string().optional(),
+        SMTP_PORT: Joi.number().optional(),
+        SMTP_SECURE: Joi.string().optional(),
+        SMTP_USER: Joi.string().optional(),
+        SMTP_PASS: Joi.string().optional(),
+        SMTP_FROM: Joi.string().optional(),
       }),
     }),
     ThrottlerModule.forRoot([
@@ -72,6 +79,7 @@ import { GoogleModule } from './google/google.module';
     TimeTableModule,
     EnrollmentModule,
     GoogleModule,
+    MailModule,
   ],
   controllers: [AppController],
   providers: [
