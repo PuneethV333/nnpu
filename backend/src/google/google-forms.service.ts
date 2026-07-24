@@ -1,5 +1,5 @@
 import { Injectable, OnModuleInit } from '@nestjs/common';
-import { google } from 'googleapis';
+import { google, forms_v1 } from 'googleapis';
 import { GoogleAuthService } from './google-auth.service';
 
 @Injectable()
@@ -22,7 +22,7 @@ export class GoogleFormsService implements OnModuleInit {
     return res.data;
   }
 
-  async addQuestions(formId: string, requests: any[]) {
+  async addQuestions(formId: string, requests: forms_v1.Schema$Request[]) {
     return this.forms.forms.batchUpdate({
       formId,
       requestBody: { requests },

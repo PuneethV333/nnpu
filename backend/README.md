@@ -1,98 +1,232 @@
-<p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
-</p>
+# NNPU Backend
 
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
+NestJS backend for NNPU (Education Platform) - handles student enrollment, fee management, attendance, marks, timetables, and more.
 
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg" alt="Donate us"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow" alt="Follow us on Twitter"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
+## Tech Stack
 
-## Description
+- **Framework**: NestJS 11 (TypeScript, decorators, DI)
+- **Database**: PostgreSQL via Prisma ORM (@prisma/adapter-pg)
+- **Queue**: BullMQ + Redis (report-card generation)
+- **Auth**: JWT + Passport + Firebase Admin
+- **Payments**: Razorpay
+- **Email**: Nodemailer
+- **PDF**: pdfkit, pdfmake
+- **Validation**: class-validator + class-transformer + Zod
+- **Rate Limiting**: @nestjs/throttler
+- **Logging**: pino + pino-pretty
 
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
+## Project Structure
 
-## Project setup
-
-```bash
-$ npm install
+```
+backend/
+├── src/
+│   ├── main.ts                 # Entry point
+│   ├── app.module.ts           # Root module
+│   ├── app.controller.ts       # Health check endpoint
+│   ├── auth/                   # JWT + Firebase Auth
+│   ├── onboarding/             # School setup (admin, teacher, student, section, academic year)
+│   ├── fees/                   # Fee structures, invoices, Razorpay webhooks
+│   ├── report-card/            # PDF generation via BullMQ queue
+│   ├── calendar/               # Academic calendar generation
+│   ├── announcement/           # Announcements CRUD
+│   ├── enrollment/             # Student enrollment via Google Forms
+│   ├── attendance/             # Attendance marking & summaries
+│   ├── marks/                  # Marks entry & reports
+│   ├── time-table/             # Timetable management
+│   ├── mail/                   # Nodemailer service
+│   ├── firebase/               # Firebase Admin SDK
+│   ├── google/                 # Google Forms & Drive integration
+│   ├── redis/                  # Redis service & module
+│   ├── logger/                 # Pino logger wrapper
+│   ├── prisma/                 # Prisma service & module
+│   ├── notification/           # Push notifications
+│   └── types/express.d.ts      # Express types augmentation
+├── prisma/
+│   └── schema.prisma           # Database schema
+├── test/
+│   ├── app.e2e-spec.ts         # E2E tests
+│   └── jest-e2e.json           # E2E Jest config
+├── nest-cli.json               # Nest CLI config
+├── tsconfig.json               # TypeScript config
+├── eslint.config.mjs           # ESLint config
+├── .prettierrc                 # Prettier config
+└── package.json
 ```
 
-## Compile and run the project
+## Key Modules
+
+| Module | Purpose |
+|--------|---------|
+| **auth** | JWT + Firebase token validation, login/refresh/logout, role-based guards |
+| **onboarding** | Initial school setup: create school, admin, teachers, students, sections, academic years |
+| **fees** | Fee structures, invoice generation, Razorpay payment integration |
+| **report-card** | PDF report card generation (queued via BullMQ) |
+| **calendar** | Academic calendar (holidays, events, working days) |
+| **announcement** | CRUD for school/section announcements |
+| **enrollment** | Google Forms-based student enrollment drives |
+| **attendance** | Daily attendance marking, summaries |
+| **marks** | Marks entry, report cards, assessment management |
+| **time-table** | Timetable creation & retrieval |
+| **mail** | Transactional emails via Nodemailer |
+| **firebase** | Firebase Admin SDK initialization |
+| **google** | Google Forms creation & response fetching |
+| **redis** | Caching & session storage |
+| **prisma** | Database client wrapper |
+| **logger** | Structured logging with Pino |
+
+## Development Commands
 
 ```bash
-# development
-$ npm run start
+# Install dependencies
+npm install
 
-# watch mode
-$ npm run start:dev
+# Development (watch mode)
+npm run start:dev
 
-# production mode
-$ npm run start:prod
+# Debug mode
+npm run start:debug
+
+# Build for production
+npm run build
+
+# Production run
+npm run start:prod
+
+# Lint & fix
+npm run lint
+
+# Format code
+npm run format
+
+# Tests
+npm run test           # Unit tests
+npm run test:watch     # Watch mode
+npm run test:cov       # Coverage report
+npm run test:e2e       # E2E tests
 ```
 
-## Run tests
+## Environment Variables
+
+Create a `.env` file in `backend/`:
+
+```env
+# Database
+DATABASE_URL=postgresql://user:pass@host:5432/db
+
+# Redis
+REDIS_URL=redis://localhost:6379
+
+# JWT
+JWT_SECRET=your-secret
+JWT_ACCESS_EXPIRES_IN=15m
+
+# App
+PORT=5000
+NODE_ENV=development
+
+# Firebase Admin
+FIREBASE_PROJECT_ID=your-project
+FIREBASE_CLIENT_EMAIL=service-account@project.iam.gserviceaccount.com
+FIREBASE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n"
+
+# Razorpay
+RAZORPAY_KEY_ID=rzp_test_xxx
+RAZORPAY_KEY_SECRET=xxx
+RAZORPAY_WEBHOOK_SECRET=xxx
+
+# Google OAuth (for Forms/Drive)
+CLIENT_ID=xxx
+CLIENT_SECRET=xxx
+REFRESH_TOKEN=xxx
+
+# Email (Nodemailer)
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_SECURE=false
+SMTP_USER=your-email
+SMTP_PASS=your-password
+SMTP_FROM=NNPU <noreply@nnp.edu>
+
+# CORS
+CORS_ORIGINS=http://localhost:3000
+```
+
+## Database
 
 ```bash
-# unit tests
-$ npm run test
+# Generate Prisma client
+npx prisma generate
 
-# e2e tests
-$ npm run test:e2e
+# Run migrations (dev)
+npx prisma migrate dev
 
-# test coverage
-$ npm run test:cov
+# Deploy migrations (prod)
+npx prisma migrate deploy
+
+# Open Prisma Studio
+npx prisma studio
 ```
+
+## Core Features
+
+### Authentication
+- **Login**: `POST /auth/login` (authId + password)
+- **Refresh**: `POST /auth/refresh` (refresh token rotation)
+- **Me**: `GET /auth/me` (cached via Redis)
+- **Logout**: `POST /auth/logout` (JWT blacklist in Redis)
+- **Change Password**: `POST /auth/change-password`
+- **Guards**: `JwtAuthGuard` + `RolesGuard` (@Roles('Admin', 'Teacher', 'Student'))
+
+### Enrollment Flow
+1. Admin creates drive → generates Google Form with sessions/combinations
+2. Students submit form
+3. **Close cron** (hourly): fetches responses before deadline, creates `EnrollmentSubmission` records
+4. **Promote cron** (hourly): promotes `Pending` submissions → creates `User` + `Auth` + sends credentials email
+
+### Fees & Payments
+- Fee structures per section/academic year
+- Invoice generation (bulk or individual)
+- Razorpay order creation & webhook handling
+- Payment verification & receipt generation
+
+### Timetable
+- Period definitions per stream
+- Section-specific timetables
+- Teacher & subject assignments
+
+## API Documentation
+
+Swagger UI available at `/api` when running in development mode.
 
 ## Deployment
 
-When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
-
-If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
-
 ```bash
-$ npm install -g @nestjs/mau
-$ mau deploy
+# Build
+npm run build
+
+# Run
+node dist/main.js
 ```
 
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
+**Requirements**: PostgreSQL, Redis, Firebase credentials, Razorpay keys, SMTP server.
 
-## Resources
+## Git Hooks
 
-Check out a few resources that may come in handy when working with NestJS:
+- `lint-staged` runs `eslint --fix` on staged `.ts` files pre-commit
 
-- Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
-- For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
-- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
-- Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
-- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
-- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
-- To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
-- Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
+## Testing
 
-## Support
+```bash
+# Unit tests
+npm run test
 
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
+# E2E tests
+npm run test:e2e
 
-## Stay in touch
-
-- Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
+# Coverage
+npm run test:cov  # outputs to coverage/
+```
 
 ## License
 
-Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+UNLICENSED - Private project

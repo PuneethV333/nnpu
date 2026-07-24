@@ -120,7 +120,7 @@ model School {
   announcements Announcement[]
 }
 
-model  AcademicYear {
+model AcademicYear {
   id        String    @id @default(cuid())
   label     String    @unique
   startDate DateTime  @db.Date
@@ -203,8 +203,6 @@ model TimetableSlot {
   period    Period  @relation(fields: [periodId], references: [id])
   day       Week
 
-  
-  
   language      SecondLanguage?
   combinationId String?
   combination   Combination?    @relation(fields: [combinationId], references: [id])
@@ -247,9 +245,6 @@ model Section {
   timetable      Timetable?
   timetableSlots TimetableSlot[]
 
-  
-  
-  
   @@unique([classId, session, academicYearId])
 }
 
@@ -545,8 +540,6 @@ model Announcement {
   author   User   @relation("AnnouncementsAuthored", fields: [authorId], references: [id])
   authorId String
 
-  
-  
   school   School? @relation(fields: [schoolId], references: [id])
   schoolId String?
 
@@ -577,6 +570,8 @@ model EnrollmentDrive {
   academicYear   AcademicYear @relation(fields: [academicYearId], references: [id])
   academicYearId String
 
+  stream Stream
+
   formId      String
   questionMap Json
 
@@ -602,15 +597,15 @@ model EnrollmentSubmission {
   email String
 
   stream        Stream
-  session       String 
+  session       String
   combinationId String?
   language      SecondLanguage?
 
-  submittedAt DateTime 
+  submittedAt DateTime
 
   status EnrollmentSubmissionStatus @default(Pending)
 
-  promotedUserId String? @unique 
+  promotedUserId String? @unique
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

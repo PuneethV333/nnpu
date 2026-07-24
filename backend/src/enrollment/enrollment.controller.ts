@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Get,
@@ -13,6 +14,7 @@ import { RolesGuard } from '@/auth/guard/roles.guard';
 import { Roles } from '@/auth/decorators/roles.decorator';
 import { CreateDriveDto } from './dto/create-drive.dto';
 import { ApiOperation } from '@nestjs/swagger';
+import { EnrollmentSubmissionStatus } from '@/generated/prisma';
 
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles('Admin')
@@ -40,7 +42,19 @@ export class EnrollmentController {
 
   @Get('drive/:id/submissions')
   listSubmissions(@Param('id') id: string, @Query('status') status?: string) {
-    return this.enrollmentService.listSubmissions(id, status);
+    if (
+      status &&
+      !Object.values(EnrollmentSubmissionStatus).includes(
+        status as EnrollmentSubmissionStatus,
+      )
+    ) {
+      throw new BadRequestException(`Invalid status: ${status}`);
+    }
+
+    return this.enrollmentService.listSubmissions(
+      id,
+      status as EnrollmentSubmissionStatus | undefined,
+    );
   }
 
   @Post('submission/:id/promote')

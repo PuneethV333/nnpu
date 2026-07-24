@@ -1,6 +1,3 @@
-/* eslint-disable @typescript-eslint/no-unsafe-call */
-/* eslint-disable @typescript-eslint/no-unsafe-member-access */
-/* eslint-disable @typescript-eslint/no-unsafe-assignment */
 import {
   Injectable,
   NotFoundException,
@@ -13,6 +10,8 @@ import { MailService } from '@/mail/mail.service';
 import { CreateDriveDto } from './dto/create-drive.dto';
 import { hash } from 'bcrypt';
 import { randomBytes } from 'crypto';
+import { EnrollmentSubmissionStatus } from '@/generated/prisma';
+import type { forms_v1 } from 'googleapis';
 
 const STREAM_CODE: Record<'Science' | 'Commerce', string> = {
   Science: 'SCI',
@@ -34,6 +33,7 @@ export class EnrollmentService {
     const academicYear = await this.prisma.academicYear.findUnique({
       where: { id: dto.academicYearId },
     });
+
     if (!academicYear) {
       throw new NotFoundException('Academic year not found');
     }
@@ -41,6 +41,7 @@ export class EnrollmentService {
     const classRecord = await this.prisma.class.findUnique({
       where: { name: '1' },
     });
+
     if (!classRecord) {
       throw new NotFoundException('Class "1" (1st PUC) not found');
     }
@@ -59,7 +60,7 @@ export class EnrollmentService {
     );
 
     const streamsToProcess = (['Science', 'Commerce'] as const).filter(
-      (s) => byStream[s].length > 0,
+      (stream) => byStream[stream].length > 0,
     );
 
     const results = await Promise.all(
@@ -75,7 +76,10 @@ export class EnrollmentService {
     );
 
     return Object.fromEntries(
-      streamsToProcess.map((stream, i) => [stream.toLowerCase(), results[i]]),
+      streamsToProcess.map((stream, index) => [
+        stream.toLowerCase(),
+        results[index],
+      ]),
     );
   }
 
@@ -89,11 +93,6 @@ export class EnrollmentService {
     const sectionResults: { session: string; created: boolean }[] = [];
 
     for (const displayName of sessions) {
-      // Internal session key is stream-disambiguated (e.g. "SCI-A") so
-      // Science and Commerce sessions never collide on the Section's
-      // @@unique([classId, session, academicYearId]) constraint — both
-      // streams share the same classId ("1") and academicYearId, so the
-      // plain display name alone ("A") is NOT unique across streams.
       const sessionKey = `${STREAM_CODE[stream]}-${displayName}`;
 
       const existing = await this.prisma.section.findUnique({
@@ -130,7 +129,7 @@ export class EnrollmentService {
       `${stream} Enrollment - ${academicYear.label}`,
     );
 
-    const requests = [
+    const requests: forms_v1.Schema$Request[] = [
       this.textQuestion('Full Name'),
       this.textQuestion('Email Address'),
       // Students see the plain display names ("A", "B") — the stream
@@ -191,9 +190,9 @@ export class EnrollmentService {
     return drive;
   }
 
-  async listSubmissions(driveId: string, status?: string) {
+  async listSubmissions(driveId: string, status?: EnrollmentSubmissionStatus) {
     return this.prisma.enrollmentSubmission.findMany({
-      where: { driveId, ...(status ? { status: status as any } : {}) },
+      where: { driveId, ...(status ? { status } : {}) },
       orderBy: { createdAt: 'asc' },
     });
   }
@@ -219,9 +218,6 @@ export class EnrollmentService {
       where: { name: '1' },
     });
 
-    // Reconstruct the same stream-disambiguated session key used at
-    // creation time — submission.session holds the plain display name
-    // ("A"), submission.stream tells us which stream's "A" this actually is.
     const sessionKey = `${STREAM_CODE[submission.stream]}-${submission.session}`;
 
     const section = await this.prisma.section.findUnique({
@@ -312,7 +308,7 @@ export class EnrollmentService {
     return { promoted, failed, errors };
   }
 
-  private textQuestion(title: string) {
+  private textQuestion(title: string): forms_v1.Schema$Request {
     return {
       createItem: {
         item: {
@@ -324,7 +320,10 @@ export class EnrollmentService {
     };
   }
 
-  private choiceQuestion(title: string, options: string[]) {
+  private choiceQuestion(
+    title: string,
+    options: string[],
+  ): forms_v1.Schema$Request {
     return {
       createItem: {
         item: {
@@ -345,17 +344,19 @@ export class EnrollmentService {
   }
 
   private extractItemIds(
-    batchResult: any,
+    batchResult: { data: forms_v1.Schema$BatchUpdateFormResponse },
     order: string[],
   ): Record<string, string> {
     const replies = batchResult.data.replies ?? [];
     const map: Record<string, string> = {};
-    replies.forEach((reply: any, idx: number) => {
+
+    replies.forEach((reply, idx) => {
       const itemId = reply.createItem?.itemId;
       if (itemId && order[idx]) {
         map[order[idx]] = itemId;
       }
     });
+
     return map;
   }
 

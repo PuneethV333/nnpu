@@ -1,21 +1,12 @@
-/* eslint-disable @typescript-eslint/no-unsafe-return */
-/* eslint-disable @typescript-eslint/no-unsafe-member-access */
-/* eslint-disable @typescript-eslint/no-unsafe-assignment */
-// enrollment/cron/enrollment-close.cron.ts
 import { Injectable } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { PrismaService } from '@/prisma/prisma.service';
 import { LoggerService } from '@/logger/logger.service';
 import { GoogleFormsService } from '@/google/google-forms.service';
-
-interface QuestionMap {
-  name: string;
-  email: string;
-  stream: string;
-  session: string;
-  combination: string;
-  language: string;
-}
+import {
+  QuestionMap,
+  ParsedResponse,
+} from '@/enrollment/types/enrollment.types';
 
 @Injectable()
 export class EnrollmentCloseCron {
@@ -50,10 +41,9 @@ export class EnrollmentCloseCron {
 
     const questionMap = drive.questionMap as unknown as QuestionMap;
 
-    // combinationId in EnrollmentSubmission needs a real Combination.id —
-    // the form only ever presents combination *names* as dropdown choices,
-    // so responses need this lookup to resolve name -> id before staging.
-    const combinations = await this.prisma.combination.findMany();
+    const combinations = await this.prisma.combination.findMany({
+      where: { stream: drive.stream },
+    });
     const combinationByName = new Map(combinations.map((c) => [c.name, c.id]));
 
     const responses = await this.formsService.listResponses(drive.formId);
@@ -74,7 +64,6 @@ export class EnrollmentCloseCron {
         questionMap,
         combinationByName,
       );
-
       if (!parsed) {
         skipped++;
         continue;
@@ -94,13 +83,11 @@ export class EnrollmentCloseCron {
           driveId,
           name: parsed.name,
           email: parsed.email,
-          stream: parsed.stream,
+          stream: drive.stream,
           session: parsed.session,
           combinationId: parsed.combinationId,
           language: parsed.language,
-          submittedAt: new Date(
-            (response.lastSubmittedTime ?? response.createTime) as string,
-          ),
+          submittedAt: parsed.submittedAt,
         },
       });
 
@@ -118,17 +105,38 @@ export class EnrollmentCloseCron {
   }
 
   private parseResponse(
-    response: any,
+    response: unknown,
     questionMap: QuestionMap,
     combinationByName: Map<string, string>,
-  ): {
-    name: string;
-    email: string;
-    stream: 'Science' | 'Commerce';
-    session: string;
-    combinationId: string | null;
-    language: 'Kannada' | 'Hindi' | 'Sanskrit' | null;
-  } | null {
+  ): ParsedResponse | null {
+    type FormAnswer = {
+      textAnswers?: {
+        answers?: Array<{ value?: string }>;
+      };
+    };
+
+    type GoogleFormsResponse = {
+      answers?: Record<string, FormAnswer>;
+      lastSubmittedTime?: string;
+      createTime?: string;
+    };
+
+    const isGoogleFormsResponse = (
+      value: unknown,
+    ): value is GoogleFormsResponse => {
+      return (
+        typeof value === 'object' &&
+        value !== null &&
+        ('answers' in value ||
+          'lastSubmittedTime' in value ||
+          'createTime' in value)
+      );
+    };
+
+    if (!isGoogleFormsResponse(response)) {
+      return null;
+    }
+
     try {
       const answers = response.answers ?? {};
 
@@ -137,12 +145,11 @@ export class EnrollmentCloseCron {
 
       const name = getAnswer(questionMap.name);
       const email = getAnswer(questionMap.email);
-      const stream = getAnswer(questionMap.stream) as 'Science' | 'Commerce';
       const session = getAnswer(questionMap.session);
       const combinationName = getAnswer(questionMap.combination);
       const languageRaw = getAnswer(questionMap.language);
 
-      if (!name || !email || !stream || !session) {
+      if (!name || !email || !session) {
         return null;
       }
 
@@ -154,13 +161,17 @@ export class EnrollmentCloseCron {
         return null;
       }
 
+      const submittedAt = new Date(
+        (response.lastSubmittedTime ?? response.createTime) as string,
+      );
+
       return {
         name,
         email,
-        stream,
         session,
         combinationId,
-        language: (languageRaw as any) ?? null,
+        language: (languageRaw as 'Hindi' | 'Kannada' | 'Sanskrit') ?? null,
+        submittedAt,
       };
     } catch {
       return null;
