@@ -1,6 +1,6 @@
 import { LoggerService } from '@/logger/logger.service';
 import { PrismaService } from '@/prisma/prisma.service';
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import { AnnouncementDto } from './dto/announcement-Query.dto';
 import { latest } from './type/announcement.type';
 
@@ -65,22 +65,65 @@ export class AnnouncementService {
       orderBy: [{ isPinned: 'desc' }, { createdAt: 'desc' }],
       skip: (page - 1) * pageSize,
       take: pageSize,
-      select: {
-        title: true,
-        type: true,
+      include: {
+        author: {
+          include: {
+            details: {
+              select: {
+                name: true,
+                profilePic: true,
+              },
+            },
+          },
+        },
       },
     });
 
-    return announcements;
+    const result: latest[] = announcements.map((announcement) => {
+      return {
+        name: announcement.author.details?.name ?? '',
+        profilePic: announcement.author.details?.profilePic ?? '',
+        title: announcement.title,
+        body: announcement.body,
+        type: announcement.type,
+        id: announcement.id,
+      };
+    });
+
+    return { data: result, page, pageSize };
   }
 
   async details(id: string) {
-    return this.prisma.announcement.findUnique({
+    const announcement = await this.prisma.announcement.findUnique({
       where: { id },
       include: {
-        author: true,
+        author: {
+          include: {
+            details: {
+              select: {
+                name: true,
+                profilePic: true,
+              },
+            },
+          },
+        },
       },
     });
+
+    if (!announcement) {
+      throw new BadRequestException('Announcement not found');
+    }
+
+    const result: latest = {
+      name: announcement.author.details?.name ?? '',
+      profilePic: announcement.author.details?.profilePic ?? '',
+      title: announcement.title,
+      body: announcement.body,
+      type: announcement.type,
+      id: announcement.id,
+    };
+
+    return result;
   }
 
   //todo : create,update,delete

@@ -11,3 +11,11 @@ export const latestSchema = z.object({
 });
 
 export type latest = z.infer<typeof latestSchema>;
+
+export const allSchema = z.object({
+  data:z.array(latestSchema),
+  page: z.number(),
+  pageSize: z.number(),
+})
+
+export type all = z.infer<typeof allSchema>;
