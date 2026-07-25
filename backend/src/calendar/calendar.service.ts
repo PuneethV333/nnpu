@@ -3,11 +3,14 @@ import { PrismaService } from '@/prisma/prisma.service';
 import { Injectable } from '@nestjs/common';
 import { GenerateCalendarDto } from './dto/generate-calendar.dto';
 import { DayType } from '@/generated/prisma';
+import { range } from './types/range.type';
+import { RedisService } from '@/redis/redis.service';
 
 @Injectable()
 export class CalendarService {
   constructor(
     private readonly prisma: PrismaService,
+    private readonly redis: RedisService,
     private readonly logger: LoggerService,
   ) {}
 
@@ -55,7 +58,15 @@ export class CalendarService {
 
   async getRange(from: string, to: string) {
     this.logger.log('[get-range]');
-    return this.prisma.academicCalendarDay.findMany({
+    const cacheKey = `range:${from}:${to}`;
+
+    const cached = await this.redis.get<range[]>(cacheKey);
+
+    if (cached) {
+      return { data: cached, source: 'redis' };
+    }
+
+    const data = await this.prisma.academicCalendarDay.findMany({
       where: {
         date: {
           gte: new Date(from),
@@ -64,6 +75,21 @@ export class CalendarService {
       },
       orderBy: { date: 'asc' },
     });
+
+    const result: range[] = data.map((x) => {
+      return {
+        id: x.id,
+        date: x.date,
+        type: x.type,
+        label: x.label,
+        createdAt: x.createdAt,
+        updatedAt: x.updatedAt,
+      };
+    });
+
+    await this.redis.set<range[]>(cacheKey, result);
+
+    return { data: result, source: 'db' };
   }
 
   async overrideDay(date: string, type: DayType, label?: string) {

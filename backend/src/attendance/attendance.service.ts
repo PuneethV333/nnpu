@@ -181,6 +181,11 @@ export class AttendanceService {
 
   async getRoster(sectionId: string, date: string): Promise<RosterType> {
     this.logger.log('[roster]');
+    const cacheKey = `attendance:roster:${sectionId}:${date}`;
+    const cached = await this.redis.get<RosterArray>(cacheKey);
+    if (cached) {
+      return { data: cached, source: 'redis' };
+    }
 
     const dateObj = new Date(date);
 
@@ -238,6 +243,8 @@ export class AttendanceService {
       name: student.details?.name,
       profilePic: student.details?.profilePic,
     }));
+    // blunt-invalidates all attendance caches school-wide; fine at current scale, revisit if multi-tenant
+    await this.redis.set<RosterArray>(cacheKey, result);
 
     return { data: result, source: 'db' };
   }
@@ -321,6 +328,8 @@ export class AttendanceService {
         this.redis.del(`attendance:summary:${e.studentId}`),
       ),
     );
+
+    await this.redis.delPattern('attendance:*');
 
     return { message: `Attendance marked for ${dto.entries.length} students` };
   }
