@@ -1,22 +1,24 @@
-import { z } from "zod";
-import type { all, latest as late } from "../types/announcement";
-import { allSchema, latestSchema } from "../types/announcement";
-import { api } from "./client";
+import {
+  latestListResponseSchema,
+  detailResponseSchema,
+  type Latest,
+} from '../types/announcement';
+import { api } from './client';
 
-export const latest = async (): Promise<late[]> => {
-  return z.array(latestSchema).parse((await api.get('announcement/latest')).data)
-}
+export const latest = async (): Promise<Latest[]> => {
+  const res = await api.get('announcement/latest');
+  return latestListResponseSchema.parse(res.data).data;
+};
 
-export const details = async (id: string): Promise<late> => {
-  return latestSchema.parse((await api.get(`announcement/${id}`)).data)
-}
+export const details = async (id: string): Promise<Latest> => {
+  const res = await api.get(`announcement/${id}`);
+  return detailResponseSchema.parse(res.data).data;
+};
 
-export const allAnnouncements = async (page: number = 1, pageSize: number = 10): Promise<all> => {
-  return allSchema.parse((await api.get('announcement/all', {
-    params: {
-      page,
-      pageSize
-    }
-  })).data)
-}
-
+export const allAnnouncements = async (
+  page: number = 1,
+  pageSize: number = 10,
+): Promise<{ data: Latest[] }> => {
+  const res = await api.get('announcement/all', { params: { page, pageSize } });
+  return { data: latestListResponseSchema.parse(res.data).data };
+};

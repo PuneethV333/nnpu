@@ -3,12 +3,14 @@ import { PrismaService } from '@/prisma/prisma.service';
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { AnnouncementDto } from './dto/announcement-Query.dto';
 import { latest } from './type/announcement.type';
+import { RedisService } from '@/redis/redis.service';
 
 @Injectable()
 export class AnnouncementService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly logger: LoggerService,
+    private readonly redis: RedisService,
   ) {}
 
   // private async resolveUser(
@@ -27,6 +29,15 @@ export class AnnouncementService {
   // }
 
   async findLatest() {
+    this.logger.log('[find-latest]');
+
+    const cacheKey = `announcements:latest`;
+    const cached = await this.redis.get<latest>(cacheKey);
+
+    if (cached) {
+      return { data: cached, source: 'redis' };
+    }
+
     const announcements = await this.prisma.announcement.findMany({
       orderBy: [{ isPinned: 'desc' }, { createdAt: 'desc' }],
       take: 5,
@@ -55,11 +66,19 @@ export class AnnouncementService {
       };
     });
 
-    return result;
+    await this.redis.set<latest[]>(cacheKey, result);
+
+    return { data: result, source: 'db' };
   }
 
   async findAll(dto: AnnouncementDto) {
     const { page, pageSize } = dto;
+
+    const cacheKey = `announcement:${page}:${pageSize}`;
+    const cached = await this.redis.get<latest[]>(cacheKey);
+    if (cached) {
+      return { data: cached, source: 'redis' };
+    }
 
     const announcements = await this.prisma.announcement.findMany({
       orderBy: [{ isPinned: 'desc' }, { createdAt: 'desc' }],
@@ -90,10 +109,18 @@ export class AnnouncementService {
       };
     });
 
-    return { data: result, page, pageSize };
+    await this.redis.set<latest[]>(cacheKey, result);
+
+    return { data: result, source: 'db' };
   }
 
   async details(id: string) {
+    this.logger.log('[announcement-details]');
+    const cacheKey = `announcement:details:${id}`;
+    const cached = await this.redis.get<latest>(cacheKey);
+    if (cached) {
+      return { data: cached, source: 'redis' };
+    }
     const announcement = await this.prisma.announcement.findUnique({
       where: { id },
       include: {
@@ -123,7 +150,9 @@ export class AnnouncementService {
       id: announcement.id,
     };
 
-    return result;
+    await this.redis.set<latest>(cacheKey, result);
+
+    return { data: result, source: 'db' };
   }
 
   //todo : create,update,delete

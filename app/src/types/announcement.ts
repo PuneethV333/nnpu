@@ -1,22 +1,29 @@
-
 import { z } from 'zod';
 
 export const latestSchema = z.object({
   name: z.string(),
   title: z.string(),
-  type: z.enum(['Holiday','TimetableUpdate','ResultUpdate','Normal']),
+  type: z.enum(['Holiday', 'TimetableUpdate', 'ResultUpdate', 'Normal']),
   body: z.string(),
   profilePic: z.string(),
   id: z.string(),
 });
 
-export type latest = z.infer<typeof latestSchema>;
+export type Latest = z.infer<typeof latestSchema>;
+export type latest = Latest;
 
-export const allSchema = z.object({
-  data:z.array(latestSchema),
-  page: z.number(),
-  pageSize: z.number(),
-})
+const sourceEnum = z.enum(['db', 'redis']);
 
-export type all = z.infer<typeof allSchema>;
+export const latestListResponseSchema = z.object({
+  data: z.array(latestSchema),
+  source: sourceEnum,
+});
 
+export type LatestListResponse = z.infer<typeof latestListResponseSchema>;
+
+export const detailResponseSchema = z.object({
+  data: latestSchema,
+  source: sourceEnum,
+});
+
+export type DetailResponse = z.infer<typeof detailResponseSchema>;

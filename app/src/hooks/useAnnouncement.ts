@@ -1,27 +1,31 @@
-import { useQuery } from "@tanstack/react-query";
-import { details, latest } from "../api/announcement";
-import { useAuth } from "./useAuth";
+import { useQuery } from '@tanstack/react-query';
+import { allAnnouncements, details, latest } from '../api/announcement';
+import { useAuth } from './useAuth';
 
 export const useGetLatest = () => {
-  const { isAuthenticated } = useAuth()
+  const { isAuthenticated } = useAuth();
   return useQuery({
-    queryKey: ['get-latest'],
+    queryKey: ['announcements', 'latest'],
     queryFn: latest,
-    retry: false,
-    enabled: isAuthenticated
-  })
-}
+    enabled: isAuthenticated,
+  });
+};
 
 export const useGetAnnouncementDetails = (id: string) => {
-  const { isAuthenticated } = useAuth()
+  const { isAuthenticated } = useAuth();
   return useQuery({
-    queryKey: ['get-details'],
+    queryKey: ['announcements', 'detail', id],
     queryFn: () => details(id),
-    retry: false,
-    enabled: isAuthenticated,
-  })
-}
+    enabled: isAuthenticated && !!id,
+  });
+};
 
-export const useGetAnnouncements = (page:number = 1,pageSize:number = 10) => {
-  
-}
+export const useGetAnnouncements = (page: number = 1, pageSize: number = 10) => {
+  const { isAuthenticated } = useAuth();
+  return useQuery({
+    queryKey: ['announcements', 'all', page, pageSize],
+    queryFn: () => allAnnouncements(page, pageSize),
+    select: (res) => res.data,
+    enabled: isAuthenticated,
+  });
+};

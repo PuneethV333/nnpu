@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery } from '@tanstack/react-query';
 import { useAuth } from './useAuth';
 import { checkStatus, getAttendance, getMySummary, markAttendance, roster } from '../api/attendance';
 
@@ -12,20 +12,20 @@ export const useGetMyAttendance = (from: string, to: string) => {
   });
 };
 
-export const useGetMySummery = (from: string, to: string) => {
+export const useGetMySummary = (from: string, to: string) => {
   const { isAuthenticated } = useAuth()
   return useQuery({
-    queryKey: ['summery',from,to],
+    queryKey: ['summary',from,to],
     queryFn: () => getMySummary(from, to),
     select: (res) => res.data,
-    enabled: isAuthenticated,
+    enabled: isAuthenticated && !!from && !!to,
   })
 }
 
 export const useGetRoster = (sectionId: string, date: string) => {
   const { isAuthenticated,role } = useAuth()
   return useQuery({
-    queryKey: ['summery',sectionId,date],
+    queryKey: ['roster',sectionId,date],
     queryFn: () => roster(sectionId,date),
     select: (res) => res.data,
     enabled: isAuthenticated && role === 'Teacher',
