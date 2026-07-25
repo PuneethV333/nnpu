@@ -1,4 +1,4 @@
-import { getMySchema, GetMyType } from '@/src/types/attendance';
+import { getMySchema, GetMyType, mySummarySchema, mySummaryType } from '@/src/types/attendance';
 import { api } from './client';
 
 export const getAttendance = async (
@@ -9,3 +9,12 @@ export const getAttendance = async (
     (await api.get('/attendance/get-me', { params: { from, to } })).data,
   );
 };
+
+export const getMySummary = async (from: string,
+  to: string,): Promise<mySummaryType> => {
+  return mySummarySchema.parse((await api.get('/attendance/summary', { params: { from, to } })).data)
+}
+
+export const roster = async (sectionId: string,date: string)  => {
+  
+}
