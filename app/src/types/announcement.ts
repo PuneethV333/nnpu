@@ -19,3 +19,4 @@ export const allSchema = z.object({
 })
 
 export type all = z.infer<typeof allSchema>;
+

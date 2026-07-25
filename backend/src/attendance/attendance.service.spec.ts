@@ -153,8 +153,8 @@ describe('AttendanceService', () => {
         '2026-07-09',
       );
 
-      expect(result.data.isMarked).toBe(false);
-      expect(result.data.isLocked).toBe(false);
+      expect(result.isMarked).toBe(false);
+      expect(result.isLocked).toBe(false);
     });
 
     it('reports isLocked=true when marked more than 24h ago', async () => {
@@ -173,8 +173,8 @@ describe('AttendanceService', () => {
         '2026-07-09',
       );
 
-      expect(result.data.isMarked).toBe(true);
-      expect(result.data.isLocked).toBe(true);
+      expect(result.isMarked).toBe(true);
+      expect(result.isLocked).toBe(true);
     });
   });
 

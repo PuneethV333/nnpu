@@ -9,6 +9,7 @@ import {
 } from '@nestjs/common';
 import { AttendanceArray, GetMyType } from './types/getMy.type';
 import { AttendanceSummary } from './types/summary.type';
+import type { RosterType, RosterArray } from './types/roster.type';
 import { MarkAttendanceDto } from './dto/mark-attendance.dto';
 import { Cron, CronExpression } from '@nestjs/schedule';
 
@@ -178,7 +179,7 @@ export class AttendanceService {
     return { data: summary, source: 'db' };
   }
 
-  async getRoster(sectionId: string, date: string) {
+  async getRoster(sectionId: string, date: string): Promise<RosterType> {
     this.logger.log('[roster]');
 
     const dateObj = new Date(date);
@@ -227,7 +228,18 @@ export class AttendanceService {
       orderBy: { student: { details: { name: 'asc' } } },
     });
 
-    return { data: roster, source: 'db' };
+    if (!roster) {
+      throw new BadRequestException('');
+    }
+
+    const result: RosterArray = roster.map(({ student, ...attendance }) => ({
+      ...attendance,
+      studentId: student.id,
+      name: student.details?.name,
+      profilePic: student.details?.profilePic,
+    }));
+
+    return { data: result, source: 'db' };
   }
 
   async markAttendance(dto: MarkAttendanceDto, authId: string) {
@@ -341,8 +353,6 @@ export class AttendanceService {
       ? Date.now() - firstMarkedAt.getTime() > 24 * 60 * 60 * 1000
       : false;
 
-    return {
-      data: { isMarked, isLocked, markedAt: firstMarkedAt },
-    };
+    return { isMarked, isLocked, markedAt: firstMarkedAt };
   }
 }
