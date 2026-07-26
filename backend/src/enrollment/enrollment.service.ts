@@ -10,10 +10,12 @@ import { MailService } from '@/mail/mail.service';
 import { CreateDriveDto } from './dto/create-drive.dto';
 import { hash } from 'bcrypt';
 import { randomBytes } from 'crypto';
-import { EnrollmentSubmissionStatus } from '@/generated/prisma';
+import { EnrollmentSubmissionStatus, Prisma, Stream } from '@/generated/prisma';
 import type { forms_v1 } from 'googleapis';
+import { getDriveReturnType } from './types/enrollment.types';
+import { COMBO_CODE, LANG_CODE, STREAM_CODE } from '@/onboarding/helper/helper';
 
-const STREAM_CODE: Record<'Science' | 'Commerce', string> = {
+const SECTION_STREAM_PREFIX: Record<'Science' | 'Commerce', string> = {
   Science: 'SCI',
   Commerce: 'COM',
 };
@@ -46,9 +48,7 @@ export class EnrollmentService {
       throw new NotFoundException('Class "1" (1st PUC) not found');
     }
 
-    const byStream = dto.sessions.reduce<
-      Record<'Science' | 'Commerce', string[]>
-    >(
+    const byStream = dto.sessions.reduce<Record<Stream, string[]>>(
       (acc, entry) => {
         acc[entry.stream].push(entry.name);
         return acc;
@@ -83,6 +83,205 @@ export class EnrollmentService {
     );
   }
 
+  async listDrives() {
+    return this.prisma.enrollmentDrive.findMany({
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  async getDrive(driveId: string): Promise<getDriveReturnType> {
+    const drive = await this.prisma.enrollmentDrive.findUnique({
+      where: { id: driveId },
+      include: {
+        submissions: { orderBy: { createdAt: 'desc' } },
+      },
+    });
+    if (!drive) throw new NotFoundException('Drive not found');
+
+    const result: getDriveReturnType = {
+      id: drive.id,
+      academicYearId: drive.academicYearId,
+      stream: drive.stream,
+      status: drive.status,
+      opensAt: drive.opensAt,
+      closesAt: drive.closesAt,
+      submissions: drive.submissions.map((submission) => ({
+        id: submission.id,
+        name: submission.name,
+        email: submission.email,
+        stream: submission.stream,
+        session: submission.session,
+        language: submission.language,
+        submittedAt: submission.submittedAt,
+        status: submission.status,
+      })),
+    };
+
+    return result;
+  }
+
+  async listSubmissions(driveId: string, status?: EnrollmentSubmissionStatus) {
+    return this.prisma.enrollmentSubmission.findMany({
+      where: { driveId, ...(status ? { status } : {}) },
+      orderBy: { createdAt: 'asc' },
+    });
+  }
+
+  async promoteOne(submissionId: string) {
+    const submission = await this.prisma.enrollmentSubmission.findUniqueOrThrow(
+      {
+        where: { id: submissionId },
+      },
+    );
+
+    const claim = await this.prisma.enrollmentSubmission.updateMany({
+      where: { id: submissionId, status: { not: 'Promoted' } },
+      data: { status: 'Promoted' },
+    });
+
+    if (claim.count === 0) {
+      throw new BadRequestException(
+        'This submission has already been promoted',
+      );
+    }
+
+    try {
+      const drive = await this.prisma.enrollmentDrive.findUniqueOrThrow({
+        where: { id: submission.driveId },
+      });
+
+      const academicYear = await this.prisma.academicYear.findUniqueOrThrow({
+        where: { id: drive.academicYearId },
+      });
+
+      const classRecord = await this.prisma.class.findUniqueOrThrow({
+        where: { name: '1' },
+      });
+
+      const sectionSessionKey = `${SECTION_STREAM_PREFIX[submission.stream]}-${submission.session}`;
+
+      const section = await this.prisma.section.findUnique({
+        where: {
+          classId_session_academicYearId: {
+            classId: classRecord.id,
+            session: sectionSessionKey,
+            academicYearId: drive.academicYearId,
+          },
+        },
+      });
+
+      if (!section) {
+        throw new BadRequestException(
+          `No matching section for ${submission.stream} session ${submission.session} in this academic year`,
+        );
+      }
+
+      if (!submission.combinationId) {
+        throw new BadRequestException(
+          'Submission is missing a combination — cannot generate authId',
+        );
+      }
+      const combination = await this.prisma.combination.findUniqueOrThrow({
+        where: { id: submission.combinationId },
+      });
+
+      if (!submission.language) {
+        throw new BadRequestException(
+          'Submission is missing a second language — cannot generate authId',
+        );
+      }
+
+      const tempPassword = randomBytes(4).toString('hex');
+      const hashedPassword = await hash(tempPassword, 10);
+
+      const user = await this.prisma.$transaction(async (tx) => {
+        // authId generation (including the idSequence increment) happens
+        // INSIDE this transaction — if user/auth creation fails below, the
+        // whole transaction (including the sequence bump) rolls back
+        // together, so no serial number is ever silently burned.
+        const authId = await this.generateAuthId(tx, {
+          puYear: '1', // enrollment is always 1st PUC freshers
+          stream: submission.stream,
+          comboIdCode: combination.idCode,
+          joinYear: academicYear.startDate.getFullYear(),
+          language: submission.language as 'Kannada' | 'Hindi' | 'Sanskrit',
+          session: submission.session, // plain display name ("A"), not sectionSessionKey ("SCI-A")
+        });
+
+        const newUser = await tx.user.create({
+          data: {
+            role: 'Student',
+            sectionId: section.id,
+            combinationId: submission.combinationId,
+            language: submission.language,
+            details: {
+              create: {
+                name: submission.name,
+                email: submission.email,
+                profilePic: '',
+              },
+            },
+            auth: {
+              create: { authId, password: hashedPassword },
+            },
+          },
+        });
+
+        await tx.enrollmentSubmission.update({
+          where: { id: submissionId },
+          data: { promotedUserId: newUser.id },
+        });
+
+        return { newUser, authId, tempPassword };
+      });
+
+      await this.mail.send({
+        to: submission.email,
+        subject: 'Your School Portal Login',
+        body: `Hi ${submission.name},\n\nYour login details:\nAuth ID: ${user.authId}\nTemporary Password: ${user.tempPassword}\n\nPlease log in and change your password.`,
+      });
+
+      return user.newUser;
+    } catch (err) {
+      await this.prisma.enrollmentSubmission.update({
+        where: { id: submissionId },
+        data: { status: 'Pending' },
+      });
+      throw err;
+    }
+  }
+
+  async resendOrPromote(submissionId: string) {
+    return this.promoteOne(submissionId);
+  }
+
+  async triggerPromotionForDrive(driveId: string) {
+    const pending = await this.prisma.enrollmentSubmission.findMany({
+      where: { driveId, status: 'Pending' },
+    });
+
+    let promoted = 0;
+    let failed = 0;
+    const errors: { submissionId: string; error: string }[] = [];
+
+    for (const submission of pending) {
+      try {
+        await this.promoteOne(submission.id);
+        promoted++;
+      } catch (err) {
+        failed++;
+        errors.push({ submissionId: submission.id, error: String(err) });
+      }
+    }
+
+    await this.prisma.enrollmentDrive.update({
+      where: { id: driveId },
+      data: { status: 'Processed' },
+    });
+
+    return { promoted, failed, errors };
+  }
+
   private async createStreamDrive(
     stream: 'Science' | 'Commerce',
     sessions: string[],
@@ -93,13 +292,13 @@ export class EnrollmentService {
     const sectionResults: { session: string; created: boolean }[] = [];
 
     for (const displayName of sessions) {
-      const sessionKey = `${STREAM_CODE[stream]}-${displayName}`;
+      const sectionSessionKey = `${SECTION_STREAM_PREFIX[stream]}-${displayName}`;
 
       const existing = await this.prisma.section.findUnique({
         where: {
           classId_session_academicYearId: {
             classId,
-            session: sessionKey,
+            session: sectionSessionKey,
             academicYearId: academicYear.id,
           },
         },
@@ -112,9 +311,9 @@ export class EnrollmentService {
 
       await this.prisma.section.create({
         data: {
-          name: `1-${sessionKey}`,
+          name: `1-${sectionSessionKey}`,
           classId,
-          session: sessionKey,
+          session: sectionSessionKey,
           academicYearId: academicYear.id,
         },
       });
@@ -132,8 +331,6 @@ export class EnrollmentService {
     const requests: forms_v1.Schema$Request[] = [
       this.textQuestion('Full Name'),
       this.textQuestion('Email Address'),
-      // Students see the plain display names ("A", "B") — the stream
-      // prefix is purely an internal DB disambiguation detail.
       this.choiceQuestion('Session', sessions),
       this.choiceQuestion(
         'Combination',
@@ -171,141 +368,6 @@ export class EnrollmentService {
       sectionsCreated: sectionResults,
       responderUri: form.responderUri,
     };
-  }
-
-  async listDrives() {
-    return this.prisma.enrollmentDrive.findMany({
-      orderBy: { createdAt: 'desc' },
-    });
-  }
-
-  async getDrive(driveId: string) {
-    const drive = await this.prisma.enrollmentDrive.findUnique({
-      where: { id: driveId },
-      include: {
-        submissions: { orderBy: { createdAt: 'desc' } },
-      },
-    });
-    if (!drive) throw new NotFoundException('Drive not found');
-    return drive;
-  }
-
-  async listSubmissions(driveId: string, status?: EnrollmentSubmissionStatus) {
-    return this.prisma.enrollmentSubmission.findMany({
-      where: { driveId, ...(status ? { status } : {}) },
-      orderBy: { createdAt: 'asc' },
-    });
-  }
-
-  async promoteOne(submissionId: string) {
-    const submission = await this.prisma.enrollmentSubmission.findUniqueOrThrow(
-      {
-        where: { id: submissionId },
-      },
-    );
-
-    if (submission.status === 'Promoted') {
-      throw new BadRequestException(
-        'This submission has already been promoted',
-      );
-    }
-
-    const drive = await this.prisma.enrollmentDrive.findUniqueOrThrow({
-      where: { id: submission.driveId },
-    });
-
-    const classRecord = await this.prisma.class.findUniqueOrThrow({
-      where: { name: '1' },
-    });
-
-    const sessionKey = `${STREAM_CODE[submission.stream]}-${submission.session}`;
-
-    const section = await this.prisma.section.findUnique({
-      where: {
-        classId_session_academicYearId: {
-          classId: classRecord.id,
-          session: sessionKey,
-          academicYearId: drive.academicYearId,
-        },
-      },
-    });
-
-    if (!section) {
-      throw new BadRequestException(
-        `No matching section for ${submission.stream} session ${submission.session} in this academic year`,
-      );
-    }
-
-    const authId = await this.generateAuthId();
-    const tempPassword = randomBytes(4).toString('hex');
-    const hashedPassword = await hash(tempPassword, 10);
-
-    const user = await this.prisma.$transaction(async (tx) => {
-      const newUser = await tx.user.create({
-        data: {
-          role: 'Student',
-          sectionId: section.id,
-          combinationId: submission.combinationId,
-          language: submission.language,
-          details: {
-            create: {
-              name: submission.name,
-              email: submission.email,
-              profilePic: '',
-            },
-          },
-          auth: {
-            create: { authId, password: hashedPassword },
-          },
-        },
-      });
-
-      await tx.enrollmentSubmission.update({
-        where: { id: submissionId },
-        data: { status: 'Promoted', promotedUserId: newUser.id },
-      });
-
-      return newUser;
-    });
-
-    await this.mail.send({
-      to: submission.email,
-      subject: 'Your School Portal Login',
-      body: `Hi ${submission.name},\n\nYour login details:\nAuth ID: ${authId}\nTemporary Password: ${tempPassword}\n\nPlease log in and change your password.`,
-    });
-
-    return user;
-  }
-
-  async resendOrPromote(submissionId: string) {
-    return this.promoteOne(submissionId);
-  }
-
-  async triggerPromotionForDrive(driveId: string) {
-    const pending = await this.prisma.enrollmentSubmission.findMany({
-      where: { driveId, status: 'Pending' },
-    });
-
-    let promoted = 0;
-    let failed = 0;
-    const errors: { submissionId: string; error: string }[] = [];
-
-    for (const submission of pending) {
-      try {
-        await this.promoteOne(submission.id);
-        promoted++;
-      } catch (err) {
-        failed++;
-        errors.push({ submissionId: submission.id, error: String(err) });
-      }
-    }
-
-    await this.prisma.enrollmentDrive.update({
-      where: { id: driveId },
-      data: { status: 'Processed' },
-    });
-
-    return { promoted, failed, errors };
   }
 
   private textQuestion(title: string): forms_v1.Schema$Request {
@@ -360,12 +422,39 @@ export class EnrollmentService {
     return map;
   }
 
-  private async generateAuthId(): Promise<string> {
-    const seq = await this.prisma.idSequence.upsert({
-      where: { id: 'student-auth-id' },
+  private async generateAuthId(
+    tx: Prisma.TransactionClient,
+    params: {
+      puYear: string;
+      stream: 'Science' | 'Commerce';
+      comboIdCode: string;
+      joinYear: number;
+      language: 'Kannada' | 'Hindi' | 'Sanskrit';
+      session: string;
+    },
+  ): Promise<string> {
+    const streamCode = STREAM_CODE[params.stream];
+    const comboCode = COMBO_CODE[params.comboIdCode];
+    const joinYear2 = params.joinYear.toString().slice(-2);
+    const langCode = LANG_CODE[params.language];
+    const sessionCode = params.session;
+
+    if (!comboCode) {
+      throw new BadRequestException(
+        `No authId code mapping for combination "${params.comboIdCode}"`,
+      );
+    }
+
+    const bucketKey = `nnpu-${params.puYear}-${streamCode}-${comboCode}-${joinYear2}-${langCode}-${sessionCode}`;
+
+    const seq = await tx.idSequence.upsert({
+      where: { id: bucketKey },
+      create: { id: bucketKey, lastValue: 1 },
       update: { lastValue: { increment: 1 } },
-      create: { id: 'student-auth-id', lastValue: 1 },
     });
-    return `STU${seq.lastValue.toString().padStart(5, '0')}`;
+
+    const serial = String(seq.lastValue).padStart(3, '0');
+
+    return `nnpu${params.puYear}${streamCode}${comboCode}${joinYear2}${langCode}${sessionCode}${serial}`;
   }
 }
