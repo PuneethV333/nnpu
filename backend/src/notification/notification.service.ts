@@ -38,7 +38,7 @@ export class NotificationService {
       throw new UnauthorizedException('User not found');
     }
 
-    return this.prisma.notification.updateMany({
+    return await this.prisma.notification.updateMany({
       where: { id: notificationId, userId: auth.userId },
       data: { isRead: true },
     });

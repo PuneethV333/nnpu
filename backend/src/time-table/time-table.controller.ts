@@ -14,4 +14,11 @@ export class TimeTableController {
   get(@CurrentUser() user: JwtPayload) {
     return this.timeTableService.getTimetable(user.authId);
   }
+
+  @Get('todays')
+  @UseGuards(JwtAuthGuard)
+  @ApiProperty()
+  getTodays(@CurrentUser() user: JwtPayload) {
+    return this.timeTableService.getTimetableToday(user.authId);
+  }
 }

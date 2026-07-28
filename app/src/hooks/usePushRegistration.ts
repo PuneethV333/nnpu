@@ -1,4 +1,3 @@
-/* eslint-disable react-hooks/exhaustive-deps */
 import { useEffect } from 'react';
 import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
@@ -34,7 +33,7 @@ export const usePushRegistration = () => {
     };
 
     register();
-  }, [isAuthenticated]);
+  }, [isAuthenticated,registerDevice]);
 
 
   Notifications.setNotificationHandler({
