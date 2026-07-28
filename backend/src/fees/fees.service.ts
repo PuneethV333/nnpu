@@ -18,6 +18,7 @@ import { Role } from '@/generated/prisma';
 import { ConfigService } from '@nestjs/config';
 import { HandleRazorpayWebhookDto } from './dto/handle-razorpay-webhook.dto';
 import { createHmac } from 'crypto';
+import { StudentInvoice, StudentInvoices } from './type/studentInvoice.type';
 
 @Injectable()
 export class FeesService {
@@ -198,13 +199,46 @@ export class FeesService {
     };
   }
 
-  async getInvoicesForStudent(studentId: string) {
-    this.logger.log('[get-invoices-for-student]');
-    return this.prisma.invoice.findMany({
+  async getInvoicesForStudent(studentId: string): Promise<StudentInvoices> {
+    const invoices = await this.prisma.invoice.findMany({
       where: { studentId },
-      include: { feeStructure: true, payments: true },
-      orderBy: { createdAt: 'desc' },
+      include: {
+        feeStructure: true,
+        payments: true,
+      },
+      orderBy: {
+        createdAt: 'desc',
+      },
     });
+
+    return invoices.map((invoice): StudentInvoice => ({
+      id: invoice.id,
+      dueDate: invoice.dueDate,
+      status: invoice.status,
+
+      totalAmount: invoice.totalAmount,
+      paidAmount: invoice.paidAmount,
+      balanceAmount: invoice.totalAmount - invoice.paidAmount,
+
+      description: invoice.description,
+
+      feeBreakdown: {
+        tuition: invoice.feeStructure.tuitionFee,
+        exam: invoice.feeStructure.examFee,
+        transport: invoice.feeStructure.transportFee,
+        hostel: invoice.feeStructure.hostelFee,
+        other: invoice.feeStructure.otherFee,
+      },
+
+      payments: invoice.payments.map((payment) => ({
+        id: payment.id,
+        amount: payment.amount,
+        method: payment.method,
+        status: payment.status,
+        reference: payment.reference,
+        paidAt: payment.paidAt,
+      })),
+    }));
   }
 
   async getInvoicesForStudentByAuth(authId: string) {

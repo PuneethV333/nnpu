@@ -22,8 +22,29 @@
     "reserved": 12000
   },
 
-  "instructions": [
-    "README.md",
-    "AGENTS.md"
-  ]
+  "instructions": ["README.md", "AGENTS.md"],
+  "provider": {
+    "omniroute": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "OmniRoute",
+      "options": {
+        "baseURL": "http://localhost:20128/v1",
+        "apiKey": "not-needed"
+      },
+      "models": {
+        "claude": {
+          "id": "kr/claude-sonnet-4.5",
+          "name": "Claude Sonnet 4.5"
+        },
+        "glm": {
+          "id": "kr/glm-5",
+          "name": "GLM-5"
+        },
+        "haiku": {
+          "id": "kr/claude-haiku-4.5",
+          "name": "Claude Haiku 4.5"
+        }
+      }
+    }
+  }
 }

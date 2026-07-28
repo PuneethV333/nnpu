@@ -85,4 +85,17 @@ export class MarksController {
   ) {
     return this.marksService.getFinalReport(studentId, subjectId, user.authId);
   }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('Teacher', 'Admin')
+  @Get('my-subjects')
+  @ApiOperation({
+    summary: 'List subjects the current teacher teaches for a given section',
+  })
+  getMySubjects(
+    @Query('sectionId') sectionId: string,
+    @CurrentUser() user: JwtPayload,
+  ) {
+    return this.marksService.getMySubjects(sectionId, user.authId);
+  }
 }

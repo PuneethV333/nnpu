@@ -8,6 +8,7 @@ import {
 } from '@nestjs/common';
 import { CreateAssessmentDto } from './dto/create-assessment.dto';
 import { EnterMarksDto } from './dto/enter-marks.dto';
+import { SubjectResultDto, SubjectResultSchema } from './types/reportCard.type';
 
 @Injectable()
 export class MarksService {
@@ -193,13 +194,51 @@ export class MarksService {
     const percentage =
       maxTotal > 0 ? Number(((total / maxTotal) * 100).toFixed(2)) : 0;
 
-    return {
+    const res: SubjectResultDto = {
       studentId,
       subjectId,
       total,
       maxTotal,
       percentage,
-      breakdown: marks,
+      breakdown: marks.map((mark) => ({
+        id: mark.id,
+        marksObtained: mark.marksObtained,
+        remarks: mark.remarks,
+        assessment: {
+          id: mark.assessment.id,
+          name: mark.assessment.name,
+          category: mark.assessment.category,
+          maxMarks: mark.assessment.maxMarks,
+          date: mark.assessment.date,
+        },
+      })),
     };
+
+    return SubjectResultSchema.parse(res);
+  }
+
+  async getMySubjects(sectionId: string, authId: string) {
+    const { userId, role } = await this.resolveUser(authId);
+
+    const data = await this.prisma.sectionSubject.findMany({
+      where: {
+        sectionId,
+        // Admins can see every subject taught in the section (e.g. for
+        // oversight); teachers only see their own assigned subjects.
+        ...(role === 'Teacher' ? { teacherId: userId } : {}),
+      },
+      select: {
+        subjectId: true,
+        subject: { select: { name: true, hasPractical: true } },
+      },
+    });
+
+    const result = data.map((x) => ({
+      name: x.subject.name,
+      hasPractical: x.subject.hasPractical,
+      id: x.subjectId,
+    }));
+
+    return result;
   }
 }

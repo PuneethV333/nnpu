@@ -67,7 +67,7 @@ model User {
   studentAttendances Attendance[]     @relation("StudentAttendance")
   markedAttendances  Attendance[]     @relation("MarkedByTeacher")
   classTeacherOf     Section?         @relation("ClassTeacherOf")
-  notifications      Notification[]
+  notifiions      Notification[]
   deviceTokens       DeviceToken[]
   studentMarks       Mark[]           @relation("StudentMarks")
   enteredMarks       Mark[]           @relation("MarksEnteredBy")
