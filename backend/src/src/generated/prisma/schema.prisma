@@ -1,0 +1,615 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Role {
+  Student
+  Teacher
+  Admin
+}
+
+enum AttendanceStatus {
+  NotMarked
+  Present
+  Absent
+  Late
+}
+
+enum DayType {
+  Working
+  Holiday
+  Exam
+  Event
+  Weekend
+}
+
+enum Stream {
+  Science
+  Commerce
+}
+
+enum SecondLanguage {
+  Kannada
+  Hindi
+  Sanskrit
+}
+
+enum AnnouncementTypes {
+  Holiday
+  TimetableUpdate
+  ResultUpdate
+  Normal
+}
+
+model User {
+  id       String  @id @default(uuid())
+  role     Role    @default(Student)
+  isActive Boolean @default(true)
+
+  school   School? @relation(fields: [schoolId], references: [id])
+  schoolId String?
+
+  section   Section? @relation("StudentSection", fields: [sectionId], references: [id])
+  sectionId String?
+
+  combination   Combination?    @relation(fields: [combinationId], references: [id])
+  combinationId String?
+  language      SecondLanguage?
+
+  auth               Auth?
+  details            PersonalDetails?
+  teachingSubjects   SectionSubject[] @relation("TeacherSubjects")
+  studentAttendances Attendance[]     @relation("StudentAttendance")
+  markedAttendances  Attendance[]     @relation("MarkedByTeacher")
+  classTeacherOf     Section?         @relation("ClassTeacherOf")
+  notifications      Notification[]
+  deviceTokens       DeviceToken[]
+  studentMarks       Mark[]           @relation("StudentMarks")
+  enteredMarks       Mark[]           @relation("MarksEnteredBy")
+
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  invoices       Invoice[]
+  payments       Payment[]
+  reportCards    ReportCard[]
+  announcements  Announcement[]  @relation("AnnouncementsAuthored")
+  timetableSlots TimetableSlot[]
+}
+
+model Auth {
+  id           String @id @default(cuid())
+  user         User   @relation(fields: [userId], references: [id])
+  userId       String @unique
+  authId       String @unique
+  password     String
+  tokenVersion Int    @default(0)
+
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  refreshTokens RefreshToken[]
+}
+
+model PersonalDetails {
+  id         String @id @default(cuid())
+  user       User   @relation(fields: [userId], references: [id])
+  userId     String @unique
+  name       String
+  profilePic String
+  email      String @unique
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model School {
+  id           String @id @default(cuid())
+  name         String
+  noOfStudents Int    @default(0)
+  noOfGirls    Int    @default(0)
+  noOfBoys     Int    @default(0)
+  noOfTeacher  Int    @default(0)
+  users        User[]
+
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  announcements Announcement[]
+}
+
+model AcademicYear {
+  id        String    @id @default(cuid())
+  label     String    @unique
+  startDate DateTime  @db.Date
+  endDate   DateTime  @db.Date
+  sections  Section[]
+
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  feeStructures    FeeStructure[]
+  reportCards      ReportCard[]
+  enrollmentDrives EnrollmentDrive[]
+}
+
+model Class {
+  id       String    @id @default(cuid())
+  name     String
+  sections Section[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([name])
+}
+
+model Combination {
+  id     String @id @default(cuid())
+  stream Stream
+  code   String @unique
+  idCode String
+  name   String
+
+  students User[]
+
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  timetableSlots TimetableSlot[]
+
+  @@unique([stream, idCode])
+}
+
+enum Week {
+  MONDAY
+  TUESDAY
+  WEDNESDAY
+  THURSDAY
+  FRIDAY
+  SATURDAY
+}
+
+model Timetable {
+  id        String  @id @default(cuid())
+  sectionId String
+  section   Section @relation(fields: [sectionId], references: [id])
+
+  slots TimetableSlot[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([sectionId])
+}
+
+model Period {
+  id        String   @id @default(cuid())
+  stream    Stream
+  order     Int      @unique
+  startTime DateTime @db.Time
+  endTime   DateTime @db.Time
+  isBreak   Boolean  @default(false)
+  label     String?
+
+  slots TimetableSlot[]
+}
+
+model TimetableSlot {
+  id        String  @id @default(cuid())
+  sectionId String
+  section   Section @relation(fields: [sectionId], references: [id])
+  periodId  String
+  period    Period  @relation(fields: [periodId], references: [id])
+  day       Week
+
+  language      SecondLanguage?
+  combinationId String?
+  combination   Combination?    @relation(fields: [combinationId], references: [id])
+
+  subjectId String
+  subject   Subject @relation(fields: [subjectId], references: [id])
+
+  teacherId String?
+  teacher   User?   @relation(fields: [teacherId], references: [id])
+
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+  timetable   Timetable? @relation(fields: [timetableId], references: [id])
+  timetableId String?
+
+  @@index([sectionId, day, periodId])
+}
+
+model Section {
+  id             String       @id @default(cuid())
+  name           String
+  class          Class        @relation(fields: [classId], references: [id])
+  classId        String
+  session        String       @default("A")
+  academicYear   AcademicYear @relation(fields: [academicYearId], references: [id])
+  academicYearId String
+
+  classTeacher   User?   @relation("ClassTeacherOf", fields: [classTeacherId], references: [id])
+  classTeacherId String? @unique
+
+  students    User[]           @relation("StudentSection")
+  subjects    SectionSubject[]
+  attendances Attendance[]
+
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  assessments    Assessment[]
+  feeStructures  FeeStructure[]
+  announcements  Announcement[]
+  timetable      Timetable?
+  timetableSlots TimetableSlot[]
+
+  @@unique([classId, session, academicYearId])
+}
+
+model Subject {
+  id           String  @id @default(cuid())
+  name         String  @unique
+  hasPractical Boolean @default(false)
+
+  sections    SectionSubject[]
+  assessments Assessment[]
+
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  timetableSlots TimetableSlot[]
+}
+
+model SectionSubject {
+  id        String  @id @default(cuid())
+  section   Section @relation(fields: [sectionId], references: [id])
+  sectionId String
+  subject   Subject @relation(fields: [subjectId], references: [id])
+  subjectId String
+  teacher   User?   @relation("TeacherSubjects", fields: [teacherId], references: [id])
+  teacherId String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([sectionId, subjectId])
+}
+
+model AcademicCalendarDay {
+  id    String   @id @default(cuid())
+  date  DateTime @unique @db.Date
+  type  DayType
+  label String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([type])
+}
+
+model Attendance {
+  id         String           @id @default(cuid())
+  student    User             @relation("StudentAttendance", fields: [studentId], references: [id])
+  studentId  String
+  section    Section          @relation(fields: [sectionId], references: [id])
+  sectionId  String
+  date       DateTime         @db.Date
+  status     AttendanceStatus @default(NotMarked)
+  markedBy   User?            @relation("MarkedByTeacher", fields: [markedById], references: [id])
+  markedById String?
+  markedAt   DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([studentId, date])
+  @@index([sectionId, date])
+  @@index([studentId])
+}
+
+enum NotificationType {
+  AttendancePending
+  AttendanceUpdated
+  MarksPublished
+  NewAnnouncement
+  TimetableUpdated
+  FeeDue
+  PaymentSuccessful
+}
+
+model Notification {
+  id     String           @id @default(cuid())
+  userId String
+  user   User             @relation(fields: [userId], references: [id])
+  type   NotificationType
+  title  String
+  body   String
+  isRead Boolean          @default(false)
+
+  createdAt DateTime @default(now())
+
+  @@index([userId, isRead])
+}
+
+model RefreshToken {
+  id String @id @default(uuid())
+
+  tokenId   String @unique
+  tokenHash String
+
+  authId String
+  auth   Auth   @relation(fields: [authId], references: [authId])
+
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([authId])
+}
+
+enum Platform {
+  android
+  ios
+}
+
+model DeviceToken {
+  id       String   @id @default(cuid())
+  userId   String
+  user     User     @relation(fields: [userId], references: [id])
+  token    String   @unique
+  platform Platform
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+}
+
+enum AssessmentCategory {
+  UnitTest
+  MidTerm
+  FinalTheory
+  FinalPractical
+  Internal
+}
+
+model Assessment {
+  id        String             @id @default(cuid())
+  name      String
+  category  AssessmentCategory
+  subjectId String
+  subject   Subject            @relation(fields: [subjectId], references: [id])
+  sectionId String
+  section   Section            @relation(fields: [sectionId], references: [id])
+  maxMarks  Int
+  date      DateTime?          @db.Date
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  marks Mark[]
+
+  @@index([sectionId, subjectId])
+}
+
+model Mark {
+  id            String     @id @default(cuid())
+  student       User       @relation("StudentMarks", fields: [studentId], references: [id])
+  studentId     String
+  assessment    Assessment @relation(fields: [assessmentId], references: [id])
+  assessmentId  String
+  marksObtained Float
+  remarks       String?
+  enteredBy     User?      @relation("MarksEnteredBy", fields: [enteredById], references: [id])
+  enteredById   String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([studentId, assessmentId])
+  @@index([studentId])
+}
+
+enum InvoiceStatus {
+  Pending
+  Partial
+  Paid
+}
+
+enum PaymentStatus {
+  Pending
+  Success
+  Failed
+}
+
+model FeeStructure {
+  id             String       @id @default(cuid())
+  sectionId      String
+  section        Section      @relation(fields: [sectionId], references: [id])
+  academicYearId String
+  academicYear   AcademicYear @relation(fields: [academicYearId], references: [id])
+
+  tuitionFee   Int
+  examFee      Int @default(0)
+  transportFee Int @default(0)
+  hostelFee    Int @default(0)
+  otherFee     Int @default(0)
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  invoices  Invoice[]
+
+  @@unique([sectionId, academicYearId])
+}
+
+model Invoice {
+  id             String       @id @default(cuid())
+  studentId      String
+  student        User         @relation(fields: [studentId], references: [id])
+  feeStructureId String
+  feeStructure   FeeStructure @relation(fields: [feeStructureId], references: [id])
+
+  totalAmount Int
+  paidAmount  Int           @default(0)
+  status      InvoiceStatus @default(Pending)
+  dueDate     DateTime      @db.Date
+  description String?
+
+  payments Payment[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([studentId, feeStructureId])
+}
+
+enum PaymentMethod {
+  RAZORPAY
+  CASH
+  UPI
+  CHEQUE
+  BANK_TRANSFER
+}
+
+model Payment {
+  id String @id @default(cuid())
+
+  invoiceId String
+  invoice   Invoice @relation(fields: [invoiceId], references: [id])
+
+  studentId String
+  student   User   @relation(fields: [studentId], references: [id])
+
+  amount Int
+
+  method PaymentMethod
+  status PaymentStatus @default(Pending)
+
+  reference String?
+
+  razorpayOrderId   String? @unique
+  razorpayPaymentId String? @unique
+  razorpaySignature String?
+
+  paidAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([invoiceId])
+  @@index([studentId])
+}
+
+enum ReportCardStatus {
+  Pending
+  Processing
+  Ready
+  Failed
+}
+
+model ReportCard {
+  id             String           @id @default(cuid())
+  studentId      String
+  student        User             @relation(fields: [studentId], references: [id])
+  academicYearId String
+  academicYear   AcademicYear     @relation(fields: [academicYearId], references: [id])
+  status         ReportCardStatus @default(Pending)
+  url            String?
+  failureReason  String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([studentId, academicYearId])
+}
+
+model IdSequence {
+  id        String @id
+  lastValue Int    @default(0)
+
+  updatedAt DateTime @updatedAt
+}
+
+model Announcement {
+  id       String            @id @default(cuid())
+  title    String
+  body     String
+  isPinned Boolean           @default(false)
+  type     AnnouncementTypes @default(Normal)
+
+  author   User   @relation("AnnouncementsAuthored", fields: [authorId], references: [id])
+  authorId String
+
+  school   School? @relation(fields: [schoolId], references: [id])
+  schoolId String?
+
+  section   Section? @relation(fields: [sectionId], references: [id])
+  sectionId String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([schoolId, createdAt])
+  @@index([sectionId, createdAt])
+}
+
+enum EnrollmentDriveStatus {
+  Open
+  Closed
+  Processed
+}
+
+enum EnrollmentSubmissionStatus {
+  Pending
+  Promoted
+  Rejected
+}
+
+model EnrollmentDrive {
+  id             String       @id @default(cuid())
+  academicYear   AcademicYear @relation(fields: [academicYearId], references: [id])
+  academicYearId String
+
+  stream Stream
+
+  formId      String
+  questionMap Json
+
+  opensAt  DateTime
+  closesAt DateTime
+
+  status EnrollmentDriveStatus @default(Open)
+
+  submissions EnrollmentSubmission[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([academicYearId])
+}
+
+model EnrollmentSubmission {
+  id      String          @id @default(cuid())
+  drive   EnrollmentDrive @relation(fields: [driveId], references: [id])
+  driveId String
+
+  name  String
+  email String
+
+  stream        Stream
+  session       String
+  combinationId String?
+  language      SecondLanguage?
+
+  submittedAt DateTime
+
+  status EnrollmentSubmissionStatus @default(Pending)
+
+  promotedUserId String? @unique
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([driveId, status])
+  @@index([email])
+}

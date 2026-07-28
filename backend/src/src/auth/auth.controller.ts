@@ -1,0 +1,57 @@
+import { Body, Controller, Get, Post, UseGuards } from '@nestjs/common';
+import { AuthService } from './auth.service';
+import { LoginDto } from './dto/login.dto';
+import { JwtAuthGuard } from './guard/jwt-auth.guard';
+import { CurrentUser } from './decorators/current-user.decorator';
+import type { JwtPayload } from './types/jwt-payload.type';
+import { ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
+import { changePasswordDto } from './dto/change-password.dto';
+import { Throttle } from '@nestjs/throttler';
+import { refreshDto } from './dto/refresh.dto';
+
+@Controller('auth')
+export class AuthController {
+  constructor(private readonly authService: AuthService) {}
+
+  @Post('login')
+  @Throttle({ default: { limit: 5, ttl: 60000 } })
+  @ApiOperation({ summary: 'Login with school/auth ID and password' })
+  login(@Body() dto: LoginDto) {
+    return this.authService.login(dto);
+  }
+
+  @Post('refresh')
+  @Throttle({ default: { limit: 20, ttl: 60000 } })
+  @ApiOperation({ summary: 'Exchange a refresh token for a new token pair' })
+  refresh(@Body() dto: refreshDto) {
+    return this.authService.refresh(dto);
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard)
+  @Get('me')
+  @ApiOperation({ summary: 'Get current logged-in user profile' })
+  getMe(@CurrentUser() user: JwtPayload) {
+    return this.authService.getMe(user.authId);
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard)
+  @Post('logout')
+  @ApiOperation({ summary: 'Logout and invalidate current user' })
+  logout(@CurrentUser() user: JwtPayload & { exp: number }) {
+    return this.authService.logOut(user.jti, user.exp);
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard)
+  @Post('change-password')
+  @Throttle({ default: { ttl: 60000, limit: 5 } })
+  @ApiOperation({ summary: 'change password {requires current password}' })
+  changePassWord(
+    @CurrentUser() user: JwtPayload,
+    @Body() dto: changePasswordDto,
+  ) {
+    return this.authService.changePassword(user.authId, dto);
+  }
+}
