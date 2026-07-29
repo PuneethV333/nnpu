@@ -1,4 +1,4 @@
-import { useMutation, useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from './useAuth';
 import { checkStatus, getAttendance, getMySummary, markAttendance, roster } from '../api/attendance';
 
@@ -42,15 +42,16 @@ export const useCheckStatus = (sectionId: string, date: string) => {
 }
 
 export const useMarkAttendance = () => {
-  // const queryClient = useQueryClient()
+  const queryClient = useQueryClient()
   return useMutation({
     mutationKey:['mark-attendance'],
     mutationFn:markAttendance,
-    // onSuccess: (_data, body) => {
-    //   queryClient.invalidateQueries({
-    //     queryKey:['attendance']
-    //   })
-    // }
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['roster'] })
+      queryClient.invalidateQueries({ queryKey: ['status'] })
+      queryClient.invalidateQueries({ queryKey: ['my-attendance'] })
+      queryClient.invalidateQueries({ queryKey: ['summary'] })
+    },
   })
 }
 

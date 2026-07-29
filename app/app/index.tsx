@@ -17,7 +17,7 @@ const Index = () => {
     );
   }
 
-  return <Redirect href={!isAuthenticated ? "/(tabs)/home" : "/(auth)/login"} />;
+  return <Redirect href={isAuthenticated ? "/(tabs)/home" : "/(auth)/login"} />;
 };
 
 export default Index;

@@ -20,7 +20,7 @@ export const roster = async (sectionId: string, date: string): Promise<RosterTyp
 }
 
 export const markAttendance = async (body: MarkAttendanceType) => {
-  return await api.post('/attendance/mark', body);
+  return (await api.post('/attendance/mark', body)).data;
 }
 
 export const checkStatus = async (sectionId: string, date: string): Promise<statusType> => {

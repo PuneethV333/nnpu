@@ -1,5 +1,3 @@
-// Returns Monday and Saturday of the week `offset` weeks from today.
-// offset: 0 = this week, -1 = last week, +1 = next week.
 export const getWeekRange = (offset: number) => {
   const now = new Date();
   const day = now.getDay(); // 0 = Sun, 1 = Mon, ... 6 = Sat
