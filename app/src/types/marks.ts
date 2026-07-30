@@ -96,6 +96,15 @@ export const mySubjectSchema = z.object({
 
 export const mySubjectsSchema = z.array(mySubjectSchema)
 
+export const pendingAssessmentSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  category: assessmentCategoryEnum,
+  subjectName: z.string(),
+});
+
+export const pendingAssessmentArraySchema = z.array(pendingAssessmentSchema);
+
 export type Mark = z.infer<typeof markSchema>;
 export type MarkArray = z.infer<typeof markArraySchema>;
 export type AssessmentCategory = z.infer<typeof assessmentCategoryEnum>;
@@ -106,3 +115,5 @@ export type enterMarksType = z.infer<typeof enterMarksSchema>
 export type SubjectResultType = z.infer<typeof SubjectResultSchema>;
 export type mySubjectType = z.infer<typeof mySubjectSchema>;
 export type mySubjectsType = z.infer<typeof mySubjectsSchema>;
+export type PendingAssessment = z.infer<typeof pendingAssessmentSchema>;
+export type PendingAssessmentArray = z.infer<typeof pendingAssessmentArraySchema>;

@@ -1,4 +1,4 @@
-import { markArraySchema, MarkArray, createAssessmentType, assessmentType, assessmentSchema, enterMarksType, SubjectResultType, SubjectResultSchema, mySubjectsType, mySubjectsSchema } from '@/src/types/marks';
+import { markArraySchema, MarkArray, createAssessmentType, assessmentType, assessmentSchema, enterMarksType, SubjectResultType, SubjectResultSchema, mySubjectsType, mySubjectsSchema, pendingAssessmentArraySchema, PendingAssessmentArray } from '@/src/types/marks';
 import { api } from './client';
 import { z } from 'zod';
 
@@ -25,3 +25,7 @@ export const getFinalReport = async (studentId: string, subjectId: string): Prom
 export const getMySubjects = async (sectionId: string): Promise<mySubjectsType> => {
   return mySubjectsSchema.parse((await api.get('/marks/my-subjects', { params: { sectionId } })).data)
 }
+
+export const getPendingAssessments = async (): Promise<PendingAssessmentArray> => {
+  return pendingAssessmentArraySchema.parse((await api.get('/marks/pending')).data);
+};

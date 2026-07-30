@@ -1,8 +1,8 @@
 import React from "react";
 import { useAuth } from "@/src/hooks/useAuth";
-import Student from "@/components/profile-page/Student";
-import Teacher from "@/components/profile-page/Teacher";
-import Admin from "@/components/profile-page/Admin";
+import Student from "@/components/profile-page/main/Student";
+import Teacher from "@/components/profile-page/main/Teacher";
+import Admin from "@/components/profile-page/main/Admin";
 
 const Profile = () => {
   const { role } = useAuth();

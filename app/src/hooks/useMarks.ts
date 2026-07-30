@@ -7,6 +7,7 @@ import {
   enterMarks,
   getFinalReport,
   getMySubjects,
+  getPendingAssessments,
 } from '../api/marks';
 
 export const useGetMyMarks = (subjectId?: string) => {
@@ -68,5 +69,15 @@ export const useGetMySubjects = (sectionId: string) => {
     queryKey: ['my-subjects', sectionId],
     queryFn: () => getMySubjects(sectionId),
     enabled: isAuthenticated && (role === 'Teacher' || role === 'Admin') && !!sectionId,
+  });
+};
+
+export const useGetPendingAssessments = () => {
+  const { isAuthenticated, role } = useAuth();
+
+  return useQuery({
+    queryKey: ['pending-assessments'],
+    queryFn: getPendingAssessments,
+    enabled: isAuthenticated && role === 'Student',
   });
 };

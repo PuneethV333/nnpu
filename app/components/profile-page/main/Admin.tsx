@@ -1,8 +1,8 @@
 import React from 'react'
 import { View, Text, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import ProfileHeader from './ProfileHeader';
-import SettingsSection from './SettingsSection';
+import ProfileHeader from '../ProfileHeader';
+import SettingsSection from '../SettingsSection';
 import { useAuth } from '$/hooks/useAuth';
 
 const StatCard = ({ label, value }: { label: string; value: number }) => (

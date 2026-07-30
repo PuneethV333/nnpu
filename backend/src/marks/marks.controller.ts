@@ -86,6 +86,17 @@ export class MarksController {
     return this.marksService.getFinalReport(studentId, subjectId, user.authId);
   }
 
+  @UseGuards(JwtAuthGuard)
+  @Roles('Student')
+  @Get('pending')
+  @Throttle({ default: { limit: 30, ttl: 60000 } })
+  @ApiOperation({
+    summary: 'List assessments where the student has no mark entered yet',
+  })
+  getPendingAssessments(@CurrentUser() user: JwtPayload) {
+    return this.marksService.getPendingAssessments(user.authId);
+  }
+
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('Teacher', 'Admin')
   @Get('my-subjects')

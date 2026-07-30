@@ -217,6 +217,50 @@ export class MarksService {
     return SubjectResultSchema.parse(res);
   }
 
+  async getPendingAssessments(authId: string) {
+    this.logger.log('[pending-assessments]');
+    const { userId, role } = await this.resolveUser(authId);
+
+    if (role !== 'Student') {
+      throw new ForbiddenException(
+        'Only students can view pending assessments',
+      );
+    }
+
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { sectionId: true },
+    });
+
+    if (!user?.sectionId) {
+      return [];
+    }
+
+    const assessments = await this.prisma.assessment.findMany({
+      where: { sectionId: user.sectionId },
+      include: { subject: { select: { name: true } } },
+    });
+
+    const existing = await this.prisma.mark.findMany({
+      where: {
+        studentId: userId,
+        assessmentId: { in: assessments.map((a) => a.id) },
+      },
+      select: { assessmentId: true },
+    });
+
+    const markedIds = new Set(existing.map((m) => m.assessmentId));
+
+    return assessments
+      .filter((a) => !markedIds.has(a.id))
+      .map((a) => ({
+        id: a.id,
+        name: a.name,
+        category: a.category,
+        subjectName: a.subject.name,
+      }));
+  }
+
   async getMySubjects(sectionId: string, authId: string) {
     const { userId, role } = await this.resolveUser(authId);
 
