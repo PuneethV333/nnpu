@@ -2,17 +2,19 @@ import React from 'react'
 import { View, Text, Pressable } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { router } from 'expo-router';
+import { useAuth } from '$/hooks/useAuth';
 
 const SettingsSection = () => {
+  const {logout} = useAuth()
   const items: {
     icon: 'lock' | 'bell' | 'log-out'
     label: string
     onPress: () => void
     danger?: boolean
   }[] = [
-    { icon: 'lock', label: 'Change Password', onPress: () => router.push('/') },
+    { icon: 'lock', label: 'Change Password', onPress: () => router.push('/change-pass') },
     { icon: 'bell', label: 'Notification Preferences', onPress: () => router.push('/') },
-    { icon: 'log-out', label: 'Logout', onPress: () => {}, danger: true },
+    { icon: 'log-out', label: 'Logout', onPress: () => logout(), danger: true },
   ];
 
   return (

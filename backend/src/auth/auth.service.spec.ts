@@ -164,19 +164,59 @@ describe('AuthService', () => {
     });
 
     it('fetches from DB and caches the result on a cache miss', async () => {
-      const fullUser = { id: 'user-1', role: 'Student', details: {} };
+      const fullUser = {
+        id: 'user-1',
+        role: 'Student',
+        isActive: true,
+        details: { name: 'Test', profilePic: null, email: 'test@test.com' },
+        section: {
+          name: 'A',
+          session: 'SCI-A',
+          class: { name: 'I PUC' },
+          classTeacher: { details: { name: 'Teacher' } },
+        },
+        teachingSubjects: [],
+        classTeacherOf: null,
+        combination: { name: 'PCMB', stream: 'Science' },
+        language: 'Kannada',
+        school: {
+          name: 'School',
+          noOfStudents: 0,
+          noOfTeacher: 0,
+          noOfBoys: 0,
+          noOfGirls: 0,
+        },
+      };
       (redis.get as jest.Mock).mockResolvedValue(null);
       (prisma.auth.findUnique as jest.Mock).mockResolvedValue({
         userId: 'user-1',
       });
       (prisma.user.findUnique as jest.Mock).mockResolvedValue(fullUser);
 
+      const expectedProfile = {
+        id: 'user-1',
+        role: 'Student',
+        isActive: true,
+        details: { name: 'Test', profilePic: null, email: 'test@test.com' },
+        school: { name: 'School' },
+        section: {
+          name: 'A',
+          session: 'SCI-A',
+          class: { name: 'I PUC' },
+          classTeacher: { details: { name: 'Teacher' } },
+        },
+        combination: { name: 'PCMB', stream: 'Science' },
+        language: 'Kannada',
+        teachingSubjects: [],
+        classTeacherOf: null,
+      };
+
       const result = await service.getMe(mockAuth.authId);
 
-      expect(result).toEqual({ source: 'db', data: fullUser });
+      expect(result).toEqual({ source: 'db', data: expectedProfile });
       expect(redis.set).toHaveBeenCalledWith(
         `me:${mockAuth.authId}`,
-        fullUser,
+        expectedProfile,
         300,
       );
     });

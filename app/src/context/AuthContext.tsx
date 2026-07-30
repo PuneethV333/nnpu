@@ -22,6 +22,7 @@ type AuthContextValue = AuthState & {
   login: (authId: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
   refreshUser: () => Promise<void>;
+  changePassword: (oldPassword: string, newPassword: string) => Promise<void>;
 };
 
 export const AuthContext = createContext<AuthContextValue | undefined>(
@@ -96,9 +97,18 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     await clearSession();
   }, [clearSession]);
 
+  const changePassword = useCallback(
+    async (oldPassword: string, newPassword: string) => {
+      const res = await authApi.changePassword(oldPassword, newPassword);
+      await tokenStore.saveTokens(res.accessToken, res.refreshToken);
+      await loadCurrentUser();
+    },
+    [loadCurrentUser],
+  );
+
   const value = useMemo(
-    () => ({ ...state, login, logout, refreshUser: loadCurrentUser }),
-    [state, login, logout, loadCurrentUser],
+    () => ({ ...state, login, logout, refreshUser: loadCurrentUser, changePassword }),
+    [state, login, logout, loadCurrentUser, changePassword],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

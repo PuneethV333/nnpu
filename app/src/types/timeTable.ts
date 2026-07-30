@@ -31,7 +31,6 @@ export const TimetableDaySchema = z.object({
 
 export const TimetableSchema = z.array(TimetableDaySchema);
 
-// Types
 export type TimetableOptionType = z.infer<typeof TimetableOptionSchema>;
 export type TimetableSlotType = z.infer<typeof TimetableSlotSchema>;
 export type TimetableDayType = z.infer<typeof TimetableDaySchema>;

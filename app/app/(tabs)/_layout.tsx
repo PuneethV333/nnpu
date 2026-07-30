@@ -99,6 +99,14 @@ export default function TabsLayout() {
           }}
         />
       ))}
+      <Tabs.Screen
+        name="change-pass"
+        options={{ href: null, title: "Change Password" }}
+      />
+      <Tabs.Screen
+        name="notification"
+        options={{ href: null, title: "Change Password" }}
+      />
     </Tabs>
   );
 }

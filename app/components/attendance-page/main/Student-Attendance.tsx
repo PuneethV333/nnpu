@@ -30,20 +30,15 @@ const AttendancePage = () => {
   const to = toISODate(saturday);
   const weekDays = getWeekDays(monday);
 
-  // Weekly attendance
   const { data: attendance, isLoading, isError } = useGetMyAttendance(from, to);
 
-  // Monthly calendar days (for grid day-type coloring)
   const { from: monthFrom, to: monthTo } = getMonthRange(monthYear, month);
   const { data: calendarDays } = useGetRange(monthFrom, monthTo);
 
-  // Monthly attendance records (for grid status dots)
   const { data: monthlyAttendance } = useGetMyAttendance(monthFrom, monthTo);
 
-  // Monthly summary (for ProgressCard)
   const { data: monthlySummary } = useGetMySummary(monthFrom, monthTo);
 
-  // Yearly summary (for ProgressCard)
   const { from: yearFrom, to: yearTo } = getYearRange();
   const { data: yearlySummary } = useGetMySummary(yearFrom, yearTo);
 

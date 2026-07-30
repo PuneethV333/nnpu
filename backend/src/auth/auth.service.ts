@@ -146,9 +146,20 @@ export class AuthService {
       where: { id: auth.userId },
       include: {
         details: true,
-        section: true,
-        teachingSubjects: true,
-        classTeacherOf: true,
+        section: {
+          include: {
+            class: true,
+            classTeacher: { include: { details: true } },
+          },
+        },
+        teachingSubjects: {
+          include: {
+            subject: true,
+            section: { include: { class: true } },
+          },
+        },
+        classTeacherOf: { include: { class: true } },
+        combination: true,
         school: true,
       },
     });
@@ -157,9 +168,71 @@ export class AuthService {
       throw new UnauthorizedException('User not found');
     }
 
-    await this.redis.set(cacheKey, user, 300);
+    const profile = {
+      id: user.id,
+      role: user.role,
+      isActive: user.isActive,
+      details: user.details
+        ? {
+            name: user.details.name,
+            profilePic: user.details.profilePic,
+            email: user.details.email,
+          }
+        : null,
+      school: user.school
+        ? {
+            name: user.school.name,
+            ...(user.role === 'Admin' && {
+              noOfStudents: user.school.noOfStudents,
+              noOfTeacher: user.school.noOfTeacher,
+              noOfBoys: user.school.noOfBoys,
+              noOfGirls: user.school.noOfGirls,
+            }),
+          }
+        : null,
+      section: user.section
+        ? {
+            name: user.section.name,
+            session: user.section.session,
+            class: user.section.class
+              ? { name: user.section.class.name }
+              : null,
+            classTeacher: user.section.classTeacher
+              ? {
+                  details: user.section.classTeacher.details
+                    ? { name: user.section.classTeacher.details.name }
+                    : null,
+                }
+              : null,
+          }
+        : null,
+      combination: user.combination
+        ? {
+            name: user.combination.name,
+            stream: user.combination.stream,
+          }
+        : null,
+      language: user.language,
+      teachingSubjects: user.teachingSubjects.map((ts) => ({
+        subject: { name: ts.subject.name },
+        section: {
+          name: ts.section.name,
+          class: ts.section.class ? { name: ts.section.class.name } : null,
+        },
+      })),
+      classTeacherOf: user.classTeacherOf
+        ? {
+            name: user.classTeacherOf.name,
+            class: user.classTeacherOf.class
+              ? { name: user.classTeacherOf.class.name }
+              : null,
+          }
+        : null,
+    };
 
-    return { data: user, source: 'db' };
+    await this.redis.set(cacheKey, profile, 300);
+
+    return { data: profile, source: 'db' };
   }
 
   async logOut(jti: string, exp: number) {

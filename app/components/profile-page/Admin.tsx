@@ -3,18 +3,7 @@ import { View, Text, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import ProfileHeader from './ProfileHeader';
 import SettingsSection from './SettingsSection';
-
-const dummyAdminProfile = {
-  role: 'Admin',
-  details: { name: 'Mr. Suresh Rao', profilePic: null },
-  school: {
-    name: 'New National PU College',
-    noOfStudents: 640,
-    noOfTeacher: 42,
-    noOfBoys: 350,
-    noOfGirls: 290,
-  },
-};
+import { useAuth } from '$/hooks/useAuth';
 
 const StatCard = ({ label, value }: { label: string; value: number }) => (
   <View className="flex-1 bg-white rounded-2xl border border-gray-100 items-center py-4 mx-1">
@@ -24,25 +13,27 @@ const StatCard = ({ label, value }: { label: string; value: number }) => (
 );
 
 const Admin = () => {
-  const data = dummyAdminProfile;
+  const { user } = useAuth();
+  if (!user) return null;
+  const data = user;
 
   return (
     <SafeAreaView className="flex-1 bg-gray-50" edges={['top']}>
       <ScrollView showsVerticalScrollIndicator={false}>
         <ProfileHeader
-          name={data.details.name}
-          profilePic={data.details.profilePic}
+          name={data.details?.name ?? 'Admin'}
+          profilePic={data.details?.profilePic}
           role={data.role}
-          schoolName={data.school.name}
+          schoolName={data.school?.name ?? ''}
         />
 
         <View className="flex-row mx-3 mb-2">
-          <StatCard label="Students" value={data.school.noOfStudents} />
-          <StatCard label="Teachers" value={data.school.noOfTeacher} />
+          <StatCard label="Students" value={data.school?.noOfStudents ?? 0} />
+          <StatCard label="Teachers" value={data.school?.noOfTeacher ?? 0} />
         </View>
         <View className="flex-row mx-3">
-          <StatCard label="Boys" value={data.school.noOfBoys} />
-          <StatCard label="Girls" value={data.school.noOfGirls} />
+          <StatCard label="Boys" value={data.school?.noOfBoys ?? 0} />
+          <StatCard label="Girls" value={data.school?.noOfGirls ?? 0} />
         </View>
 
         <SettingsSection />

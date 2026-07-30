@@ -3,30 +3,21 @@ import { View, Text, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import ProfileHeader from './ProfileHeader';
 import SettingsSection from './SettingsSection';
-
-const dummyTeacherProfile = {
-  role: 'Teacher',
-  details: { name: 'Mrs. Priya Sharma', profilePic: null },
-  school: { name: 'New National PU College' },
-  teachingSubjects: [
-    { subject: { name: 'Physics' }, section: { name: 'Section-I', class: { name: 'I PUC' } } },
-    { subject: { name: 'Physics' }, section: { name: 'Section-II', class: { name: 'I PUC' } } },
-    { subject: { name: 'Physics' }, section: { name: 'Section-I', class: { name: 'II PUC' } } },
-  ],
-  classTeacherOf: { name: 'Section-I', class: { name: 'I PUC' } },
-};
+import { useAuth } from '$/hooks/useAuth';
 
 const Teacher = () => {
-  const data = dummyTeacherProfile;
+  const { user } = useAuth();
+  if (!user) return null;
+  const data = user;
 
   return (
     <SafeAreaView className="flex-1 bg-gray-50" edges={['top']}>
       <ScrollView showsVerticalScrollIndicator={false}>
         <ProfileHeader
-          name={data.details.name}
-          profilePic={data.details.profilePic}
+          name={data.details?.name ?? 'Teacher'}
+          profilePic={data.details?.profilePic}
           role={data.role}
-          schoolName={data.school.name}
+          schoolName={data.school?.name ?? ''}
         />
 
         {data.classTeacherOf && (
@@ -35,7 +26,7 @@ const Teacher = () => {
               CLASS TEACHER
             </Text>
             <Text className="text-base font-bold text-gray-900 mt-1">
-              {data.classTeacherOf.class.name} - {data.classTeacherOf.name}
+              {data.classTeacherOf.class?.name ?? '-'} - {data.classTeacherOf.name}
             </Text>
           </View>
         )}
@@ -56,7 +47,7 @@ const Teacher = () => {
                   {ts.subject.name}
                 </Text>
                 <Text className="text-sm text-gray-500">
-                  {ts.section.class.name} - {ts.section.name}
+                  {(ts.section.class?.name ?? '')} - {ts.section.name}
                 </Text>
               </View>
             ))}
