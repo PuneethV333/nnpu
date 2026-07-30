@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Post, Query, UseGuards } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { LoginDto } from './dto/login.dto';
 import { JwtAuthGuard } from './guard/jwt-auth.guard';
@@ -8,6 +8,8 @@ import { ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { changePasswordDto } from './dto/change-password.dto';
 import { Throttle } from '@nestjs/throttler';
 import { refreshDto } from './dto/refresh.dto';
+import { RolesGuard } from './guard/roles.guard';
+import { Roles } from './decorators/roles.decorator';
 
 @Controller('auth')
 export class AuthController {
@@ -53,5 +55,15 @@ export class AuthController {
     @Body() dto: changePasswordDto,
   ) {
     return this.authService.changePassword(user.authId, dto);
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('Admin', 'Teacher')
+  @Get('students-details')
+  @ApiOperation({
+    summary: 'Get students details based on sectionId',
+  })
+  getAllStudents(@Query('sectionId') sectionId: string) {
+    return this.authService.getAllStudents(sectionId);
   }
 }

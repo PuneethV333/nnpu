@@ -304,4 +304,29 @@ export class AuthService {
     if (!user) throw new NotFoundException('profile not found');
     return user;
   }
+
+  async getAllStudents(sectionId: string) {
+    const res = await this.prisma.user.findMany({
+      where: {
+        role: 'Student',
+        isActive: true,
+        sectionId,
+      },
+      select: {
+        id: true,
+        details: {
+          select: {
+            name: true,
+          },
+        },
+      },
+    });
+
+    return res.map((x) => {
+      return {
+        name: x.details?.name,
+        id: x.id,
+      };
+    });
+  }
 }

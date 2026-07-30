@@ -13,6 +13,8 @@ import type { RosterType, RosterArray } from './types/roster.type';
 import { MarkAttendanceDto } from './dto/mark-attendance.dto';
 import { Cron, CronExpression } from '@nestjs/schedule';
 
+const DAY_MS = 24 * 60 * 60 * 1000;
+
 @Injectable()
 export class AttendanceService {
   constructor(
@@ -25,8 +27,14 @@ export class AttendanceService {
   async seedDailyAttendance() {
     this.logger.log('[cron-seed-attendance] starting');
 
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    // UTC-safe "today" — matches how @db.Date columns are stored/compared
+    // elsewhere in this service (new Date('YYYY-MM-DD') parses as UTC midnight).
+    // Using local server time here would shift the matched calendar day if
+    // the server isn't running in UTC.
+    const now = new Date();
+    const today = new Date(
+      Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()),
+    );
 
     const calendarDay = await this.prisma.academicCalendarDay.findUnique({
       where: { date: today },
@@ -243,8 +251,9 @@ export class AttendanceService {
       name: student.details?.name,
       profilePic: student.details?.profilePic,
     }));
-    // blunt-invalidates all attendance caches school-wide; fine at current scale, revisit if multi-tenant
-    await this.redis.set<RosterArray>(cacheKey, result);
+
+    // fixed: was missing a TTL, so this key never expired on its own
+    await this.redis.set<RosterArray>(cacheKey, result, 300);
 
     return { data: result, source: 'db' };
   }
@@ -274,16 +283,44 @@ export class AttendanceService {
       );
     }
 
+    // Data-integrity check: reject entries for students who don't actually
+    // belong to dto.sectionId. Without this, a submitted studentId from a
+    // different section would upsert that student's attendance row onto the
+    // wrong section (unique constraint is [studentId, date]), silently
+    // corrupting their real record for that day.
+    const submittedIds = dto.entries.map((e) => e.studentId);
+    const uniqueSubmittedIds = [...new Set(submittedIds)];
+
+    const validStudents = await this.prisma.user.findMany({
+      where: {
+        id: { in: uniqueSubmittedIds },
+        sectionId: dto.sectionId,
+        role: 'Student',
+      },
+      select: { id: true },
+    });
+
+    const validIds = new Set(validStudents.map((s) => s.id));
+    const invalidIds = uniqueSubmittedIds.filter((id) => !validIds.has(id));
+
+    if (invalidIds.length > 0) {
+      throw new BadRequestException(
+        `These students do not belong to section ${dto.sectionId}: ${invalidIds.join(', ')}`,
+      );
+    }
+
     const existingRows = await this.prisma.attendance.findMany({
       where: {
         sectionId: dto.sectionId,
         date: dateObj,
-        studentId: { in: dto.entries.map((e) => e.studentId) },
+        studentId: { in: uniqueSubmittedIds },
       },
     });
 
     const rowMap = new Map(existingRows.map((r) => [r.studentId, r]));
 
+    // All-or-nothing: if ANY entry is locked, reject the whole batch before
+    // the transaction runs. No partial saves.
     for (const entry of dto.entries) {
       const existing = rowMap.get(entry.studentId);
       if (existing?.markedAt) {
@@ -323,12 +360,6 @@ export class AttendanceService {
       }),
     );
 
-    await Promise.all(
-      dto.entries.map((e) =>
-        this.redis.del(`attendance:summary:${e.studentId}`),
-      ),
-    );
-
     await this.redis.delPattern('attendance:*');
 
     return { message: `Attendance marked for ${dto.entries.length} students` };
@@ -356,12 +387,24 @@ export class AttendanceService {
 
     const isMarked =
       rows.length > 0 && rows.every((r) => r.status !== 'NotMarked');
-    const firstMarkedAt = rows.find((r) => r.markedAt)?.markedAt ?? null;
 
-    const isLocked = firstMarkedAt
-      ? Date.now() - firstMarkedAt.getTime() > 24 * 60 * 60 * 1000
-      : false;
+    // ANY student locked -> whole section reports locked, so the UI matches
+    // markAttendance's actual per-student, all-or-nothing check instead of
+    // only looking at the first marked row.
+    const now = Date.now();
+    const lockedRows = rows.filter(
+      (r) => r.markedAt && now - r.markedAt.getTime() > DAY_MS,
+    );
+    const isLocked = lockedRows.length > 0;
 
-    return { isMarked, isLocked, markedAt: firstMarkedAt };
+    // still surface the earliest markedAt for display purposes
+    const markedTimestamps = rows
+      .map((r) => r.markedAt)
+      .filter((d): d is Date => d !== null)
+      .sort((a, b) => a.getTime() - b.getTime());
+
+    const markedAt = markedTimestamps[0] ?? null;
+
+    return { isMarked, isLocked, markedAt };
   }
 }

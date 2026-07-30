@@ -23,6 +23,7 @@ import { TimeTableModule } from './time-table/time-table.module';
 import { EnrollmentModule } from './enrollment/enrollment.module';
 import { GoogleModule } from './google/google.module';
 import { MailModule } from './mail/mail.module';
+import { SectionsModule } from './sections/sections.module';
 
 @Module({
   imports: [
@@ -80,6 +81,7 @@ import { MailModule } from './mail/mail.module';
     EnrollmentModule,
     GoogleModule,
     MailModule,
+    SectionsModule,
   ],
   controllers: [AppController],
   providers: [

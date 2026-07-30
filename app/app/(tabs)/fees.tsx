@@ -5,7 +5,7 @@ import RazorpayCheckout from 'react-native-razorpay';
 import { useGetMyInvoices, useCreatePaymentOrder, useVerifyPayment } from '@/src/hooks/useFees';
 import { Invoice } from '@/src/types/fees';
 import { dummyInvoices } from '@/constants/dummy/fees';
-import InvoiceCard from '@/components/fees-page/InvoiceCard,';
+import InvoiceCard from '@/components/fees-page/InvoiceCard';
 
 const USE_DUMMY = true;
 

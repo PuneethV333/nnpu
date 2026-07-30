@@ -87,7 +87,7 @@ export const payment_Schema = z.object({
   method: paymentMethodEnum,
   status: paymentStatusEnum,
   reference: z.string().nullable(),
-  paidAt: z.date().nullable(),
+  paidAt: z.coerce.date().nullable(),
 });
 
 export const feeBreakdownSchema = z.object({
@@ -100,7 +100,7 @@ export const feeBreakdownSchema = z.object({
 
 export const studentInvoiceSchema = z.object({
   id: z.string(),
-  dueDate: z.date(),
+  dueDate: z.coerce.date(),
   status: invoiceStatusEnum,
 
   totalAmount: z.number(),

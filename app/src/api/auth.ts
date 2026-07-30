@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { LoginResponse, LoginResponseSchema, MeResponse, MeResponseSchema } from "$/types/auth";
 import { api } from "./client";
 
-export const studentArraySchema = z.array(z.object({ id: z.string() ,name: z.string()}));
+export const studentArraySchema = z.array(z.object({ id: z.string(), name: z.string().nullable() }));
 
 export type StudentArray = z.infer<typeof studentArraySchema>;
 
@@ -32,5 +32,5 @@ export async function changePassword(
 }
 
 export const getStudents = async (sectionId: string): Promise<StudentArray> => {
-  return studentArraySchema.parse((await api.get('/auth/students-id', { params: { sectionId } })).data);
+  return studentArraySchema.parse((await api.get('/auth/students-details', { params: { sectionId } })).data);
 };

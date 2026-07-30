@@ -9,6 +9,7 @@ const Index = () => {
 
   
   
+  
   if (isLoading) {
     return (
       <View className="flex-1 items-center justify-content-center">

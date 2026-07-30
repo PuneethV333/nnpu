@@ -5,7 +5,7 @@ import { useAuth } from "@/src/hooks/useAuth";
 export default function AuthLayout() {
   const { isAuthenticated, isLoading } = useAuth();
 
-  if (!isLoading) {
+  if (isLoading) {
     return null;
   }
 

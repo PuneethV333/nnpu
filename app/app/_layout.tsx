@@ -12,7 +12,7 @@ import {
   Inter_700Bold,
 } from "@expo-google-fonts/inter";
 import '../global.css'
-import { usePushRegistration } from "@/src/hooks/usePushRegistration";
+// import { usePushRegistration } from "@/src/hooks/usePushRegistration";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -24,7 +24,7 @@ const queryClient = new QueryClient({
 });
 
 function AppShell() {
-  usePushRegistration(); // now genuinely inside AuthProvider
+  // usePushRegistration(); // now genuinely inside AuthProvider
 
   return (
     <>
