@@ -10,8 +10,10 @@ export const getAssessments = async (sectionId: string, subjectId?: string): Pro
   return z.array(assessmentSchema).parse((await api.get('/marks/assessment', { params: { sectionId, ...(subjectId ? { subjectId } : {}) } })).data)
 }
 
-export const enterMarks = async (body: enterMarksType) => {
-  return (await api.post('/marks/enter', body)).data
+const markEntryResponseSchema = z.object({ message: z.string() });
+
+export const enterMarks = async (body: enterMarksType): Promise<{ message: string }> => {
+  return markEntryResponseSchema.parse((await api.post('/marks/enter', body)).data)
 }
 
 export const getMyMarks = async (subjectId?: string): Promise<MarkArray> => {
@@ -19,7 +21,7 @@ export const getMyMarks = async (subjectId?: string): Promise<MarkArray> => {
 };
 
 export const getFinalReport = async (studentId: string, subjectId: string): Promise<SubjectResultType> => {
-  return SubjectResultSchema.parse((await api.get(`marks/report/${studentId}/${subjectId}`)).data)
+  return SubjectResultSchema.parse((await api.get(`/marks/report/${studentId}/${subjectId}`)).data)
 }
 
 export const getMySubjects = async (sectionId: string): Promise<mySubjectsType> => {

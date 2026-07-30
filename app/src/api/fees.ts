@@ -53,12 +53,18 @@ export const createPaymentOrder = async (invoiceId: string): Promise<PaymentOrde
   );
 };
 
+const verifyPaymentResponseSchema = z.object({
+  alreadyProcessed: z.boolean(),
+});
+
 export const verifyPayment = async (payload: {
   razorpay_order_id: string;
   razorpay_payment_id: string;
   razorpay_signature: string;
 }): Promise<{ alreadyProcessed: boolean }> => {
-  return (await api.post('/fees/payments/verify', payload)).data;
+  return verifyPaymentResponseSchema.parse(
+    (await api.post('/fees/payments/verify', payload)).data,
+  );
 };
 
 

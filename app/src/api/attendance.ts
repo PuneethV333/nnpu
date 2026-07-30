@@ -1,3 +1,4 @@
+import { z } from 'zod';
 import { getMySchema, GetMyType, MarkAttendanceType, mySummarySchema, mySummaryType, rosterSchema, RosterType, statusSchema, statusType } from '@/src/types/attendance';
 import { api } from './client';
 
@@ -19,8 +20,10 @@ export const roster = async (sectionId: string, date: string): Promise<RosterTyp
   return rosterSchema.parse((await api.get('/attendance/roster', { params: { sectionId, date } })).data)
 }
 
-export const markAttendance = async (body: MarkAttendanceType) => {
-  return (await api.post('/attendance/mark', body)).data;
+const markAttendanceResponseSchema = z.object({ message: z.string() });
+
+export const markAttendance = async (body: MarkAttendanceType): Promise<{ message: string }> => {
+  return markAttendanceResponseSchema.parse((await api.post('/attendance/mark', body)).data);
 }
 
 export const checkStatus = async (sectionId: string, date: string): Promise<statusType> => {

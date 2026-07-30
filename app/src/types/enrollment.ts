@@ -126,3 +126,6 @@ export const promoteAllResponseSchema = z.object({
 });
 
 export type PromoteAllResponse = z.infer<typeof promoteAllResponseSchema>;
+
+export const promoteSubmissionResponseSchema = z.object({}).passthrough();
+export type PromoteSubmissionResponse = z.infer<typeof promoteSubmissionResponseSchema>;

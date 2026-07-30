@@ -4,12 +4,14 @@ import {
   getDriveResponseSchema,
   enrollmentSubmissionArraySchema,
   promoteAllResponseSchema,
+  promoteSubmissionResponseSchema,
   type CreateDrive,
   type CreateDriveResponse,
   type EnrollmentDrive,
   type GetDriveResponse,
   type EnrollmentSubmission,
   type PromoteAllResponse,
+  type PromoteSubmissionResponse,
 } from '@/src/types/enrollment';
 import { api } from './client';
 
@@ -40,9 +42,11 @@ export const listSubmissions = async (
   return enrollmentSubmissionArraySchema.parse(res.data);
 };
 
-export const promoteSubmission = async (id: string) => {
+export const promoteSubmission = async (
+  id: string,
+): Promise<PromoteSubmissionResponse> => {
   const res = await api.post(`/enrollment/submission/${id}/promote`);
-  return res.data;
+  return promoteSubmissionResponseSchema.parse(res.data);
 };
 
 export const promoteAll = async (
