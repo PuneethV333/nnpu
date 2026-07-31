@@ -1,7 +1,6 @@
 import React from 'react';
 import {View,Text, Pressable} from 'react-native'
-import { RosterItem } from "@/src/types/attendance";
-import { MarkStatus, STATUS_OPTIONS } from "./main/Teacher-Attendance";
+import { MarkStatus, STATUS_OPTIONS,RosterItem } from "@/src/types/attendance";
 
 export const StudentRow = ({
   item,

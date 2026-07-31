@@ -14,8 +14,10 @@ export const getMonthGrid = (
   attendance: { date: Date; status: string }[],
 ): DayCell[] => {
   const daysInMonth = new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
+  const now = new Date();
+  const today = new Date(
+    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()),
+  );
 
   const calendarByDay = new Map(
     calendarDays.map((c) => [c.date.getUTCDate(), c.type]),

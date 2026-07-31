@@ -86,3 +86,15 @@ export const statusSchema = z.object({
 })
 
 export type statusType = z.infer<typeof statusSchema>
+
+export type MarkStatus = "Present" | "Absent" | "Late" | "NotMarked";
+
+export const STATUS_OPTIONS: {
+  value: MarkStatus;
+  label: string;
+  color: string;
+}[] = [
+  { value: "Present", label: "P", color: "#10B981" },
+  { value: "Absent", label: "A", color: "#EF4444" },
+  { value: "Late", label: "L", color: "#F59E0B" },
+];

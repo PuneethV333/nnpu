@@ -2,12 +2,12 @@ import React, { useMemo, useState } from "react";
 import {
   View,
   Text,
-  FlatList,
+  ScrollView,
   Pressable,
   ActivityIndicator,
-  Alert,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { Feather } from "@expo/vector-icons";
 import {
   useGetRoster,
   useCheckStatus,
@@ -17,20 +17,12 @@ import { toISODate } from "@/src/libs/week";
 import { useGetAllSections } from "@/src/hooks/useSection";
 import { StudentRow } from "../StudentRow";
 import { SectionPicker } from "../SectionPicker";
+import { AttendanceStatusModal } from "../AttendanceStatusModal";
 import { shiftDate } from "@/src/libs/shiftDate";
 import { formatDisplayDate } from "@/src/libs/formatDisplayDate";
+import { styles } from "@/src/style/markAttendance";
 
-export type MarkStatus = "Present" | "Absent" | "Late" | "NotMarked";
-
-export const STATUS_OPTIONS: {
-  value: MarkStatus;
-  label: string;
-  color: string;
-}[] = [
-  { value: "Present", label: "P", color: "#10B981" },
-  { value: "Absent", label: "A", color: "#EF4444" },
-  { value: "Late", label: "L", color: "#F59E0B" },
-];
+import { MarkStatus, STATUS_OPTIONS } from "@/src/types/attendance";
 
 const MarkAttendancePage = () => {
   const { data: sections, isLoading: sectionsLoading } = useGetAllSections();
@@ -40,15 +32,12 @@ const MarkAttendancePage = () => {
   const date = useMemo(() => shiftDate(new Date(), dayOffset), [dayOffset]);
   const isoDate = toISODate(date);
 
-  // Step 1: always check status first once a section is picked
   const {
     data: status,
     isLoading: statusLoading,
     isError: statusError,
   } = useCheckStatus(sectionId, isoDate);
 
-  // Step 2: roster is fetched regardless — page always shows the markable list,
-  // banners on top communicate locked/marked state
   const {
     data: roster,
     isLoading: rosterLoading,
@@ -56,6 +45,12 @@ const MarkAttendancePage = () => {
   } = useGetRoster(sectionId, isoDate);
 
   const [draft, setDraft] = useState<Record<string, MarkStatus>>({});
+
+  const [resultModal, setResultModal] = useState<{
+    visible: boolean;
+    type: "success" | "error";
+    message: string;
+  }>({ visible: false, type: "success", message: "" });
 
   const rosterKey = roster?.map((r) => `${r.studentId}:${r.status}`).join(",");
   React.useEffect(() => {
@@ -66,8 +61,14 @@ const MarkAttendancePage = () => {
       });
       setDraft(seeded);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rosterKey]);
+  }, [rosterKey, roster]);
+
+  const handleDraftChange = React.useCallback(
+    (studentId: string, value: MarkStatus) => {
+      setDraft((d) => ({ ...d, [studentId]: value }));
+    },
+    [],
+  );
 
   const { mutate: mark, isPending: isSaving } = useMarkAttendance();
 
@@ -96,162 +97,244 @@ const MarkAttendancePage = () => {
       { sectionId, date: isoDate, entries },
       {
         onSuccess: () =>
-          Alert.alert("Saved", "Attendance updated successfully."),
+          setResultModal({
+            visible: true,
+            type: "success",
+            message: "Attendance updated successfully.",
+          }),
         onError: (err: any) =>
-          Alert.alert(
-            "Couldn't save",
-            err?.response?.data?.message ?? "Something went wrong. Try again.",
-          ),
+          setResultModal({
+            visible: true,
+            type: "error",
+            message:
+              err?.response?.data?.message ??
+              "Something went wrong. Try again.",
+          }),
       },
     );
   };
 
+  const markedCount = roster
+    ? Object.values(draft).filter((v) => v !== "NotMarked").length
+    : 0;
+
   return (
-    <SafeAreaView className="flex-1 bg-gray-50" edges={["top"]}>
-      <Text className="text-2xl inter_bold text-gray-900 px-4 pt-4 pb-3">
-        Mark Attendance
-      </Text>
+    <SafeAreaView style={styles.screen} edges={["top"]}>
+      <ScrollView contentContainerStyle={{ paddingBottom: 40 }}>
+        <Text style={styles.pageTitle}>Mark Attendance</Text>
 
-      {sectionsLoading && (
-        <ActivityIndicator className="mb-3" color="#2563EB" />
-      )}
+        {sectionsLoading && (
+          <ActivityIndicator style={{ marginBottom: 12 }} color="#2563EB" />
+        )}
 
-      {sections && sections.length > 0 && (
-        <View className="mb-3">
-          <SectionPicker
-            sections={sections}
-            selectedId={sectionId}
-            onSelect={setSectionId}
-          />
+        {sections && sections.length > 0 && (
+          <View style={{ marginBottom: 16, paddingHorizontal: 16 }}>
+            <SectionPicker
+              sections={sections}
+              selectedId={sectionId}
+              onSelect={setSectionId}
+            />
+          </View>
+        )}
+
+        {sections && sections.length === 0 && (
+          <Text style={styles.mutedText}>No sections found.</Text>
+        )}
+
+        {/* Date navigator */}
+        <View style={styles.dateNav}>
+          <Pressable
+            onPress={() => setDayOffset((d) => d - 1)}
+            hitSlop={8}
+            style={({ pressed }) => [
+              styles.navButton,
+              pressed && { backgroundColor: "#F3F4F6" },
+            ]}
+          >
+            <Feather name="chevron-left" size={20} color="#374151" />
+          </Pressable>
+
+          <View style={{ alignItems: "center" }}>
+            <Text style={styles.dateText}>{formatDisplayDate(date)}</Text>
+            {dayOffset === 0 && <Text style={styles.todayBadge}>Today</Text>}
+          </View>
+
+          <Pressable
+            onPress={() => !disableNextDay && setDayOffset((d) => d + 1)}
+            disabled={disableNextDay}
+            hitSlop={8}
+            style={({ pressed }) => [
+              styles.navButton,
+              pressed && !disableNextDay && { backgroundColor: "#F3F4F6" },
+              disableNextDay && { opacity: 0.3 },
+            ]}
+          >
+            <Feather name="chevron-right" size={20} color="#374151" />
+          </Pressable>
         </View>
-      )}
 
-      {sections && sections.length === 0 && (
-        <Text className="text-gray-500 text-sm px-4 mb-3">
-          No sections found.
-        </Text>
-      )}
-
-      <View className="flex-row items-center justify-between px-4 pb-3">
-        <Pressable
-          onPress={() => setDayOffset((d) => d - 1)}
-          className="px-3 py-2 rounded-lg bg-white border border-gray-200"
-        >
-          <Text className="inter_medium text-gray-700">‹ Prev</Text>
-        </Pressable>
-
-        <Text className="inter_bold text-gray-900">
-          {formatDisplayDate(date)}
-        </Text>
-
-        <Pressable
-          onPress={() => !disableNextDay && setDayOffset((d) => d + 1)}
-          disabled={disableNextDay}
-          className="px-3 py-2 rounded-lg bg-white border border-gray-200"
-          style={{ opacity: disableNextDay ? 0.4 : 1 }}
-        >
-          <Text className="inter_medium text-gray-700">Next ›</Text>
-        </Pressable>
-      </View>
-
-      {!sectionId && (
-        <Text className="text-gray-500 text-sm px-4">
-          Select a section to load the roster.
-        </Text>
-      )}
-
-      {sectionId && (statusLoading || rosterLoading) && (
-        <ActivityIndicator className="mt-8" color="#2563EB" />
-      )}
-
-      {sectionId && (statusError || rosterError) && (
-        <Text className="text-red-500 text-sm px-4">
-          Couldn&apos;t load this section&apos;s attendance. The day may not be
-          a working day.
-        </Text>
-      )}
-
-      {sectionId && status && (
-        <>
-          {isLocked && (
-            <View className="mx-4 mb-3 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
-              <Text className="text-amber-800 text-sm inter_medium">
-                Locked — marked more than 24 hours ago. Changes can&apos;t be
-                saved.
-              </Text>
+        {!sectionId && (
+          <View style={styles.emptyState}>
+            <View style={styles.emptyIconCircle}>
+              <Feather name="users" size={22} color="#2563EB" />
             </View>
-          )}
-
-          {!isLocked && isMarked && (
-            <View className="mx-4 mb-3 bg-blue-50 border border-blue-200 rounded-xl px-4 py-3">
-              <Text className="text-blue-800 text-sm inter_medium">
-                Already marked for this day. You can still make changes.
-              </Text>
-            </View>
-          )}
-
-          {!isMarked && !isLocked && (
-            <View className="mx-4 mb-3 bg-gray-100 border border-gray-200 rounded-xl px-4 py-3">
-              <Text className="text-gray-600 text-sm inter_medium">
-                Not marked yet.
-              </Text>
-            </View>
-          )}
-        </>
-      )}
-
-      {sectionId && roster && roster.length > 0 && (
-        <>
-          <View className="flex-row px-4 pb-2">
-            {STATUS_OPTIONS.map((opt) => (
-              <Pressable
-                key={opt.value}
-                onPress={() => markAll(opt.value)}
-                disabled={isLocked}
-                className="mr-2 px-3 py-1.5 rounded-full border border-gray-200"
-                style={{ opacity: isLocked ? 0.5 : 1 }}
-              >
-                <Text className="text-xs inter_medium text-gray-600">
-                  Mark all {opt.value}
-                </Text>
-              </Pressable>
-            ))}
+            <Text style={styles.emptyText}>
+              Select a section to load the roster.
+            </Text>
           </View>
+        )}
 
-          <FlatList
-            data={roster}
-            keyExtractor={(item) => item.studentId}
-            className="bg-white mx-4 rounded-2xl border border-gray-100"
-            renderItem={({ item }) => (
-              <StudentRow
-                item={item}
-                status={draft[item.studentId] ?? "NotMarked"}
-                disabled={isLocked}
-                onChange={(value) =>
-                  setDraft((d) => ({ ...d, [item.studentId]: value }))
-                }
-              />
+        {sectionId && (statusLoading || rosterLoading) && (
+          <ActivityIndicator style={{ marginTop: 32 }} color="#2563EB" />
+        )}
+
+        {sectionId && (statusError || rosterError) && (
+          <View style={styles.errorBanner}>
+            <Feather
+              name="alert-circle"
+              size={16}
+              color="#DC2626"
+              style={{ marginTop: 2, marginRight: 8 }}
+            />
+            <Text style={styles.errorBannerText}>
+              Couldn&apos;t load this section&apos;s attendance. The day may not
+              be a working day.
+            </Text>
+          </View>
+        )}
+
+        {sectionId && status && (
+          <>
+            {isLocked && (
+              <View style={[styles.banner, styles.bannerAmber]}>
+                <Feather name="lock" size={15} color="#92400E" />
+                <Text style={[styles.bannerText, { color: "#92400E" }]}>
+                  Locked — marked more than 24 hours ago. Changes can&apos;t be
+                  saved.
+                </Text>
+              </View>
             )}
-          />
 
-          <View className="p-4">
-            <Pressable
-              onPress={handleSave}
-              disabled={isLocked || isSaving}
-              className="bg-blue-600 rounded-xl py-3.5 items-center"
-              style={{ opacity: isLocked || isSaving ? 0.5 : 1 }}
-            >
-              {isSaving ? (
-                <ActivityIndicator color="#FFFFFF" />
-              ) : (
-                <Text className="text-white inter_bold text-base">
-                  Save Attendance
+            {!isLocked && isMarked && (
+              <View style={[styles.banner, styles.bannerBlue]}>
+                <Feather name="check-circle" size={15} color="#1D4ED8" />
+                <Text style={[styles.bannerText, { color: "#1D4ED8" }]}>
+                  Already marked for this day. You can still make changes.
                 </Text>
-              )}
-            </Pressable>
+              </View>
+            )}
+
+            {!isMarked && !isLocked && (
+              <View style={[styles.banner, styles.bannerGray]}>
+                <Feather name="circle" size={15} color="#6B7280" />
+                <Text style={[styles.bannerText, { color: "#6B7280" }]}>
+                  Not marked yet.
+                </Text>
+              </View>
+            )}
+          </>
+        )}
+
+        {sectionId && roster && roster.length > 0 && (
+          <>
+            <View style={styles.markAllRow}>
+              <View style={{ flexDirection: "row" }}>
+                {STATUS_OPTIONS.map((opt) => (
+                  <Pressable
+                    key={opt.value}
+                    onPress={() => markAll(opt.value)}
+                    disabled={isLocked}
+                    style={({ pressed }) => [
+                      styles.chip,
+                      {
+                        borderColor: opt.color + "55",
+                        backgroundColor: opt.color + "18",
+                        opacity: isLocked ? 0.5 : pressed ? 0.7 : 1,
+                      },
+                    ]}
+                  >
+                    <View
+                      style={[styles.dot, { backgroundColor: opt.color }]}
+                    />
+                    <Text style={[styles.chipText, { color: opt.color }]}>
+                      All {opt.value}
+                    </Text>
+                  </Pressable>
+                ))}
+              </View>
+              <Text style={styles.countText}>
+                {markedCount}/{roster.length}
+              </Text>
+            </View>
+
+            <View style={styles.rosterCard}>
+              {roster.map((item, idx) => (
+                <View key={item.studentId}>
+                  <StudentRow
+                    item={item}
+                    status={draft[item.studentId] ?? "NotMarked"}
+                    disabled={isLocked}
+                    onChange={(value) =>
+                      handleDraftChange(item.studentId, value)
+                    }
+                  />
+                  {idx !== roster.length - 1 && (
+                    <View style={styles.rowSeparator} />
+                  )}
+                </View>
+              ))}
+            </View>
+
+            <View style={{ padding: 16, marginBottom: 90 }}>
+              <Pressable
+                onPress={handleSave}
+                disabled={isLocked || isSaving}
+                style={({ pressed }) => [
+                  styles.saveButton,
+                  (isLocked || isSaving) && { opacity: 0.5 },
+                  pressed &&
+                    !isLocked &&
+                    !isSaving && { backgroundColor: "#1D4ED8" },
+                ]}
+              >
+                {isSaving ? (
+                  <ActivityIndicator color="#FFFFFF" />
+                ) : (
+                  <>
+                    <Feather name="save" size={16} color="#FFFFFF" />
+                    <Text style={styles.saveButtonText}>Save Attendance</Text>
+                  </>
+                )}
+              </Pressable>
+            </View>
+          </>
+        )}
+
+        {sectionId && roster && roster.length === 0 && !rosterLoading && (
+          <View style={styles.emptyState}>
+            <Feather name="inbox" size={28} color="#D1D5DB" />
+            <Text style={[styles.emptyText, { marginTop: 8 }]}>
+              No students found for this section.
+            </Text>
           </View>
-        </>
-      )}
+        )}
+      </ScrollView>
+
+      <AttendanceStatusModal
+        visible={resultModal.visible}
+        type={resultModal.type}
+        title={resultModal.type === "success" ? "Saved" : "Couldn't save"}
+        message={resultModal.message}
+        onClose={() => setResultModal((m) => ({ ...m, visible: false }))}
+        onRetry={
+          resultModal.type === "error"
+            ? () => {
+                setResultModal((m) => ({ ...m, visible: false }));
+                handleSave();
+              }
+            : undefined
+        }
+      />
     </SafeAreaView>
   );
 };

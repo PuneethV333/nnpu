@@ -15,7 +15,18 @@ export const getWeekRange = (offset: number) => {
   return { monday, saturday };
 };
 
-export const toISODate = (d: Date) => d.toISOString().slice(0, 10);
+// Local calendar date (YYYY-MM-DD), NOT UTC. The rest of this app builds
+// "day" Dates at local midnight (getWeekRange/getWeekDays/getMonthRange), and
+// backend @db.Date values come back as UTC-midnight Dates — using
+// toISOString() here would convert local midnight to the previous UTC day and
+// shift every attendance record one row forward (e.g. 31st → 1st) for
+// timezones east of UTC.
+export const toISODate = (d: Date) => {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+};
 
 export const formatDayLabel = (d: Date) =>
   d.toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' });
