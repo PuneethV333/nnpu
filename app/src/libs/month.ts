@@ -9,7 +9,7 @@ interface DayCell {
 
 export const getMonthGrid = (
   year: number,
-  month: number, // 0-indexed, matches JS Date
+  month: number,
   calendarDays: { date: Date; type: string }[],
   attendance: { date: Date; status: string }[],
 ): DayCell[] => {
@@ -57,6 +57,5 @@ export const getMonthGrid = (
   });
 };
 
-// leading blank cells so day 1 aligns under the correct weekday column (Sun-start grid)
 export const getLeadingBlankCount = (year: number, month: number): number =>
   new Date(Date.UTC(year, month, 1)).getUTCDay();
