@@ -8,10 +8,13 @@ import {
   Platform,
   ScrollView,
 } from "react-native";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
+import { Feather } from "@expo/vector-icons";
 import { useAuth } from "$/hooks/useAuth";
 import { PasswordInput } from "../../components/change-pass/PasswordInput";
 import { SuccessModal } from "../../components/change-pass/SuccessModal";
+
 const MIN_PASSWORD_LENGTH = 8;
 
 type FieldErrors = {
@@ -22,6 +25,7 @@ type FieldErrors = {
 
 const ChangePassword = () => {
   const { changePassword } = useAuth();
+  const insets = useSafeAreaInsets();
   const router = useRouter();
 
   const [oldPassword, setOldPassword] = useState("");
@@ -80,7 +84,21 @@ const ChangePassword = () => {
   };
 
   return (
-    <View className="flex-1 bg-gray-50 pt-25" >
+    <View style={{ flex: 1, paddingTop: insets.top }} className="bg-gray-50">
+      {/* Header */}
+      <View className="flex-row items-center px-4 pt-2 pb-1">
+        <Pressable
+          onPress={() => router.back()}
+          hitSlop={12}
+          className="w-9 h-9 rounded-full bg-white border border-gray-100 items-center justify-center"
+        >
+          <Feather name="arrow-left" size={18} color="#374151" />
+        </Pressable>
+        <Text className="text-xl font-bold text-gray-900 ml-3">
+          Change password
+        </Text>
+      </View>
+
       <KeyboardAvoidingView
         behavior={Platform.OS === "ios" ? "padding" : undefined}
         className="flex-1"
@@ -89,7 +107,10 @@ const ChangePassword = () => {
           contentContainerStyle={{ paddingBottom: 135 }}
           keyboardShouldPersistTaps="handled"
         >
-         <Text className="text-2xl font-bold text-gray-900 px-4 pt-4 pb-3">Change password</Text>
+          <Text className="text-sm text-gray-500 px-4 pt-3 pb-2">
+            Use at least {MIN_PASSWORD_LENGTH} characters, and pick something
+            you haven&apos;t used before.
+          </Text>
 
           <View className="bg-white rounded-2xl border border-gray-100 mx-4 p-4">
             <PasswordInput
@@ -104,6 +125,8 @@ const ChangePassword = () => {
               error={errors.oldPassword}
               placeholder="Enter current password"
             />
+
+            <View className="h-px bg-gray-100 my-1" />
 
             <PasswordInput
               label="New password"
@@ -133,8 +156,14 @@ const ChangePassword = () => {
           </View>
 
           {submitError ? (
-            <View className="mx-4 mt-4 bg-red-50 border border-red-200 rounded-xl px-4 py-3">
-              <Text className="text-red-600 text-sm font-semibold">
+            <View className="flex-row items-start mx-4 mt-4 bg-red-50 border border-red-200 rounded-xl px-4 py-3">
+              <Feather
+                name="alert-circle"
+                size={16}
+                color="#DC2626"
+                style={{ marginTop: 2, marginRight: 8 }}
+              />
+              <Text className="text-red-600 text-sm font-semibold flex-1">
                 {submitError}
               </Text>
             </View>
@@ -143,7 +172,7 @@ const ChangePassword = () => {
           <Pressable
             onPress={handleSubmit}
             disabled={isSubmitting}
-            className="bg-blue-600 rounded-xl py-3.5 items-center mx-4 mt-6"
+            className="bg-blue-600 rounded-xl py-3.5 items-center mx-4 mt-6 active:bg-blue-700"
             style={{ opacity: isSubmitting ? 0.6 : 1 }}
           >
             {isSubmitting ? (

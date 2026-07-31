@@ -16,6 +16,7 @@ import {
   singleInvoiceSchema,
 } from '@/src/types/fees';
 import { api } from './client';
+import { z } from 'zod';
 
 export const createFeeStructure = async (body:createFeeStructureType):Promise<FeeStructure> => {
   return feeStructureSchema.parse((await api.post('/fees/structure',body)).data)
