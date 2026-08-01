@@ -5,6 +5,7 @@ interface DayCell {
   date: Date;
   status: DayCellStatus;
   disabled: boolean;
+  
 }
 
 export const getMonthGrid = (

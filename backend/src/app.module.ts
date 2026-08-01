@@ -24,6 +24,7 @@ import { EnrollmentModule } from './enrollment/enrollment.module';
 import { GoogleModule } from './google/google.module';
 import { MailModule } from './mail/mail.module';
 import { SectionsModule } from './sections/sections.module';
+import { DashboardModule } from './dashboard/dashboard.module';
 
 @Module({
   imports: [
@@ -82,6 +83,7 @@ import { SectionsModule } from './sections/sections.module';
     GoogleModule,
     MailModule,
     SectionsModule,
+    DashboardModule,
   ],
   controllers: [AppController],
   providers: [

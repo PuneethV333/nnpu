@@ -10,6 +10,7 @@ import { CurrentUser, Role } from "$/types/auth";
 import { tokenStore } from "$/store/tokenStore";
 import * as authApi from "$/api/auth";
 import { onSessionExpired } from "$/api/client";
+import { router } from "expo-router";
 
 type AuthState = {
   isLoading: boolean;
@@ -91,6 +92,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const logout = useCallback(async () => {
     try {
       await authApi.logout();
+      router.push('/(auth)/login');
     } catch (err) {
       console.error(err);
     }

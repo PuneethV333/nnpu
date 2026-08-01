@@ -45,12 +45,6 @@ const SettingsSection = () => {
       showChevron: true,
     },
     {
-      icon: "bell",
-      label: "Notification Preferences",
-      onPress: () => router.push("/"),
-      showChevron: true,
-    },
-    {
       icon: "log-out",
       label: "Logout",
       onPress: handleLogout,
