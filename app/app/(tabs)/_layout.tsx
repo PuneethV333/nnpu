@@ -68,10 +68,8 @@ export default function TabsLayout() {
   const { role } = useAuth();
 
   if (!role) {
-    return;
+    return null;
   }
-
-  const visibleTabs = tabs.filter((tab) => tab.roles.includes(role));
 
   return (
     <Tabs
@@ -97,12 +95,16 @@ export default function TabsLayout() {
         },
       }}
     >
-      {visibleTabs.map((tab) => (
+      {tabs.map((tab) => (
         <Tabs.Screen
           key={tab.name}
           name={tab.name}
           options={{
             title: tab.title,
+            // Hide the tab (and its route from the tab bar) when the
+            // current role isn't allowed to see it, without unmounting
+            // the screen definition itself.
+            href: tab.roles.includes(role) ? undefined : null,
             tabBarIcon: ({ focused }) => (
               <TabIcon focused={focused} icon={tab.icon} title={tab.title} />
             ),

@@ -1,5 +1,5 @@
 import React from 'react'
-import type { SectionDto } from '$/api/sections';
+import type { Section } from '@/src/types/section';
 import { FlatList,Text, Pressable } from "react-native";
 
 export const SectionPicker = ({
@@ -7,7 +7,7 @@ export const SectionPicker = ({
   selectedId,
   onSelect,
 }: {
-  sections: SectionDto[];
+  sections: Section[];
   selectedId: string;
   onSelect: (id: string) => void;
 }) => (

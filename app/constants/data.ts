@@ -1,6 +1,3 @@
-
-
-
 export const tabs: AppTab[] = [
   {
     name: "home",
