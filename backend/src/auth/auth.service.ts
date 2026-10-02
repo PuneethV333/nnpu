@@ -67,6 +67,10 @@ export class AuthService {
       throw new UnauthorizedException('Invalid auth id or password');
     }
 
+    if (!auth.user.isActive) {
+      throw new UnauthorizedException('This account has been deactivated');
+    }
+
     const passwordMatches = await bcrypt.compare(dto.password, auth.password);
     if (!passwordMatches) {
       throw new UnauthorizedException('Invalid school ID or password');

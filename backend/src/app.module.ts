@@ -25,6 +25,7 @@ import { GoogleModule } from './google/google.module';
 import { MailModule } from './mail/mail.module';
 import { SectionsModule } from './sections/sections.module';
 import { DashboardModule } from './dashboard/dashboard.module';
+import { RedisThrottlerStorage } from './redis/redis-throttler.storage';
 
 @Module({
   imports: [
@@ -58,12 +59,20 @@ import { DashboardModule } from './dashboard/dashboard.module';
         SMTP_FROM: Joi.string().optional(),
       }),
     }),
-    ThrottlerModule.forRoot([
-      {
-        ttl: 60000,
-        limit: 100,
-      },
-    ]),
+    ThrottlerModule.forRootAsync({
+      imports: [RedisModule],
+      inject: [RedisThrottlerStorage],
+      useFactory: (storage: RedisThrottlerStorage) => [
+        {
+          // 100 requests/minute is deliberately generous for normal app use.
+          // Sensitive routes retain their tighter @Throttle() overrides.
+          ttl: 60_000,
+          limit: 100,
+          blockDuration: 60_000,
+          storage,
+        },
+      ],
+    }),
     ScheduleModule.forRoot(),
     AuthModule,
     RedisModule,

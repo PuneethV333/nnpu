@@ -40,10 +40,14 @@ export class JwtAuthGuard implements CanActivate {
 
       const auth = await this.prisma.auth.findUnique({
         where: { authId: payload.authId },
-        select: { tokenVersion: true },
+        select: { tokenVersion: true, user: { select: { isActive: true } } },
       });
 
-      if (!auth || auth.tokenVersion !== payload.tokenVersion) {
+      if (
+        !auth ||
+        !auth.user.isActive ||
+        auth.tokenVersion !== payload.tokenVersion
+      ) {
         throw new UnauthorizedException('Token has been revoked');
       }
 

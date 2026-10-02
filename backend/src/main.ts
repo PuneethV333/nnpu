@@ -30,13 +30,15 @@ async function bootstrap() {
 
   app.use(compression());
 
-  // const allowedOrigins = (configService.get<string>('CORS_ORIGINS') ?? '')
-  //   .split(',')
-  //   .map((o) => o.trim())
-  //   .filter(Boolean);
+  const allowedOrigins = (configService.get<string>('CORS_ORIGINS') ?? '')
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean);
 
   app.enableCors({
-    origin: true,
+    // Do not reflect arbitrary origins when credentials are enabled. Native
+    // clients do not require CORS; web deployments must explicitly opt in.
+    origin: allowedOrigins.length > 0 ? allowedOrigins : false,
     credentials: true,
     methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE'],
   });

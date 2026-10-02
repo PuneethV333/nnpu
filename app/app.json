@@ -1,60 +1,46 @@
 {
   "expo": {
-    "name": "app",
-    "slug": "app",
+    "name": "NNPU Academy",
+    "slug": "nnpu-academy",
     "version": "1.0.0",
     "orientation": "portrait",
-    "scheme": "app",
-    "userInterfaceStyle": "automatic",
-    "newArchEnabled": true,
+    "scheme": "nnpuacademy",
+    "userInterfaceStyle": "light",
+
+    "icon": "./assets/images/icon.png",
+
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/images/adaptive-icon.png",
+        "backgroundColor": "#081126"
+      },
+      "package": "com.nnpu.mobile"
+    },
+
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.nnpu.app",
-      "googleServicesFile": "GoogleService-Info.plist",
-      "entitlements": {
-        //! change during production
-        "aps-environment": "development" // switch to "production" for release builds
-      }
+      "bundleIdentifier": "com.nnpu.mobile"
     },
-    "android": {
-      "package": "com.nnpu.app", // must match google-services.json's package_name
-      "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE"
-      },
-      "edgeToEdgeEnabled": true,
-      "predictiveBackGestureEnabled": false,
-      "googleServicesFile": "google-services.json"
-    },
-    "web": {
-      "output": "static"
-    },
+
     "plugins": [
       "expo-router",
       [
         "expo-splash-screen",
         {
-          "imageWidth": 200,
+          "image": "./src/assets/images/splash-icon.png",
           "resizeMode": "contain",
-          "backgroundColor": "#ffffff",
-          "dark": {
-            "backgroundColor": "#000000"
-          }
+          "backgroundColor": "#081126"
         }
       ],
-      "expo-secure-store",
       "expo-font",
-      [
-        "expo-notifications",
-        {
-          "icon": "./assets/images/home-backGround.png",
-          "color": "#2563EB",
-          "defaultChannel": "default"
-        }
-      ]
+      "expo-image",
+      "expo-secure-store",
+      "expo-status-bar",
+      "expo-web-browser"
     ],
+
     "experiments": {
-      "typedRoutes": true,
-      "reactCompiler": true
+      "typedRoutes": true
     }
   }
 }

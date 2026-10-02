@@ -10,8 +10,11 @@ export function onSessionExpired(listener: SessionExpiredListener) {
   sessionExpiredListener = listener;
 }
 
+// The backend enables URI versioning with defaultVersion '1' and no
+// controller declares an explicit @Version(), so every route is served
+// under /v1. Without this prefix every request 404s.
 export const api = create({
-  baseURL: backendUrl,
+  baseURL: `${backendUrl}/v1`,
   timeout: 15000
 })
 
@@ -24,7 +27,7 @@ api.interceptors.request.use(async (config: InternalAxiosRequestConfig) => {
   return config;
 })
 
-const refreshClient = create({ baseURL: backendUrl, timeout: 15000 });
+const refreshClient = create({ baseURL: `${backendUrl}/v1`, timeout: 15000 });
 
 let refreshPromise: Promise<string | null> | null = null;
 
@@ -51,21 +54,23 @@ api.interceptors.response.use(
     originalRequest._retried = true;
 
     try {
+      // A second 401 while a refresh is already in flight must join that
+      // refresh rather than skip it — falling through would resolve with
+      // `undefined` and blow up on the caller's `res.data`.
       if (!refreshPromise) {
         refreshPromise = refreshAccessToken().finally(() => {
           refreshPromise = null
         })
-
-        const newAccessToken = await refreshPromise;
-
-        if (!newAccessToken) {
-          throw new Error('no refresh token available');
-        }
-
-        originalRequest.headers.Authorization = `Bearer ${newAccessToken}`
-        return api(originalRequest);
-
       }
+
+      const newAccessToken = await refreshPromise;
+
+      if (!newAccessToken) {
+        throw new Error('no refresh token available');
+      }
+
+      originalRequest.headers.Authorization = `Bearer ${newAccessToken}`
+      return api(originalRequest);
     } catch (refreshError) {
       await tokenStore.clearTokens();
       sessionExpiredListener?.();

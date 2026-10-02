@@ -3,6 +3,7 @@ import { ApiProperty } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import {
   IsArray,
+  ArrayMinSize,
   IsDateString,
   IsEnum,
   IsString,
@@ -30,6 +31,7 @@ export class MarkAttendanceDto {
 
   @ApiProperty({ type: [MarkEntryDto] })
   @IsArray()
+  @ArrayMinSize(1)
   @ValidateNested({ each: true })
   @Type(() => MarkEntryDto)
   entries!: MarkEntryDto[];

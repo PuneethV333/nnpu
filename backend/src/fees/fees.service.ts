@@ -333,42 +333,69 @@ export class FeesService {
       throw new BadRequestException('Invalid signature');
     }
 
-    const payment = await this.prisma.payment.findFirst({
-      where: { razorpayOrderId: razorpay_order_id },
-      include: { invoice: true },
-    });
-    if (!payment) throw new NotFoundException('Payment record not found');
-
-    const claim = await this.prisma.payment.updateMany({
-      where: { id: payment.id, status: { not: 'Success' } },
-      data: {
-        razorpayPaymentId: razorpay_payment_id,
-        razorpaySignature: razorpay_signature,
-        status: 'Success',
-        paidAt: new Date(),
-      },
+    const result = await this.confirmPayment(razorpay_order_id, {
+      razorpayPaymentId: razorpay_payment_id,
+      razorpaySignature: razorpay_signature,
     });
 
-    if (claim.count === 0) {
+    if (result.alreadyProcessed) {
       this.logger.log(
         `Payment ${razorpay_payment_id} already processed — skipping`,
       );
       return { alreadyProcessed: true };
     }
 
-    const newPaidAmount = payment.invoice.paidAmount + payment.amount;
-    const newStatus =
-      newPaidAmount >= payment.invoice.totalAmount ? 'Paid' : 'Partial';
-
-    await this.prisma.invoice.update({
-      where: { id: payment.invoiceId },
-      data: { paidAmount: { increment: payment.amount }, status: newStatus },
-    });
-
     this.logger.log(
-      `Payment successful: ${razorpay_payment_id} for invoice ${payment.invoiceId}`,
+      `Payment successful: ${razorpay_payment_id} for invoice ${result.invoiceId}`,
     );
     return { alreadyProcessed: false };
+  }
+
+  /**
+   * Claims a provider order and updates its invoice in one transaction. This
+   * prevents a process failure after marking a payment successful but before
+   * recording the corresponding invoice balance.
+   */
+  private async confirmPayment(
+    razorpayOrderId: string,
+    providerFields: { razorpayPaymentId: string; razorpaySignature?: string },
+  ): Promise<{ alreadyProcessed: boolean; invoiceId: string }> {
+    return this.prisma.$transaction(async (tx) => {
+      const payment = await tx.payment.findUnique({
+        where: { razorpayOrderId },
+      });
+      if (!payment) throw new NotFoundException('Payment record not found');
+
+      const claim = await tx.payment.updateMany({
+        where: { id: payment.id, status: { not: 'Success' } },
+        data: {
+          ...providerFields,
+          status: 'Success',
+          paidAt: new Date(),
+        },
+      });
+
+      if (claim.count === 0) {
+        return { alreadyProcessed: true, invoiceId: payment.invoiceId };
+      }
+
+      const invoice = await tx.invoice.findUnique({
+        where: { id: payment.invoiceId },
+        select: { paidAmount: true, totalAmount: true },
+      });
+      if (!invoice) throw new NotFoundException('Invoice not found');
+
+      const newPaidAmount = invoice.paidAmount + payment.amount;
+      await tx.invoice.update({
+        where: { id: payment.invoiceId },
+        data: {
+          paidAmount: { increment: payment.amount },
+          status: newPaidAmount >= invoice.totalAmount ? 'Paid' : 'Partial',
+        },
+      });
+
+      return { alreadyProcessed: false, invoiceId: payment.invoiceId };
+    });
   }
 
   async handleWebhookEvent(rawBody: Buffer, signature: string) {
@@ -404,45 +431,30 @@ export class FeesService {
       return { received: true };
     }
 
-    const payment = await this.prisma.payment.findFirst({
-      where: { razorpayOrderId: orderId },
-      include: { invoice: true },
-    });
-
-    if (!payment) {
-      this.logger.error(
-        `[razorpay-webhook] no payment record for order ${orderId}`,
-      );
-      return { received: true };
+    let result: { alreadyProcessed: boolean; invoiceId: string };
+    try {
+      result = await this.confirmPayment(orderId, {
+        razorpayPaymentId: paymentId as string,
+      });
+    } catch (error) {
+      if (error instanceof NotFoundException) {
+        this.logger.error(
+          `[razorpay-webhook] no payment record for order ${orderId}`,
+        );
+        return { received: true };
+      }
+      throw error;
     }
 
-    const claim = await this.prisma.payment.updateMany({
-      where: { id: payment.id, status: { not: 'Success' } },
-      data: {
-        razorpayPaymentId: paymentId as string,
-        status: 'Success',
-        paidAt: new Date(),
-      },
-    });
-
-    if (claim.count === 0) {
+    if (result.alreadyProcessed) {
       this.logger.log(
         `[razorpay-webhook] payment ${paymentId} already processed — skipping`,
       );
       return { received: true };
     }
 
-    const newPaidAmount = payment.invoice.paidAmount + payment.amount;
-    const newStatus =
-      newPaidAmount >= payment.invoice.totalAmount ? 'Paid' : 'Partial';
-
-    await this.prisma.invoice.update({
-      where: { id: payment.invoiceId },
-      data: { paidAmount: { increment: payment.amount }, status: newStatus },
-    });
-
     this.logger.log(
-      `[razorpay-webhook] payment confirmed: ${paymentId} for invoice ${payment.invoiceId}`,
+      `[razorpay-webhook] payment confirmed: ${paymentId} for invoice ${result.invoiceId}`,
     );
 
     return { received: true };
