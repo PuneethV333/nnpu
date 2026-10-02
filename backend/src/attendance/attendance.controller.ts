@@ -54,8 +54,9 @@ export class AttendanceController {
   getRoster(
     @Query('sectionId') sectionId: string,
     @Query('date') date: string,
+    @CurrentUser() user: JwtPayload,
   ) {
-    return this.attendanceService.getRoster(sectionId, date);
+    return this.attendanceService.getRoster(sectionId, date, user.authId);
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)
@@ -80,7 +81,12 @@ export class AttendanceController {
   getStatus(
     @Query('sectionId') sectionId: string,
     @Query('date') date: string,
+    @CurrentUser() user: JwtPayload,
   ) {
-    return this.attendanceService.getAttendanceStatus(sectionId, date);
+    return this.attendanceService.getAttendanceStatus(
+      sectionId,
+      date,
+      user.authId,
+    );
   }
 }

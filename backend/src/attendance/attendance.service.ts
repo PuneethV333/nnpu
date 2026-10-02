@@ -23,6 +23,55 @@ export class AttendanceService {
     private readonly prisma: PrismaService,
   ) {}
 
+  /**
+   * Resolves the caller and asserts they are allowed to touch this section.
+   *
+   * Authorization rule mirrors `GET /sections/mine` (sections.service.ts),
+   * which is the documented authority for "sections this teacher may mark
+   * attendance for": class teacher of the section, OR teacher of any subject
+   * assigned to it. Admin is allowed through.
+   *
+   * Returns the caller's userId so callers don't re-query auth.
+   */
+  private async assertSectionAccess(
+    sectionId: string,
+    authId: string,
+  ): Promise<string> {
+    const auth = await this.prisma.auth.findUnique({
+      where: { authId },
+      select: { userId: true, user: { select: { role: true } } },
+    });
+
+    if (!auth) {
+      throw new UnauthorizedException('User not found');
+    }
+
+    const userId = auth.userId;
+
+    if (auth.user.role === 'Admin') {
+      return userId;
+    }
+
+    const section = await this.prisma.section.findFirst({
+      where: {
+        id: sectionId,
+        OR: [
+          { classTeacherId: userId },
+          { subjects: { some: { teacherId: userId } } },
+        ],
+      },
+      select: { id: true },
+    });
+
+    if (!section) {
+      throw new ForbiddenException(
+        'You are not assigned to teach this section',
+      );
+    }
+
+    return userId;
+  }
+
   @Cron(CronExpression.EVERY_DAY_AT_6AM)
   async seedDailyAttendance() {
     this.logger.log('[cron-seed-attendance] starting');
@@ -187,8 +236,18 @@ export class AttendanceService {
     return { data: summary, source: 'db' };
   }
 
-  async getRoster(sectionId: string, date: string): Promise<RosterType> {
+  async getRoster(
+    sectionId: string,
+    date: string,
+    authId: string,
+  ): Promise<RosterType> {
     this.logger.log('[roster]');
+
+    // Assert BEFORE the cache read: the roster cache is keyed by
+    // section+date only, so serving a cache hit to an unassigned teacher
+    // would leak another section's student list.
+    await this.assertSectionAccess(sectionId, authId);
+
     const cacheKey = `attendance:roster:${sectionId}:${date}`;
     const cached = await this.redis.get<RosterArray>(cacheKey);
     if (cached) {
@@ -261,16 +320,9 @@ export class AttendanceService {
   async markAttendance(dto: MarkAttendanceDto, authId: string) {
     this.logger.log('[mark]');
 
-    const auth = await this.prisma.auth.findUnique({
-      where: { authId },
-      select: { userId: true },
-    });
+    // Resolves the caller AND asserts section access in one query pair.
+    const teacherId = await this.assertSectionAccess(dto.sectionId, authId);
 
-    if (!auth) {
-      throw new UnauthorizedException('User not found');
-    }
-
-    const teacherId = auth.userId;
     const dateObj = new Date(dto.date);
 
     const calendarDay = await this.prisma.academicCalendarDay.findUnique({
@@ -291,21 +343,34 @@ export class AttendanceService {
     const submittedIds = dto.entries.map((e) => e.studentId);
     const uniqueSubmittedIds = [...new Set(submittedIds)];
 
-    const validStudents = await this.prisma.user.findMany({
+    if (uniqueSubmittedIds.length !== submittedIds.length) {
+      throw new BadRequestException(
+        'Each student may appear only once in an attendance submission',
+      );
+    }
+
+    const sectionStudents = await this.prisma.user.findMany({
       where: {
-        id: { in: uniqueSubmittedIds },
         sectionId: dto.sectionId,
         role: 'Student',
+        isActive: true,
       },
       select: { id: true },
     });
 
-    const validIds = new Set(validStudents.map((s) => s.id));
+    const validIds = new Set(sectionStudents.map((s) => s.id));
     const invalidIds = uniqueSubmittedIds.filter((id) => !validIds.has(id));
 
     if (invalidIds.length > 0) {
       throw new BadRequestException(
         `These students do not belong to section ${dto.sectionId}: ${invalidIds.join(', ')}`,
+      );
+    }
+
+    const omittedIds = [...validIds].filter((id) => !uniqueSubmittedIds.includes(id));
+    if (omittedIds.length > 0) {
+      throw new BadRequestException(
+        'Attendance must include every active student in the selected section',
       );
     }
 
@@ -365,8 +430,10 @@ export class AttendanceService {
     return { message: `Attendance marked for ${dto.entries.length} students` };
   }
 
-  async getAttendanceStatus(sectionId: string, date: string) {
+  async getAttendanceStatus(sectionId: string, date: string, authId: string) {
     this.logger.log('[attendance-status]');
+
+    await this.assertSectionAccess(sectionId, authId);
 
     const dateObj = new Date(date);
 
