@@ -6,7 +6,7 @@ export const styles = StyleSheet.create({
   flex: { flex: 1 },
   bg: { flex: 1 },
   overlay: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
   },
   scrollContent: {
     flexGrow: 1,

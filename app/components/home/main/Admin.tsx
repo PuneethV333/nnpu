@@ -1,23 +1,25 @@
 import React from "react";
-import { View, Text, ScrollView, ActivityIndicator } from "react-native";
+import { View, Text, ScrollView } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useAuth } from "$/hooks/useAuth";
 import { useGetRange } from "$/hooks/useCalendar";
 import { useGetLatest } from "$/hooks/useAnnouncement";
 import { useGetAdminDashboard } from "$/hooks/useDashboard";
+import { useGetNotifications } from "$/hooks/useNotifications";
 import { toISODate } from "$/libs/week";
+import { formatMoney } from "$/libs/money";
 import { styles } from "$/style/Admin";
-import type { DayType } from "$/types/calendar-day";
+import type { DayType } from "$/types/calendar";
 import HomeHeader from "../HomeHeader";
 import SchoolStatsGrid from "../SchoolStatsGrid";
 import QuickActions, { type QuickAction } from "../QuickActions";
 import AnnouncementCard from "../Announcements";
 import { DAY_CHIP_COLOR } from "@/constants/dayTypeColor";
-
-// ASSUMED — the doc says "use the existing formatter" for amountPending but
-// it wasn't provided. Replace this with the app's real currency formatter
-// (likely somewhere under $/libs or $/utils) once you point me to it.
-const formatRupees = (amount: number) => `\u20b9${amount.toLocaleString("en-IN")}`;
+import {
+  DayChipSkeleton,
+  MetricCardSkeleton,
+  AnnouncementsRowSkeleton,
+} from "@/components/ui/skeletons";
 
 const QUICK_ACTIONS: QuickAction[] = [
   { label: "Mark Attendance", icon: "checkmark-done-outline", color: "#2563EB", route: "/(tabs)/attendance" },
@@ -33,12 +35,14 @@ const Admin = () => {
   const rangeQuery = useGetRange(todayISO, todayISO);
   const announcementsQuery = useGetLatest();
   const dashboardQuery = useGetAdminDashboard();
+  const notificationsQuery = useGetNotifications();
 
   const todayType: DayType | undefined = rangeQuery.data?.[0]?.type;
 
   const announcements = announcementsQuery.data ?? [];
   const announcementsLoading = announcementsQuery.isLoading;
-  const hasNotifications = announcements.length > 0;
+  const hasNotifications =
+    (notificationsQuery.data ?? []).some((n) => !n.isRead) || false;
 
   const dashboard = dashboardQuery.data;
 
@@ -49,7 +53,9 @@ const Admin = () => {
 
         <SchoolStatsGrid school={user?.school ?? null} />
 
-        {todayType ? (
+        {rangeQuery.isLoading ? (
+          <DayChipSkeleton />
+        ) : todayType ? (
           <View
             style={[
               styles.dayChip,
@@ -68,9 +74,7 @@ const Admin = () => {
           </Text>
 
           {dashboardQuery.isLoading ? (
-            <View style={styles.loadingBox}>
-              <ActivityIndicator size="small" color="#6B7280" />
-            </View>
+            <MetricCardSkeleton count={4} />
           ) : dashboardQuery.isError ? (
             <View style={styles.errorBox}>
               <Text style={styles.errorText}>
@@ -102,7 +106,7 @@ const Admin = () => {
               <View style={styles.dashCard}>
                 <Text style={styles.dashCardTitle}>Pending Fees</Text>
                 <Text style={styles.dashCardValue}>
-                  {formatRupees(dashboard.fees.amountPending)}
+                  {formatMoney(dashboard.fees.amountPending)}
                 </Text>
                 <Text style={styles.dashCardSubtext}>
                   {dashboard.fees.pendingInvoices} invoice
@@ -168,9 +172,7 @@ const Admin = () => {
           </Text>
 
           {announcementsLoading ? (
-            <View style={styles.loadingBox}>
-              <ActivityIndicator size="small" color="#6B7280" />
-            </View>
+            <AnnouncementsRowSkeleton />
           ) : announcements.length === 0 ? (
             <View style={styles.emptyBox}>
               <Text style={styles.emptyText}>No announcements yet.</Text>

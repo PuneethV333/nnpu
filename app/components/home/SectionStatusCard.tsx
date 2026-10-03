@@ -1,9 +1,10 @@
 import React from "react";
-import { View, Text, Pressable, ActivityIndicator } from "react-native";
+import { View, Text, Pressable } from "react-native";
 import { useRouter } from "expo-router";
 import { useCheckStatus } from "$/hooks/useAttendance";
 import { styles } from "$/style/SectionStatusCard";
 import type { Section } from "$/types/section";
+import { SkeletonPill } from "@/components/ui/Feedback";
 
 type Props = {
   section: Section;
@@ -11,8 +12,8 @@ type Props = {
   isWorkingDay: boolean;
 };
 
-// ASSUMED status shape — see types/attendance-status.ts. Adjust the pill
-// logic below once you confirm the real /attendance/status response.
+// Mirrors `statusSchema` in src/types/attendance.ts:
+// { isMarked, isLocked, markedAt }
 const getPill = (
   isWorkingDay: boolean,
   isLoading: boolean,
@@ -53,7 +54,7 @@ const SectionStatusCard = ({ section, date, isWorkingDay }: Props) => {
       </View>
 
       {isWorkingDay && isLoading ? (
-        <ActivityIndicator size="small" color="#6B7280" />
+        <SkeletonPill width={72} />
       ) : pill ? (
         <View style={[styles.pill, { backgroundColor: pill.bg }]}>
           <Text style={[styles.pillText, { color: pill.color }]}>{pill.label}</Text>

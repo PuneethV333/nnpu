@@ -2,11 +2,8 @@ import React from 'react';
 import { View, Text, Pressable, ActivityIndicator } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { Invoice } from '@/src/types/fees';
+import { formatDate, formatMoney } from '@/src/libs/money';
 import StatusBadge from './StatusBadge';
-
-const formatMoney = (n: number) => `₹${n.toLocaleString('en-IN')}`;
-const formatDate = (d: Date) =>
-  d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
 
 const FEE_ROWS: { key: keyof Invoice['feeStructure']; label: string }[] = [
   { key: 'tuitionFee', label: 'Tuition Fee' },
@@ -22,9 +19,23 @@ interface InvoiceCardProps {
   isPaying: boolean;
 }
 
+/**
+ * `dueDate` deserializes from a Postgres `@db.Date` as UTC midnight, so an
+ * invoice due *today* would compare as already past against `new Date()`.
+ * Normalise both sides to UTC midnight: strictly-earlier means genuinely
+ * overdue.
+ */
+const startOfUtcToday = () => {
+  const now = new Date();
+  return new Date(
+    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()),
+  );
+};
+
 const InvoiceCard = ({ invoice, onPay, isPaying }: InvoiceCardProps) => {
   const pending = invoice.totalAmount - invoice.paidAmount;
-  const isOverdue = invoice.status !== 'Paid' && invoice.dueDate < new Date();
+  const isOverdue =
+    invoice.status !== 'Paid' && invoice.dueDate < startOfUtcToday();
 
   return (
     <View className="bg-white rounded-2xl border border-gray-100 mx-4 mb-4 p-4">

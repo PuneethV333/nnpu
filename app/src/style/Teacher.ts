@@ -52,4 +52,11 @@ export const styles = StyleSheet.create({
   announcementItem: {
     width: 260,
   },
+  myClassCard: {
+    marginHorizontal: 20,
+    marginTop: 16,
+    paddingVertical: 16,
+    paddingHorizontal: 16,
+    alignItems: "stretch",
+  },
 });

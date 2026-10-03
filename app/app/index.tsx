@@ -1,24 +1,17 @@
-import { View, ActivityIndicator } from "react-native";
-import React from "react";
-import { useAuth } from "$/hooks/useAuth";
-import { Redirect } from "expo-router";
-import "@/global.css";
+import React from 'react';
+import { Redirect } from 'expo-router';
+import { useAuth } from '@/src/hooks/useAuth';
+import '@/global.css';
+import { SplashScreen } from '@/components/ui/SplashScreen';
 
 const Index = () => {
   const { isLoading, isAuthenticated } = useAuth();
 
-  
-  
-  
   if (isLoading) {
-    return (
-      <View className="flex-1 items-center justify-content-center">
-        <ActivityIndicator size="large" color="#000" />
-      </View>
-    );
+    return <SplashScreen message="Signing you in…" />;
   }
 
-  return <Redirect href={isAuthenticated ? "/(tabs)/home" : "/(auth)/login"} />;
+  return <Redirect href={isAuthenticated ? '/(tabs)/home' : '/(auth)/login'} />;
 };
 
 export default Index;

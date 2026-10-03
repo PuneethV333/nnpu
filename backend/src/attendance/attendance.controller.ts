@@ -45,7 +45,7 @@ export class AttendanceController {
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('Teacher')
+  @Roles('Teacher', 'Admin')
   @Get('roster')
   @Throttle({ default: { limit: 60, ttl: 60000 } })
   @ApiOperation({
@@ -60,7 +60,7 @@ export class AttendanceController {
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('Teacher')
+  @Roles('Teacher', 'Admin')
   @Post('mark')
   @Throttle({ default: { limit: 10, ttl: 60000 } })
   @ApiOperation({ summary: 'Bulk mark/update attendance for a section+date' })
@@ -72,7 +72,7 @@ export class AttendanceController {
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('Teacher')
+  @Roles('Teacher', 'Admin')
   @Get('status')
   @Throttle({ default: { limit: 60, ttl: 60000 } })
   @ApiOperation({

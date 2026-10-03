@@ -1,68 +1,23 @@
 import React from 'react'
 import { View, Text } from 'react-native';
-import { styles } from '$/style/TimeTable'; // adjust to your actual path
-import { TimetableSlotType } from '$/types/timeTable';
+import { TimetableSlotType } from '@/src/types/timeTable';
 
-// const TimeTable = ({
-//   startTime,
-//   endTime,
-//   isBreak,
-//   label,
-//   options,
-// }: TimetableSlotType) => {
-//   if (isBreak) {
-//     return (
-//       <View style={styles.slotBreak}>
-//         <Text style={styles.slotBreakLabel}>{label}</Text>
-//         <Text style={styles.slotBreakTime}>
-//           {startTime} - {endTime}
-//         </Text>
-//       </View>
-//     );
-//   }
+/** A slot rendered as a card — the row itself, without id/order metadata. */
+export type TimeTableSlot = Pick<
+  TimetableSlotType,
+  'startTime' | 'endTime' | 'isBreak' | 'label' | 'options'
+>;
 
-//   return (
-//     <View style={styles.slotCard}>
-//       <View style={styles.slotTime}>
-//         <Text style={styles.slotTimeStart}>{startTime}</Text>
-//         <Text style={styles.slotTimeEnd}>{endTime}</Text>
-//       </View>
+const toMinutes = (hhmm: string): number => {
+  const [h, m] = hhmm.split(':').map(Number);
+  return h * 60 + m;
+};
 
-//       <View style={styles.slotBody}>
-//         {options.length === 0 ? (
-//           <Text style={styles.slotFree}>Free period</Text>
-//         ) : (
-//           options.map((opt, idx) => (
-//             <View
-//               key={`${opt.subject}-${idx}`}
-//               style={idx > 0 ? styles.slotOptionDivider : styles.slotOption}
-//             >
-//               <Text style={styles.slotSubject}>
-//                 {opt.subject}
-//                 {opt.language ? ` (${opt.language})` : ''}
-//               </Text>
-//               {opt.teacher && (
-//                 <Text style={styles.slotTeacher}>{opt.teacher}</Text>
-//               )}
-//             </View>
-//           ))
-//         )}
-//       </View>
-//     </View>
-//   );
-// };
-
-// export default TimeTable;
-
-
+/** Highlights the slot that contains the current wall-clock time. */
 const isCurrentPeriod = (start: string, end: string) => {
   const now = new Date();
-  const [sh, sm] = start.split(':').map(Number);
-  const [eh, em] = end.split(':').map(Number);
-  const startMins = sh * 60 + sm;
-  const endMins = eh * 60 + em;
   const nowMins = now.getHours() * 60 + now.getMinutes();
-  return nowMins >= startMins && nowMins < endMins;
+  return nowMins >= toMinutes(start) && nowMins < toMinutes(end);
 };
 
 const TimeTable = ({
@@ -71,7 +26,7 @@ const TimeTable = ({
   isBreak,
   label,
   options,
-}: TimetableSlotType) => {
+}: TimeTableSlot) => {
   if (isBreak) {
     return (
       <View className="flex-row items-center justify-center bg-gray-100 rounded-xl py-2.5">

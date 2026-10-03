@@ -1,12 +1,6 @@
-import { View, Text } from 'react-native'
-import React from 'react'
+import React from 'react';
+import MarkEntry from './MarkEntry';
 
-const MarksPage = () => {
-  return (
-    <View>
-      <Text>MarksPage</Text>
-    </View>
-  )
-}
+const MarksPage = () => <MarkEntry heading="Enter Marks" />;
 
-export default MarksPage
+export default MarksPage;

@@ -1,94 +1,75 @@
 import React from "react";
-import { View, Text, ScrollView, ActivityIndicator } from "react-native";
+import { View, Text, ScrollView, Pressable } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useGetMySections } from "$/hooks/useSections";
+import { Feather } from "@expo/vector-icons";
+import { useRouter } from "expo-router";
+import { useAuth } from "$/hooks/useAuth";
 import { useGetRange } from "$/hooks/useCalendar";
 import { useGetLatest } from "$/hooks/useAnnouncement";
+import { useGetNotifications } from "$/hooks/useNotifications";
+import { useGetMySummary } from "$/hooks/useAttendance";
+import { useGetTodaysTimeTable } from "$/hooks/useTimeTable";
 import { toISODate } from "$/libs/week";
+import { getMonthRange } from "$/libs/getMonthRange";
 import { styles } from "$/style/Teacher";
-import type { SectionArray } from "$/types/section";
-import type { Latest } from "$/types/announcement";
-import type { DayType } from "$/types/calendar-day";
+import type { DayType } from "$/types/calendar";
 import HomeHeader from "../HomeHeader";
-import SectionStatusCard from "../SectionStatusCard";
 import QuickActions from "../QuickActions";
 import AnnouncementCard from "../Announcements";
+import TimeTable from "../TimeTable";
+import ProgressCard from "@/components/attendance-page/ProgressCard";
+import { MONTH_LABELS } from "@/constants/months";
+import { DAY_CHIP_COLOR } from "@/constants/dayTypeColor";
+import {
+  DayChipSkeleton,
+  TimetableSkeleton,
+  AnnouncementsRowSkeleton,
+  ProgressCardSkeleton,
+} from "@/components/ui/skeletons";
 
-// Flip to false once useGetMySections / useGetRange / useGetLatest are
-// confirmed working end-to-end. Dummy objects below are shaped to match the
-// (assumed) Zod types exactly, so the swap is deleting this block and the
-// USE_DUMMY branches.
-const USE_DUMMY = true;
+const Student = () => {
+  const router = useRouter();
+  const { user } = useAuth();
 
-const DUMMY_SECTIONS: SectionArray = [
-  { id: "sec-1", name: "A", session: "2025-26", className: "11", academicYearLabel: "2025-26", isClassTeacher: true },
-  { id: "sec-2", name: "B", session: "2025-26", className: "12", academicYearLabel: "2025-26", isClassTeacher: false },
-];
-
-const DUMMY_ANNOUNCEMENTS: Latest[] = [
-  {
-    id: "ann-1",
-    name: "Admin Office",
-    title: "PTM rescheduled",
-    body: "The parent-teacher meeting has been moved to next Friday.",
-    type: "Normal",
-    profilePic: "",
-  },
-  {
-    id: "ann-2",
-    name: "Admin Office",
-    title: "PTM rescheduled",
-    body: "The parent-teacher meeting has been moved to next Friday.",
-    type: "Normal",
-    profilePic: "",
-  },
-  {
-    id: "ann-3",
-    name: "Admin Office",
-    title: "PTM rescheduled",
-    body: "The parent-teacher meeting has been moved to next Friday.",
-    type: "Normal",
-    profilePic: "",
-  },
-];
-
-const DAY_CHIP_COLOR: Record<DayType, string> = {
-  Working: "#16A34A",
-  Holiday: "#D97706",
-  Weekend: "#6B7280",
-  Event: "#2563EB",
-  Exam: "#4F46E5",
-};
-
-const Teacher = () => {
   const today = new Date();
   const todayISO = toISODate(today);
+  const { from: monthFrom, to: monthTo } = getMonthRange(
+    today.getFullYear(),
+    today.getMonth(),
+  );
 
-  const sectionsQuery = useGetMySections();
   const rangeQuery = useGetRange(todayISO, todayISO);
   const announcementsQuery = useGetLatest();
+  const notificationsQuery = useGetNotifications();
+  const timetableQuery = useGetTodaysTimeTable();
+  const { data: summary, isLoading: summaryLoading } = useGetMySummary(
+    monthFrom,
+    monthTo,
+  );
 
-  const sections = USE_DUMMY ? DUMMY_SECTIONS : sectionsQuery.data ?? [];
-  const sectionsLoading = !USE_DUMMY && sectionsQuery.isLoading;
-
-  const todayType: DayType | undefined = USE_DUMMY
-    ? "Working"
-    : rangeQuery.data?.[0]?.type;
+  const todayType: DayType | undefined = rangeQuery.data?.[0]?.type;
   const isWorkingDay = todayType === "Working";
 
-  const announcements = USE_DUMMY
-    ? DUMMY_ANNOUNCEMENTS
-    : announcementsQuery.data ?? [];
-  const announcementsLoading = !USE_DUMMY && announcementsQuery.isLoading;
+  const announcements = announcementsQuery.data ?? [];
+  const todaySlots = timetableQuery.data?.slots ?? [];
 
-  const hasNotifications = announcements && announcements.length > 0;
+  const hasUnreadNotifications =
+    (notificationsQuery.data ?? []).some((n) => !n.isRead) || false;
+
+  const section = user?.section;
+  const classLabel = section?.class?.name ?? null;
+  const sectionLabel = section
+    ? [classLabel, section.name].filter(Boolean).join(" - ")
+    : null;
 
   return (
     <SafeAreaView style={styles.safeArea} edges={["top"]}>
       <ScrollView contentContainerStyle={styles.scrollContent}>
-        <HomeHeader hasNotifications={hasNotifications} />
+        <HomeHeader hasNotifications={hasUnreadNotifications} />
 
-        {todayType ? (
+        {rangeQuery.isLoading ? (
+          <DayChipSkeleton />
+        ) : todayType ? (
           <View
             style={[
               styles.dayChip,
@@ -97,30 +78,72 @@ const Teacher = () => {
           >
             <Text style={[styles.dayChipText, { color: DAY_CHIP_COLOR[todayType] }]}>
               Today: {todayType}
+              {todayType === "Holiday" && rangeQuery.data?.[0]?.label
+                ? ` — ${rangeQuery.data[0].label}`
+                : ""}
             </Text>
           </View>
         ) : null}
 
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>My Sections</Text>
-
-          {sectionsLoading ? (
-            <View style={styles.loadingBox}>
-              <ActivityIndicator size="small" color="#6B7280" />
+        {sectionLabel ? (
+          <Pressable
+            onPress={() => router.push("/profile")}
+            style={[styles.emptyBox, styles.myClassCard]}
+          >
+            <View className="flex-row items-center justify-between">
+              <View>
+                <Text style={styles.emptyText}>My Class</Text>
+                <Text className="text-lg font-bold text-gray-900 mt-1">
+                  {sectionLabel}
+                </Text>
+                {section?.classTeacher?.details?.name ? (
+                  <Text className="text-xs text-gray-400 mt-1">
+                    Class Teacher: {section.classTeacher.details.name}
+                  </Text>
+                ) : null}
+              </View>
+              <Feather name="chevron-right" size={20} color="#9CA3AF" />
             </View>
-          ) : sections.length === 0 ? (
+          </Pressable>
+        ) : null}
+
+        {summaryLoading ? (
+          <ProgressCardSkeleton />
+        ) : (
+          <ProgressCard
+            title="Attendance This Month"
+            percentage={summary?.percentage ?? 0}
+            subtitle={`${MONTH_LABELS[today.getMonth()]} ${today.getFullYear()}`}
+            color="#2563EB"
+          />
+        )}
+
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Today&apos;s Class</Text>
+
+          {timetableQuery.isLoading ? (
+            <TimetableSkeleton />
+          ) : todaySlots.length === 0 ? (
             <View style={styles.emptyBox}>
-              <Text style={styles.emptyText}>No sections assigned yet.</Text>
+              <Text style={styles.emptyText}>
+                {isWorkingDay === false
+                  ? "Not a working day — no classes scheduled."
+                  : "No classes scheduled for today."}
+              </Text>
             </View>
           ) : (
-            sections.map((section) => (
-              <SectionStatusCard
-                key={section.id}
-                section={section}
-                date={todayISO}
-                isWorkingDay={isWorkingDay}
-              />
-            ))
+            <View style={{ gap: 8 }}>
+              {todaySlots.map((slot) => (
+                <TimeTable
+                  key={slot.periodId}
+                  startTime={slot.startTime}
+                  endTime={slot.endTime}
+                  isBreak={slot.isBreak}
+                  label={slot.label}
+                  options={slot.options}
+                />
+              ))}
+            </View>
           )}
         </View>
 
@@ -132,10 +155,8 @@ const Teacher = () => {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Announcements</Text>
 
-          {announcementsLoading ? (
-            <View style={styles.loadingBox}>
-              <ActivityIndicator size="small" color="#6B7280" />
-            </View>
+          {announcementsQuery.isLoading ? (
+            <AnnouncementsRowSkeleton />
           ) : announcements.length === 0 ? (
             <View style={styles.emptyBox}>
               <Text style={styles.emptyText}>No announcements yet.</Text>
@@ -159,4 +180,4 @@ const Teacher = () => {
   );
 };
 
-export default Teacher;
+export default Student;

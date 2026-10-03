@@ -16,7 +16,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "@/src/hooks/useAuth";
 import { Redirect } from "expo-router";
 import { isAxiosError } from "axios";
-import imageConstants from "@/constants/image";
+import { images } from "@/constants/image";
 import { styles } from "$/style/login";
 
 const Login = () => {
@@ -77,7 +77,7 @@ const Login = () => {
 
   return (
       <ImageBackground
-        source={imageConstants.homePageBg}
+        source={images.homePageBg}
         style={styles.bg}
         resizeMode="cover"
       >
