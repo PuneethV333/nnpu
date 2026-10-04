@@ -67,7 +67,9 @@ model User {
   studentAttendances Attendance[]     @relation("StudentAttendance")
   markedAttendances  Attendance[]     @relation("MarkedByTeacher")
   classTeacherOf     Section?         @relation("ClassTeacherOf")
-  notifiions      Notification[]
+  /// Relation field only — not a column, so this rename needs no migration.
+  /// Nothing outside the generated client referenced the typo'd name.
+  notifications   Notification[]
   deviceTokens       DeviceToken[]
   studentMarks       Mark[]           @relation("StudentMarks")
   enteredMarks       Mark[]           @relation("MarksEnteredBy")

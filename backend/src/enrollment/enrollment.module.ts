@@ -4,8 +4,8 @@ import { EnrollmentService } from './enrollment.service';
 import { EnrollmentController } from './enrollment.controller';
 import { GoogleModule } from '@/google/google.module';
 import { MailModule } from '@/mail/mail.module';
-import { EnrollmentCloseCron } from './corn/enrollment-close.cron';
-import { EnrollmentPromoteCron } from './corn/enrollment-promote.cron';
+import { EnrollmentCloseCron } from './cron/enrollment-close.cron';
+import { EnrollmentPromoteCron } from './cron/enrollment-promote.cron';
 import { AuthModule } from '@/auth/auth.module';
 
 @Module({

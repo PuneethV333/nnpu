@@ -10,7 +10,9 @@ import {
   ValidateNested,
 } from 'class-validator';
 
-export class MarkEntryDto {
+/** Named distinctly from the identically-named attendance DTO: Swagger keys
+ *  schemas by class name, so two `MarkEntryDto` classes collide. */
+export class MarkEntryForAssessmentDto {
   @ApiProperty()
   @IsString()
   studentId!: string;
@@ -31,12 +33,12 @@ export class EnterMarksDto {
   @IsString()
   assessmentId!: string;
 
-  @ApiProperty({ type: [MarkEntryDto] })
+  @ApiProperty({ type: [MarkEntryForAssessmentDto] })
   @IsArray()
   // Without this an empty submission passed validation and only failed later,
   // downstream, with a much less obvious message.
   @ArrayMinSize(1)
   @ValidateNested({ each: true })
-  @Type(() => MarkEntryDto)
-  entries!: MarkEntryDto[];
+  @Type(() => MarkEntryForAssessmentDto)
+  entries!: MarkEntryForAssessmentDto[];
 }

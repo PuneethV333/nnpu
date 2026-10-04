@@ -1,5 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication } from '@nestjs/common';
+import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import request from 'supertest';
 import { App } from 'supertest/types';
 import { AppModule } from './../src/app.module';
@@ -48,6 +49,30 @@ describe('AppController (e2e)', () => {
       // Guards against the health route being "public" because auth was
       // accidentally disabled everywhere.
       await request(app.getHttpServer()).get('/auth/me').expect(401);
+    });
+  });
+
+  describe('OpenAPI document', () => {
+    it('emits no duplicate schema names', () => {
+      // Swagger keys component schemas by class name, so two DTO classes sharing
+      // a name silently overwrite one another and one endpoint documents the
+      // wrong shape. Two `MarkEntryDto` classes used to exist (attendance and
+      // marks).
+      const doc = SwaggerModule.createDocument(
+        app,
+        new DocumentBuilder()
+          .setTitle('test')
+          .setVersion('1')
+          .addBearerAuth()
+          .build(),
+      );
+
+      const schemas = Object.keys(doc.components?.schemas ?? {});
+
+      // Prisma emits one schema per model; verify ours are distinctly named.
+      expect(schemas).toContain('MarkEntryDto');
+      expect(schemas).toContain('MarkEntryForAssessmentDto');
+      expect(new Set(schemas).size).toBe(schemas.length);
     });
   });
 
