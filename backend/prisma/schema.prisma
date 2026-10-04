@@ -100,7 +100,12 @@ model PersonalDetails {
   userId     String @unique
   name       String
   profilePic String
-  email      String @unique
+  // Nullable because onboarding creates staff/students without an email and used
+  // to write `email: ''`. `''` is a *value*, so the unique index treated every
+  // such account as a duplicate and the second insert failed with P2002
+  // (surfacing as a 500). Postgres excludes NULLs from unique indexes, so
+  // several accounts may now have no email at all.
+  email      String? @unique
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

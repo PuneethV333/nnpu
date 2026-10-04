@@ -258,7 +258,10 @@ describe('OnboardingService', () => {
           userId: 'user-1',
           name: dto.name,
           profilePic: '',
-          email: '',
+          // Must be null, not ''. The column is @unique and an empty string is
+          // a value, so the second manually-created account collided with the
+          // first (P2002 -> 500). Postgres excludes NULLs from unique indexes.
+          email: null,
         },
       });
 

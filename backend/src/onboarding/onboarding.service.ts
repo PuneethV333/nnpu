@@ -134,7 +134,11 @@ export class OnboardingService {
           userId: user.id,
           name: dto.name,
           profilePic: dto.profilePic ?? '',
-          email: '',
+          // `null`, not `''`: the column is @unique, and an empty string is a
+          // real value, so every manually-created account collided with the
+          // previous one (P2002 -> 500). Postgres excludes NULLs from unique
+          // indexes.
+          email: null,
         },
       });
 
@@ -178,7 +182,11 @@ export class OnboardingService {
           userId: user.id,
           name: dto.name,
           profilePic: dto.profilePic ?? '',
-          email: '',
+          // `null`, not `''`: the column is @unique, and an empty string is a
+          // real value, so every manually-created account collided with the
+          // previous one (P2002 -> 500). Postgres excludes NULLs from unique
+          // indexes.
+          email: null,
         },
       });
 
