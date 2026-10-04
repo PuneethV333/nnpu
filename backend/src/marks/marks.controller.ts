@@ -92,7 +92,7 @@ export class MarksController {
     return this.marksService.getFinalReport(studentId, subjectId, user.authId);
   }
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('Student')
   @Get('pending')
   @Throttle({ default: { limit: 30, ttl: 60000 } })

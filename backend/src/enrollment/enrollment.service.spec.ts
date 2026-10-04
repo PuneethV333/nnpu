@@ -28,7 +28,7 @@ describe('EnrollmentService', () => {
   /** Explicit shape: Prisma delegates are tables of mocks, $transaction a function. */
   interface PrismaMocks {
     enrollmentSubmission: {
-      findUniqueOrThrow: jest.Mock;
+      findUnique: jest.Mock;
       updateMany: jest.Mock;
       update: jest.Mock;
     };
@@ -48,7 +48,7 @@ describe('EnrollmentService', () => {
 
   /** Drives promoteOne up to the point where the account is created. */
   const stubPromotionLookups = () => {
-    prisma.enrollmentSubmission.findUniqueOrThrow.mockResolvedValue(SUBMISSION);
+    prisma.enrollmentSubmission.findUnique.mockResolvedValue(SUBMISSION);
     prisma.enrollmentSubmission.updateMany.mockResolvedValue({ count: 1 });
     prisma.enrollmentDrive.findUniqueOrThrow.mockResolvedValue({
       academicYearId: 'ay-1',
@@ -70,7 +70,7 @@ describe('EnrollmentService', () => {
   beforeEach(async () => {
     prisma = {
       enrollmentSubmission: {
-        findUniqueOrThrow: jest.fn(),
+        findUnique: jest.fn(),
         updateMany: jest.fn(),
         update: jest.fn(),
       },
@@ -166,9 +166,7 @@ describe('EnrollmentService', () => {
 
   describe('resendCredentials', () => {
     it('refuses a submission that was never promoted', async () => {
-      prisma.enrollmentSubmission.findUniqueOrThrow.mockResolvedValue(
-        SUBMISSION,
-      );
+      prisma.enrollmentSubmission.findUnique.mockResolvedValue(SUBMISSION);
 
       await expect(service.resendCredentials('sub-1')).rejects.toBeInstanceOf(
         BadRequestException,
@@ -176,7 +174,7 @@ describe('EnrollmentService', () => {
     });
 
     it('resets the password and re-sends', async () => {
-      prisma.enrollmentSubmission.findUniqueOrThrow.mockResolvedValue({
+      prisma.enrollmentSubmission.findUnique.mockResolvedValue({
         ...SUBMISSION,
         status: 'Promoted',
         promotedUserId: 'user-1',
@@ -211,7 +209,7 @@ describe('EnrollmentService', () => {
     });
 
     it('404s when the promoted student has no auth record', async () => {
-      prisma.enrollmentSubmission.findUniqueOrThrow.mockResolvedValue({
+      prisma.enrollmentSubmission.findUnique.mockResolvedValue({
         ...SUBMISSION,
         status: 'Promoted',
         promotedUserId: 'user-1',
@@ -226,7 +224,7 @@ describe('EnrollmentService', () => {
 
   describe('resendOrPromote', () => {
     it('resends rather than re-promoting an already promoted submission', async () => {
-      prisma.enrollmentSubmission.findUniqueOrThrow.mockResolvedValue({
+      prisma.enrollmentSubmission.findUnique.mockResolvedValue({
         ...SUBMISSION,
         status: 'Promoted',
         promotedUserId: 'user-1',
@@ -254,6 +252,23 @@ describe('EnrollmentService', () => {
 
       expect(prisma.$transaction).toHaveBeenCalled();
       expect(prisma.auth.findFirst).not.toHaveBeenCalled();
+    });
+  });
+  describe('unknown submission id', () => {
+    it('404s instead of surfacing a 500', async () => {
+      prisma.enrollmentSubmission.findUnique.mockResolvedValue(null);
+
+      // findUniqueOrThrow would reject with Prisma's P2025, which the global
+      // filter turns into a 500 for what is really a bad id in the URL.
+      await expect(service.promoteOne('nope')).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
+      await expect(service.resendOrPromote('nope')).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
+      await expect(service.resendCredentials('nope')).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
     });
   });
 });

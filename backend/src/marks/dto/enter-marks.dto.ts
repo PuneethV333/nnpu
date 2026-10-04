@@ -1,6 +1,7 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import {
+  ArrayMinSize,
   IsArray,
   IsNumber,
   IsOptional,
@@ -32,6 +33,9 @@ export class EnterMarksDto {
 
   @ApiProperty({ type: [MarkEntryDto] })
   @IsArray()
+  // Without this an empty submission passed validation and only failed later,
+  // downstream, with a much less obvious message.
+  @ArrayMinSize(1)
   @ValidateNested({ each: true })
   @Type(() => MarkEntryDto)
   entries!: MarkEntryDto[];

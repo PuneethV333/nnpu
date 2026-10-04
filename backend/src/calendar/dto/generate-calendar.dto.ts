@@ -7,6 +7,8 @@ import {
   IsEnum,
   IsInt,
   IsOptional,
+  Max,
+  Min,
   IsString,
   ValidateNested,
 } from 'class-validator';
@@ -24,8 +26,12 @@ export class CalendarOverrideDto {
 }
 
 export class GenerateCalendarDto {
-  @ApiProperty({ example: 2026 })
+  @ApiProperty({ example: 2026, minimum: 2000, maximum: 2100 })
   @IsInt()
+  // generateYear loops day-by-day over the whole year, so an unbounded value
+  // (a typo like 20260) would attempt a quarter of a million upserts.
+  @Min(2000)
+  @Max(2100)
   year!: number;
 
   @ApiProperty({ type: [CalendarOverrideDto] })

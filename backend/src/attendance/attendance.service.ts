@@ -315,10 +315,6 @@ export class AttendanceService {
       orderBy: { student: { details: { name: 'asc' } } },
     });
 
-    if (!roster) {
-      throw new BadRequestException('');
-    }
-
     const result: RosterArray = roster.map(({ student, ...attendance }) => ({
       ...attendance,
       studentId: student.id,

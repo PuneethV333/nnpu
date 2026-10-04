@@ -134,11 +134,15 @@ export class EnrollmentService {
   }
 
   async promoteOne(submissionId: string) {
-    const submission = await this.prisma.enrollmentSubmission.findUniqueOrThrow(
-      {
-        where: { id: submissionId },
-      },
-    );
+    // findUniqueOrThrow would surface a bad id in the URL as a 500. This is a
+    // client mistake, so it is a 404.
+    const submission = await this.prisma.enrollmentSubmission.findUnique({
+      where: { id: submissionId },
+    });
+
+    if (!submission) {
+      throw new NotFoundException('Submission not found');
+    }
 
     const claim = await this.prisma.enrollmentSubmission.updateMany({
       where: { id: submissionId, status: { not: 'Promoted' } },
@@ -309,9 +313,13 @@ export class EnrollmentService {
    * email, so a fresh one is generated instead.
    */
   async resendCredentials(submissionId: string) {
-    const submission = await this.prisma.enrollmentSubmission.findUniqueOrThrow(
-      { where: { id: submissionId } },
-    );
+    const submission = await this.prisma.enrollmentSubmission.findUnique({
+      where: { id: submissionId },
+    });
+
+    if (!submission) {
+      throw new NotFoundException('Submission not found');
+    }
 
     if (submission.status !== 'Promoted' || !submission.promotedUserId) {
       throw new BadRequestException(
@@ -345,9 +353,13 @@ export class EnrollmentService {
   }
 
   async resendOrPromote(submissionId: string) {
-    const submission = await this.prisma.enrollmentSubmission.findUniqueOrThrow(
-      { where: { id: submissionId } },
-    );
+    const submission = await this.prisma.enrollmentSubmission.findUnique({
+      where: { id: submissionId },
+    });
+
+    if (!submission) {
+      throw new NotFoundException('Submission not found');
+    }
 
     // Already promoted means the account exists — promoting again would fail on
     // the unique email. This method previously delegated straight to
