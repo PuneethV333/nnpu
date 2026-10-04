@@ -33,11 +33,19 @@ import { DashboardModule } from './dashboard/dashboard.module';
       envFilePath: '.env',
       validationSchema: Joi.object({
         DATABASE_URL: Joi.string().required(),
-        JWT_SECRET: Joi.string().required(),
+        // A short or absent signing key silently weakens every JWT. The local
+        // secret is 86 chars, so a floor of 32 costs nothing and catches a
+        // truncated or placeholder value at boot rather than in production.
+        JWT_SECRET: Joi.string().min(32).required(),
         // JWT_EXPIRES_IN: Joi.string().required(),
         JWT_ACCESS_EXPIRES_IN: Joi.string().required(),
         PORT: Joi.number().default(5000),
-        NODE_ENV: Joi.string().required(),
+        // Was `.required()` with no constraint, so a typo like NODE_ENV=prod or
+        // NODE_ENV=Production silently behaved as development. `dev` is accepted
+        // because that is what local .env files use.
+        NODE_ENV: Joi.string()
+          .valid('development', 'dev', 'test', 'production')
+          .required(),
         REDIS_URL: Joi.string().required(),
         FIREBASE_PROJECT_ID: Joi.string().required(),
         FIREBASE_CLIENT_EMAIL: Joi.string().required(),

@@ -75,7 +75,9 @@ async function bootstrap() {
 
   app.enableShutdownHooks();
 
-  const port = configService.get<number>('PORT') ?? 3000;
+  // Joi already defaults PORT to 5000 and refuses to boot without it, so the
+  // old `?? 3000` fallback was unreachable and only misleading.
+  const port = configService.get<number>('PORT') ?? 5000;
   await app.listen(port, '0.0.0.0');
   logger.log(`Server listening on port ${port}`, 'Bootstrap');
 }
