@@ -30,6 +30,27 @@
 export const schoolTimeZone = (): string =>
   process.env['SCHOOL_TIMEZONE'] ?? 'Asia/Kolkata';
 
+const zonedParts = (
+  now: Date,
+  timeZone: string,
+): { year: number; month: number; day: number } => {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(now);
+
+  const value = (type: Intl.DateTimeFormatPartTypes): number =>
+    Number(parts.find((p) => p.type === type)?.value);
+
+  return {
+    year: value('year'),
+    month: value('month'),
+    day: value('day'),
+  };
+};
+
 /**
  * The current calendar day **in the school's timezone**, expressed as UTC
  * midnight so it compares equal to a `@db.Date` column.
@@ -43,17 +64,28 @@ export const zonedToday = (
   now: Date = new Date(),
   timeZone: string = schoolTimeZone(),
 ): Date => {
-  const parts = new Intl.DateTimeFormat('en-CA', {
-    timeZone,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).formatToParts(now);
+  const { year, month, day } = zonedParts(now, timeZone);
 
-  const value = (type: Intl.DateTimeFormatPartTypes): number =>
-    Number(parts.find((p) => p.type === type)?.value);
+  return new Date(Date.UTC(year, month - 1, day));
+};
 
-  return new Date(Date.UTC(value('year'), value('month') - 1, value('day')));
+/**
+ * ISO weekday (1 = Monday … 7 = Sunday) in the school's timezone.
+ *
+ * Not `Date.prototype.getDay()`, which is 0-based with Sunday first and indexes
+ * server-local time — both of which silently shift the answer.
+ */
+export const zonedIsoWeekday = (
+  now: Date = new Date(),
+  timeZone: string = schoolTimeZone(),
+): number => {
+  const { year, month, day } = zonedParts(now, timeZone);
+
+  // Date.UTC with the same Y/M/D, read back as getUTCDay(): a pure calendar
+  // calculation with no DST or offset involvement.
+  const sundayBased = new Date(Date.UTC(year, month - 1, day)).getUTCDay();
+
+  return sundayBased === 0 ? 7 : sundayBased;
 };
 
 /** `YYYY-MM-DD`, the form used as the canonical day key in log messages. */

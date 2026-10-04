@@ -1,4 +1,9 @@
-import { schoolTimeZone, toDayKey, zonedToday } from './date.util';
+import {
+  schoolTimeZone,
+  toDayKey,
+  zonedIsoWeekday,
+  zonedToday,
+} from './date.util';
 
 describe('date.util', () => {
   const originalTz = process.env['SCHOOL_TIMEZONE'];
@@ -120,6 +125,47 @@ describe('date.util', () => {
   describe('toDayKey', () => {
     it('formats as YYYY-MM-DD', () => {
       expect(toDayKey(new Date('2026-01-07T00:00:00.000Z'))).toBe('2026-01-07');
+    });
+  });
+  describe('zonedIsoWeekday', () => {
+    it('is ISO 1-based: Monday = 1 … Sunday = 7', () => {
+      // 2026-01-05 is a Monday.
+      expect(zonedIsoWeekday(new Date('2026-01-05T06:00:00.000Z'), 'UTC')).toBe(
+        1,
+      );
+      // 2026-01-11 is a Sunday.
+      expect(zonedIsoWeekday(new Date('2026-01-11T06:00:00.000Z'), 'UTC')).toBe(
+        7,
+      );
+      // 2026-01-10 is a Saturday.
+      expect(zonedIsoWeekday(new Date('2026-01-10T06:00:00.000Z'), 'UTC')).toBe(
+        6,
+      );
+    });
+
+    it('agrees with getUTCDay() shifted into ISO form', () => {
+      for (let day = 4; day <= 10; day += 1) {
+        const at = new Date(Date.UTC(2026, 0, day, 6));
+        const utcDay = at.getUTCDay();
+        expect(zonedIsoWeekday(at, 'UTC')).toBe(utcDay === 0 ? 7 : utcDay);
+      }
+    });
+
+    it('uses the school day, not the UTC day, in the early UTC hours', () => {
+      // 20:00 UTC on Saturday 10 Jan is 01:30 IST on Sunday 11 Jan.
+      // Date.getDay() would say Saturday; the school is already on Sunday.
+      const at = new Date('2026-01-10T20:00:00.000Z');
+
+      expect(at.getUTCDay()).toBe(6);
+      expect(zonedIsoWeekday(at, 'Asia/Kolkata')).toBe(7);
+    });
+
+    it('reports Saturday as 6 for the timetable lookup', () => {
+      // Regression: `WEEK_BY_ISO_DAY[getDay()]` returned the *next* day's entry,
+      // so Monday showed Tuesday's schedule and Saturday fell off the array.
+      expect(zonedIsoWeekday(new Date('2026-01-10T06:00:00.000Z'), 'UTC')).toBe(
+        6,
+      );
     });
   });
 });
