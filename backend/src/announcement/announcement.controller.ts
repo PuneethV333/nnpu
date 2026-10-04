@@ -13,15 +13,18 @@ export class AnnouncementController {
     return this.announcementService.findLatest();
   }
 
-  @Get(':id')
-  @UseGuards(JwtAuthGuard)
-  findOne(@Param('id') id: string) {
-    return this.announcementService.details(id);
-  }
-
+  // NOTE: `all` MUST stay declared above `:id`. Nest matches routes in
+  // declaration order, so a literal `@Get(':id')` first would swallow
+  // `/announcement/all` with id="all" and 404/throw instead of listing.
   @Get('all')
   @UseGuards(JwtAuthGuard)
   findAll(@Query() query: AnnouncementDto) {
     return this.announcementService.findAll(query);
+  }
+
+  @Get(':id')
+  @UseGuards(JwtAuthGuard)
+  findOne(@Param('id') id: string) {
+    return this.announcementService.details(id);
   }
 }

@@ -23,7 +23,7 @@ describe('AuthService', () => {
     password: 'hashed-password',
     userId: 'user-1',
     tokenVersion: 0,
-    user: { id: 'user-1', role: 'Student' },
+    user: { id: 'user-1', role: 'Student', isActive: true },
   };
 
   beforeEach(async () => {
@@ -91,7 +91,7 @@ describe('AuthService', () => {
 
       await expect(
         service.login({ authId: 'nope', password: 'whatever' }),
-      ).rejects.toThrow(UnauthorizedException);
+      ).rejects.toThrow('Invalid auth id or password');
     });
 
     it('throws UnauthorizedException if password does not match', async () => {
@@ -100,7 +100,27 @@ describe('AuthService', () => {
 
       await expect(
         service.login({ authId: mockAuth.authId, password: 'wrong' }),
-      ).rejects.toThrow(UnauthorizedException);
+      ).rejects.toThrow('Invalid school ID or password');
+
+      // The deactivation guard runs before the password check, so a wrong
+      // password must not be reported as a deactivated account.
+      expect(bcrypt.compare).toHaveBeenCalled();
+    });
+
+    it('throws UnauthorizedException if the account is deactivated', async () => {
+      (prisma.auth.findUnique as jest.Mock).mockResolvedValue({
+        ...mockAuth,
+        user: { ...mockAuth.user, isActive: false },
+      });
+
+      await expect(
+        service.login({ authId: mockAuth.authId, password: 'correct' }),
+      ).rejects.toThrow('This account has been deactivated');
+
+      // Must reject before doing any credential work or issuing a token.
+      expect(bcrypt.compare).not.toHaveBeenCalled();
+      expect(jwtService.signAsync).not.toHaveBeenCalled();
+      expect(prisma.refreshToken.create).not.toHaveBeenCalled();
     });
 
     it('returns an accessToken, refreshToken, and user on successful login', async () => {

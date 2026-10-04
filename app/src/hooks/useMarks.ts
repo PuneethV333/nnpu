@@ -47,6 +47,14 @@ export const useEnterMarks = () => {
   return useMutation({
     mutationFn: enterMarks,
     onSuccess: () => {
+      // Entering marks creates the Mark rows for an assessment. The query a
+      // teacher/Admin reads next is the assessment list (and a student's
+      // pending/final report), so those are what must refetch. `my-marks` is
+      // invalidated too so a Student on another screen doesn't show a stale
+      // total.
+      queryClient.invalidateQueries({ queryKey: ['assessments'] });
+      queryClient.invalidateQueries({ queryKey: ['pending-assessments'] });
+      queryClient.invalidateQueries({ queryKey: ['final-report'] });
       queryClient.invalidateQueries({ queryKey: ['my-marks'] });
     },
   });

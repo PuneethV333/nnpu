@@ -6,28 +6,25 @@
     "orientation": "portrait",
     "scheme": "nnpuacademy",
     "userInterfaceStyle": "light",
-
     "icon": "./assets/images/icon.png",
-
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
         "backgroundColor": "#081126"
       },
-      "package": "com.nnpu.mobile"
+      "package": "com.nnpu.mobile",
+      "googleServicesFile": "./google-services.json"
     },
-
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.nnpu.mobile"
     },
-
     "plugins": [
       "expo-router",
       [
         "expo-splash-screen",
         {
-          "image": "./src/assets/images/splash-icon.png",
+          "image": "./assets/images/splash-icon.png",
           "resizeMode": "contain",
           "backgroundColor": "#081126"
         }
@@ -36,9 +33,15 @@
       "expo-image",
       "expo-secure-store",
       "expo-status-bar",
-      "expo-web-browser"
+      "expo-web-browser",
+      [
+        "expo-notifications",
+        {
+          "color": "#2563EB",
+          "defaultChannel": "default"
+        }
+      ]
     ],
-
     "experiments": {
       "typedRoutes": true
     }

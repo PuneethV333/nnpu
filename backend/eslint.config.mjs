@@ -7,7 +7,10 @@ import tseslint from 'typescript-eslint';
 
 export default tseslint.config(
   {
-    ignores: ['dummy.js', 'dist/**', 'generated/**'],
+    // `src/generated/**` is the real output path (prisma/schema.prisma sets
+    // `output = "../src/generated/prisma"`), so `generated/**` never matched it
+    // and lint crawls ~1000 generated files plus a binary wasm on every run.
+    ignores: ['dummy.js', 'dist/**', 'generated/**', 'src/generated/**'],
   },
   eslint.configs.recommended,
   ...tseslint.configs.recommendedTypeChecked,

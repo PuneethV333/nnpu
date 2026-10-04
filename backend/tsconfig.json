@@ -27,10 +27,10 @@
     "types": ["jest", "node"],
     "isolatedModules": true
   },
-  "include": [
-    "src/**/*.ts",
-    "src/**/*.d.ts",
-    "prisma.config.ts",
-    "prisma/dummy.ts"
-  ]
+  // Only `src` belongs here. Adding a file outside it (e.g. `prisma.config.ts`,
+  // which the Prisma CLI loads on its own) makes tsc infer `rootDir` as the
+  // project root, which silently moves the entrypoint to `dist/src/main.js` and
+  // breaks `start:prod`. `tsconfig.build.json` inherits this list, so anything
+  // added below also has to be excluded there.
+  "include": ["src/**/*.ts", "src/**/*.d.ts", "test/**/*.ts"]
 }

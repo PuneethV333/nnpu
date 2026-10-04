@@ -86,9 +86,11 @@ describe('AttendanceService', () => {
     it('does not leak a cached roster to an unassigned teacher', async () => {
       asTeacher();
       (prisma.section.findFirst as jest.Mock).mockResolvedValue(null);
-      const redisGet = jest.fn().mockResolvedValue([
-        { studentId: 'someone-else', name: 'Someone Else' },
-      ]);
+      const redisGet = jest
+        .fn()
+        .mockResolvedValue([
+          { studentId: 'someone-else', name: 'Someone Else' },
+        ]);
       (service as unknown as { redis: RedisService }).redis.get = redisGet;
 
       await expect(

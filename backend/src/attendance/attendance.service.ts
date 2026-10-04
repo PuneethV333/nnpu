@@ -11,6 +11,10 @@ import { AttendanceArray, GetMyType } from './types/getMy.type';
 import { AttendanceSummary } from './types/summary.type';
 import type { RosterType, RosterArray } from './types/roster.type';
 import { MarkAttendanceDto } from './dto/mark-attendance.dto';
+import {
+  assertNoDuplicateStudents,
+  assertStudentsInSection,
+} from '@/common/utils/section-students.util';
 import { Cron, CronExpression } from '@nestjs/schedule';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -343,31 +347,16 @@ export class AttendanceService {
     const submittedIds = dto.entries.map((e) => e.studentId);
     const uniqueSubmittedIds = [...new Set(submittedIds)];
 
-    if (uniqueSubmittedIds.length !== submittedIds.length) {
-      throw new BadRequestException(
-        'Each student may appear only once in an attendance submission',
-      );
-    }
+    assertNoDuplicateStudents(submittedIds);
+    const validIds = await assertStudentsInSection(
+      this.prisma,
+      dto.sectionId,
+      submittedIds,
+    );
 
-    const sectionStudents = await this.prisma.user.findMany({
-      where: {
-        sectionId: dto.sectionId,
-        role: 'Student',
-        isActive: true,
-      },
-      select: { id: true },
-    });
-
-    const validIds = new Set(sectionStudents.map((s) => s.id));
-    const invalidIds = uniqueSubmittedIds.filter((id) => !validIds.has(id));
-
-    if (invalidIds.length > 0) {
-      throw new BadRequestException(
-        `These students do not belong to section ${dto.sectionId}: ${invalidIds.join(', ')}`,
-      );
-    }
-
-    const omittedIds = [...validIds].filter((id) => !uniqueSubmittedIds.includes(id));
+    const omittedIds = [...validIds].filter(
+      (id) => !uniqueSubmittedIds.includes(id),
+    );
     if (omittedIds.length > 0) {
       throw new BadRequestException(
         'Attendance must include every active student in the selected section',

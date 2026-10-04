@@ -8,6 +8,10 @@ import {
 } from '@nestjs/common';
 import { CreateAssessmentDto } from './dto/create-assessment.dto';
 import { EnterMarksDto } from './dto/enter-marks.dto';
+import {
+  assertNoDuplicateStudents,
+  assertStudentsInSection,
+} from '@/common/utils/section-students.util';
 import { SubjectResultDto, SubjectResultSchema } from './types/reportCard.type';
 
 @Injectable()
@@ -124,6 +128,19 @@ export class MarksService {
         `Marks for student ${overMax.studentId} exceed max marks (${assessment.maxMarks})`,
       );
     }
+
+    // The upsert below keys on [studentId, assessmentId], which carries no
+    // section at all. Without these two checks the assigned teacher of section
+    // A could submit section B's students and have the marks written against
+    // their own section's assessment, and a duplicated studentId would be
+    // silently overwritten by the later entry instead of erroring.
+    assertNoDuplicateStudents(dto.entries.map((e) => e.studentId));
+
+    await assertStudentsInSection(
+      this.prisma,
+      assessment.sectionId,
+      dto.entries.map((e) => e.studentId),
+    );
 
     await this.prisma.$transaction(
       dto.entries.map((entry) =>

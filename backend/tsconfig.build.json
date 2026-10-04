@@ -1,4 +1,14 @@
 {
   "extends": "./tsconfig.json",
+  "compilerOptions": {
+    // Pinned explicitly rather than left to tsc's inference from `include`.
+    // Any file added to `include` that lives outside `src/` (e.g. a stray
+    // `prisma.config.ts`) would otherwise silently push the output to
+    // `dist/src/main.js`, breaking `start:prod` at deploy time. Pinning it here
+    // makes that case a loud compile error instead of a runtime MODULE_NOT_FOUND.
+    // Set on the build config only: tsconfig.json also covers `test/`, which
+    // legitimately sits outside `src`.
+    "rootDir": "./src"
+  },
   "exclude": ["node_modules", "test", "dist", "**/*spec.ts"]
 }

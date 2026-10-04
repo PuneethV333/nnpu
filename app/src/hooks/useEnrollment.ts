@@ -20,30 +20,33 @@ export const useCreateDrive = () => {
   });
 };
 
+// Every /enrollment/* route on the controller is `@Roles('Admin')`, so gate
+// these on role as well as auth — otherwise a Student/Teacher session fires
+// requests that can only ever 403.
 export const useListDrives = () => {
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, role } = useAuth();
   return useQuery({
     queryKey: ['enrollment', 'drives'],
     queryFn: listDrives,
-    enabled: isAuthenticated,
+    enabled: isAuthenticated && role === 'Admin',
   });
 };
 
 export const useGetDrive = (id: string) => {
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, role } = useAuth();
   return useQuery({
     queryKey: ['enrollment', 'drive', id],
     queryFn: () => getDrive(id),
-    enabled: isAuthenticated && !!id,
+    enabled: isAuthenticated && role === 'Admin' && !!id,
   });
 };
 
 export const useListSubmissions = (driveId: string, status?: string) => {
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, role } = useAuth();
   return useQuery({
     queryKey: ['enrollment', 'submissions', driveId, status],
     queryFn: () => listSubmissions(driveId, status),
-    enabled: isAuthenticated && !!driveId,
+    enabled: isAuthenticated && role === 'Admin' && !!driveId,
   });
 };
 

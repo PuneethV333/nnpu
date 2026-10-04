@@ -11,8 +11,8 @@ import {
   Inter_600SemiBold,
   Inter_700Bold,
 } from "@expo-google-fonts/inter";
-import '../global.css'
-// import { usePushRegistration } from "@/src/hooks/usePushRegistration";
+import { usePushRegistration } from "@/src/hooks/usePushRegistration";
+import '../global.css';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -24,7 +24,9 @@ const queryClient = new QueryClient({
 });
 
 function AppShell() {
-  // usePushRegistration(); // now genuinely inside AuthProvider
+  // Must live inside AuthProvider so the token is only registered for a
+  // signed-in user (the backend ties the token to that user).
+  usePushRegistration();
 
   return (
     <>

@@ -170,8 +170,11 @@ const MarkEntry = ({ heading }: { heading: string }) => {
   });
 
   const { data: subjects, isLoading: subjectsLoading } = useGetMySubjects(sectionId);
+  // `useGetAssessments` is enabled as soon as sectionId is set, so passing an
+  // empty sectionId until a subject is chosen avoids fetching every assessment
+  // in the section just to discard them.
   const { data: assessments } = useGetAssessments(
-    sectionId,
+    subjectId ? sectionId : '',
     subjectId || undefined,
   );
   const { data: students, isLoading: studentsLoading } =
@@ -251,14 +254,19 @@ const MarkEntry = ({ heading }: { heading: string }) => {
     enterMarks(
       { assessmentId: assessment.id, entries },
       {
-        onSuccess: () =>
+        onSuccess: () => {
+          // Clear the draft: the marks are persisted, so leaving the boxes
+          // filled would keep Save enabled and let a second identical batch be
+          // submitted by mistake.
+          setDraft({});
           setModal({
             visible: true,
             type: "success",
             message: `Saved marks for ${entries.length} student${
               entries.length > 1 ? "s" : ""
             }.`,
-          }),
+          });
+        },
         onError: (err: unknown) =>
           setModal({
             visible: true,

@@ -4,7 +4,6 @@ import { REDIS_CLIENT } from './redis.constants';
 import { Redis } from 'ioredis';
 import { ConfigService } from '@nestjs/config';
 import { LoggerModule } from '@/logger/logger.module';
-import { RedisThrottlerStorage } from './redis-throttler.storage';
 
 @Global()
 @Module({
@@ -22,8 +21,7 @@ import { RedisThrottlerStorage } from './redis-throttler.storage';
       },
     },
     RedisService,
-    RedisThrottlerStorage,
   ],
-  exports: [RedisService, RedisThrottlerStorage],
+  exports: [RedisService],
 })
 export class RedisModule {}

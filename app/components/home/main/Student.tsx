@@ -126,8 +126,12 @@ const Student = () => {
           ) : todaySlots.length === 0 ? (
             <View style={styles.emptyBox}>
               <Text style={styles.emptyText}>
-                {isWorkingDay === false
-                  ? "Not a working day — no classes scheduled."
+                {todayType && !isWorkingDay
+                  ? `Not a working day${
+                      rangeQuery.data?.[0]?.label
+                        ? ` — ${rangeQuery.data[0].label}`
+                        : ""
+                    }.`
                   : "No classes scheduled for today."}
               </Text>
             </View>
