@@ -20,6 +20,13 @@ import { schoolTimeZone, zonedToday } from '@/common/utils/date.util';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
+/**
+ * How long after a date its attendance may still be edited.
+ *
+ * One day: a teacher can still correct yesterday before the day is closed off.
+ */
+const ATTENDANCE_EDIT_GRACE_DAYS = 1;
+
 @Injectable()
 export class AttendanceService {
   constructor(
@@ -333,6 +340,28 @@ export class AttendanceService {
 
     const dateObj = new Date(dto.date);
 
+    // Attendance is only editable for the current school day and the day before
+    // it. Previously the lock was keyed on `markedAt`, which meant a past date
+    // that had never been marked had no lock whatsoever and stayed editable
+    // forever, while a day marked late in the afternoon locked at 4pm the next
+    // day regardless of which day it was. A date-based window is what the rule
+    // actually means.
+    const today = zonedToday();
+
+    if (dateObj > today) {
+      throw new BadRequestException('Cannot mark attendance for a future date');
+    }
+
+    const daysAgo = Math.floor(
+      (today.getTime() - dateObj.getTime()) / (1000 * 60 * 60 * 24),
+    );
+
+    if (daysAgo > ATTENDANCE_EDIT_GRACE_DAYS) {
+      throw new ForbiddenException(
+        `Attendance for ${dto.date} is locked — it can only be edited up to ${ATTENDANCE_EDIT_GRACE_DAYS} day(s) after the date`,
+      );
+    }
+
     const calendarDay = await this.prisma.academicCalendarDay.findUnique({
       where: { date: dateObj },
     });
@@ -377,21 +406,6 @@ export class AttendanceService {
 
     const rowMap = new Map(existingRows.map((r) => [r.studentId, r]));
 
-    // All-or-nothing: if ANY entry is locked, reject the whole batch before
-    // the transaction runs. No partial saves.
-    for (const entry of dto.entries) {
-      const existing = rowMap.get(entry.studentId);
-      if (existing?.markedAt) {
-        const hoursSinceMarked =
-          (Date.now() - existing.markedAt.getTime()) / (1000 * 60 * 60);
-        if (hoursSinceMarked > 24) {
-          throw new ForbiddenException(
-            `Attendance for ${dto.date} is locked (marked more than 24 hours ago)`,
-          );
-        }
-      }
-    }
-
     const now = new Date();
 
     await this.prisma.$transaction(
@@ -404,6 +418,11 @@ export class AttendanceService {
           update: {
             status: entry.status,
             markedById: teacherId,
+            // The unique key is [studentId, date], which never mentions the
+            // section. A student who transfers sections therefore updates the
+            // row created under their *old* section, and without this the row
+            // kept pointing at the section they are no longer in.
+            sectionId: dto.sectionId,
             markedAt: existing?.markedAt ?? now,
           },
           create: {

@@ -9,6 +9,7 @@ import { AttendanceService } from './attendance.service';
 import { PrismaService } from '@/prisma/prisma.service';
 import { LoggerService } from '@/logger/logger.service';
 import { RedisService } from '@/redis/redis.service';
+import { zonedToday } from '@/common/utils/date.util';
 
 const WORKING_DAY = { date: new Date(), type: 'Working', label: null };
 
@@ -220,6 +221,112 @@ describe('AttendanceService', () => {
       await expect(
         service.getRoster('section-1', '2026-08-01', 'auth-1'),
       ).rejects.toBeInstanceOf(BadRequestException);
+    });
+  });
+  describe('markAttendance date window', () => {
+    const asClassTeacher = () => {
+      (prisma.auth.findUnique as jest.Mock).mockResolvedValue({
+        userId: 'teacher-1',
+        user: { role: 'Teacher' },
+      });
+      (prisma.section.findFirst as jest.Mock).mockResolvedValue({
+        id: 'section-1',
+      });
+    };
+
+    const singleStudent = () => {
+      (prisma.user.findMany as jest.Mock).mockResolvedValue([{ id: 's1' }]);
+      (prisma.attendance.findMany as jest.Mock).mockResolvedValue([]);
+    };
+
+    const iso = (d: Date) => d.toISOString().slice(0, 10);
+    const today = zonedToday();
+    const shift = (days: number) =>
+      iso(new Date(today.getTime() + days * 24 * 60 * 60 * 1000));
+
+    const entry = [{ studentId: 's1', status: 'Present' as const }];
+
+    it('rejects a future date', async () => {
+      asClassTeacher();
+      singleStudent();
+
+      // The calendar contains every day of the year, so a future *working* day
+      // previously passed the Working check and could be marked.
+      (prisma.academicCalendarDay.findUnique as jest.Mock).mockResolvedValue({
+        type: 'Working',
+      });
+
+      await expect(
+        service.markAttendance(
+          { sectionId: 'section-1', date: shift(1), entries: entry },
+          'auth-1',
+        ),
+      ).rejects.toBeInstanceOf(BadRequestException);
+
+      expect(prisma.attendance.upsert).not.toHaveBeenCalled();
+    });
+
+    it('rejects a date older than the grace window even when never marked', async () => {
+      asClassTeacher();
+      singleStudent();
+      (prisma.academicCalendarDay.findUnique as jest.Mock).mockResolvedValue({
+        type: 'Working',
+      });
+
+      // Regression: the lock keyed on markedAt, so a past date that had never
+      // been marked had no lock at all and stayed editable indefinitely.
+      await expect(
+        service.markAttendance(
+          { sectionId: 'section-1', date: shift(-10), entries: entry },
+          'auth-1',
+        ),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+
+      expect(prisma.attendance.upsert).not.toHaveBeenCalled();
+    });
+
+    it('still allows editing yesterday', async () => {
+      asClassTeacher();
+      singleStudent();
+      (prisma.academicCalendarDay.findUnique as jest.Mock).mockResolvedValue({
+        type: 'Working',
+      });
+
+      await service.markAttendance(
+        { sectionId: 'section-1', date: shift(-1), entries: entry },
+        'auth-1',
+      );
+
+      expect(prisma.attendance.upsert).toHaveBeenCalled();
+    });
+
+    it('reassigns sectionId when a transferred student is re-marked', async () => {
+      asClassTeacher();
+      singleStudent();
+      (prisma.academicCalendarDay.findUnique as jest.Mock).mockResolvedValue({
+        type: 'Working',
+      });
+      // Row already exists from the student's previous section.
+      (prisma.attendance.findMany as jest.Mock).mockResolvedValue([
+        { studentId: 's1', markedAt: new Date('2026-01-01T00:00:00.000Z') },
+      ]);
+
+      await service.markAttendance(
+        { sectionId: 'section-1', date: shift(0), entries: entry },
+        'auth-1',
+      );
+
+      // Prisma's overloaded `upsert` signature makes `mock.calls` untyped, so
+      // re-type it narrowly rather than indexing an `any`.
+      const upsertMock = prisma.attendance.upsert as unknown as jest.Mock<
+        unknown,
+        [{ update: Record<string, unknown> }]
+      >;
+      const arg = upsertMock.mock.calls[0][0];
+
+      // The unique key is [studentId, date] and never mentions the section, so
+      // without reassignment the row kept pointing at the old section.
+      expect(arg.update.sectionId).toBe('section-1');
     });
   });
 });
