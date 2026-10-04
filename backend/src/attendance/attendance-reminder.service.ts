@@ -3,6 +3,7 @@ import { Cron } from '@nestjs/schedule';
 import { PrismaService } from '@/prisma/prisma.service';
 import { LoggerService } from '@/logger/logger.service';
 import { FirebaseService } from '@/firebase/firebase.service';
+import { schoolTimeZone, zonedToday } from '@/common/utils/date.util';
 
 @Injectable()
 export class AttendanceReminderService {
@@ -12,12 +13,15 @@ export class AttendanceReminderService {
     private readonly firebase: FirebaseService,
   ) {}
 
-  @Cron('30 9 * * 1-6') // 9:30 AM, Mon–Sat — adjust to your school week
+  // 9:30 AM Mon-Sat in the *school's* timezone. Without the explicit
+  // timeZone this fired at 09:30 server time, which is 15:00 IST on a UTC host.
+  // Saturday is included because it is a working day (see the calendar fix);
+  // the AcademicCalendarDay check below still skips holidays.
+  @Cron('30 9 * * 1-6', { timeZone: schoolTimeZone() })
   async remindPendingAttendance() {
     this.logger.log('[attendance-reminder] running');
 
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    const today = zonedToday();
 
     const calendarDay = await this.prisma.academicCalendarDay.findUnique({
       where: { date: today },

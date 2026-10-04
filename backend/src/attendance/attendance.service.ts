@@ -16,6 +16,7 @@ import {
   assertStudentsInSection,
 } from '@/common/utils/section-students.util';
 import { Cron, CronExpression } from '@nestjs/schedule';
+import { schoolTimeZone, zonedToday } from '@/common/utils/date.util';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -76,18 +77,15 @@ export class AttendanceService {
     return userId;
   }
 
-  @Cron(CronExpression.EVERY_DAY_AT_6AM)
+  // 06:00 in the school's timezone; without it this ran at 11:30 IST on a UTC
+  // host. Shares `zonedToday()` with the reminder so both address the same
+  // `@db.Date` row — they must agree, since Attendance is unique on
+  // [studentId, date].
+  @Cron(CronExpression.EVERY_DAY_AT_6AM, { timeZone: schoolTimeZone() })
   async seedDailyAttendance() {
     this.logger.log('[cron-seed-attendance] starting');
 
-    // UTC-safe "today" — matches how @db.Date columns are stored/compared
-    // elsewhere in this service (new Date('YYYY-MM-DD') parses as UTC midnight).
-    // Using local server time here would shift the matched calendar day if
-    // the server isn't running in UTC.
-    const now = new Date();
-    const today = new Date(
-      Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()),
-    );
+    const today = zonedToday();
 
     const calendarDay = await this.prisma.academicCalendarDay.findUnique({
       where: { date: today },
@@ -197,11 +195,17 @@ export class AttendanceService {
     const fromDate = new Date(from);
     const toDate = new Date(to);
 
+    // Future working days must not count towards the denominator. They can never
+    // be attended, so including them reported every in-progress month as a poor
+    // attendance rate — on the 3rd of a 30-day month the ceiling was 10%.
+    const today = zonedToday();
+    const countedToDate = toDate > today ? today : toDate;
+
     const [workingDays, grouped] = await Promise.all([
       this.prisma.academicCalendarDay.count({
         where: {
           type: 'Working',
-          date: { gte: fromDate, lte: toDate },
+          date: { gte: fromDate, lte: countedToDate },
         },
       }),
       this.prisma.attendance.groupBy({
