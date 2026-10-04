@@ -17,7 +17,12 @@ export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
   @Post('login')
-  @Throttle({ default: { limit: 5, ttl: 60000 } })
+  // IP-keyed, so it is only a coarse cap against spraying many auth ids from one
+  // host. It used to be 5/minute, which is fine per user but not for a school
+  // sharing one NAT/ISP address — the whole campus locked each other out at
+  // 8:30am. Per-auth-id lockout (which is what actually stops brute force) lives
+  // in AuthService.login().
+  @Throttle({ default: { limit: 60, ttl: 60000 } })
   @ApiOperation({ summary: 'Login with school/auth ID and password' })
   login(@Body() dto: LoginDto) {
     return this.authService.login(dto);

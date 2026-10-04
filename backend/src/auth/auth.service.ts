@@ -1,5 +1,7 @@
 import { PrismaService } from '@/prisma/prisma.service';
 import {
+  HttpException,
+  HttpStatus,
   Injectable,
   ForbiddenException,
   NotFoundException,
@@ -17,6 +19,22 @@ import { addDays } from 'date-fns';
 import { Role } from '@/generated/prisma';
 import { login } from './types/get-me.type';
 import { refreshDto } from './dto/refresh.dto';
+
+/**
+ * A real bcrypt hash of a value nobody knows. Compared against on the
+ * "unknown auth id" path so every failed login costs the same wall-clock time.
+ */
+const DUMMY_PASSWORD_HASH =
+  '$2b$10$cCLaVdzsJrEZFTp5ftMRTO.06B5ppQsmtcs3GOan0qD3WrNEfsEwq';
+
+/** Deliberately identical for every failure mode — see login(). */
+const INVALID_CREDENTIALS = 'Invalid auth id or password';
+const INVALID_REFRESH = 'Invalid refresh token';
+
+const LOGIN_MAX_FAILURES = 5;
+const LOGIN_LOCK_SECONDS = 300;
+
+const loginFailureKey = (authId: string): string => `login:fail:${authId}`;
 
 @Injectable()
 export class AuthService {
@@ -59,23 +77,32 @@ export class AuthService {
 
   async login(dto: LoginDto): Promise<login> {
     this.logger.log('[auth]');
+
+    // Normalised for the throttle key only; the lookup below stays exact so
+    // existing mixed-case auth ids keep working.
+    const throttleKey = dto.authId.trim().toLowerCase();
+
+    await this.assertLoginNotLocked(throttleKey);
+
     const auth = await this.prisma.auth.findUnique({
       where: { authId: dto.authId },
       include: { user: true },
     });
 
-    if (!auth) {
-      throw new UnauthorizedException('Invalid auth id or password');
+    // Always pay the bcrypt cost, even when the auth id does not exist. The
+    // miss path used to return immediately, so response time alone revealed
+    // which auth ids were real.
+    const storedHash = auth?.password ?? DUMMY_PASSWORD_HASH;
+    const passwordMatches = await bcrypt.compare(dto.password, storedHash);
+
+    // One message for all three failures. Deactivating an account used to be
+    // announced to whoever guessed its auth id.
+    if (!auth || !passwordMatches || !auth.user.isActive) {
+      await this.recordLoginFailure(throttleKey);
+      throw new UnauthorizedException(INVALID_CREDENTIALS);
     }
 
-    if (!auth.user.isActive) {
-      throw new UnauthorizedException('This account has been deactivated');
-    }
-
-    const passwordMatches = await bcrypt.compare(dto.password, auth.password);
-    if (!passwordMatches) {
-      throw new UnauthorizedException('Invalid school ID or password');
-    }
+    await this.clearLoginFailures(throttleKey);
 
     const { accessToken, refreshToken } = await this.issueTokens(
       auth.authId,
@@ -90,11 +117,62 @@ export class AuthService {
     };
   }
 
+  /**
+   * Per-auth-id lockout.
+   *
+   * The route throttle is keyed on IP by default, so a whole school behind one
+   * NAT shared a single 5-per-minute budget and locked each other out at 8:30am.
+   * Counting per auth id keeps the protection where it belongs — against
+   * repeated attempts on one account — without punishing shared egress.
+   *
+   * Fails *open* if Redis is unavailable: an infrastructure outage must not stop
+   * the school from logging in.
+   */
+  private async assertLoginNotLocked(throttleKey: string): Promise<void> {
+    try {
+      const attempts = Number(
+        (await this.redis.get<number>(loginFailureKey(throttleKey))) ?? 0,
+      );
+
+      if (attempts >= LOGIN_MAX_FAILURES) {
+        // Nest ships no TooManyRequestsException, so 429 is raised directly.
+        throw new HttpException(
+          'Too many failed login attempts. Try again in a few minutes.',
+          HttpStatus.TOO_MANY_REQUESTS,
+        );
+      }
+    } catch (err) {
+      if (err instanceof HttpException) throw err;
+      this.logger.warn(`[auth] login lockout check skipped: ${String(err)}`);
+    }
+  }
+
+  private async recordLoginFailure(throttleKey: string): Promise<void> {
+    try {
+      const key = loginFailureKey(throttleKey);
+      const attempts = await this.redis.incr(key);
+
+      if (attempts === 1) {
+        await this.redis.expire(key, LOGIN_LOCK_SECONDS);
+      }
+    } catch (err) {
+      this.logger.warn(`[auth] could not record login failure: ${String(err)}`);
+    }
+  }
+
+  private async clearLoginFailures(throttleKey: string): Promise<void> {
+    try {
+      await this.redis.del(loginFailureKey(throttleKey));
+    } catch (err) {
+      this.logger.warn(`[auth] could not clear login failures: ${String(err)}`);
+    }
+  }
+
   async refresh(dto: refreshDto) {
     const part = dto.refreshToken.split('.');
 
     if (part.length !== 2) {
-      throw new UnauthorizedException('Invalid refresh token');
+      throw new UnauthorizedException(INVALID_REFRESH);
     }
     const [tokenId, tokenSecret] = part;
 
@@ -104,29 +182,53 @@ export class AuthService {
     });
 
     if (!refresh) {
-      throw new UnauthorizedException();
-    }
-
-    if (refresh.expiresAt < new Date()) {
-      throw new UnauthorizedException();
+      throw new UnauthorizedException(INVALID_REFRESH);
     }
 
     const valid = await bcrypt.compare(tokenSecret, refresh.tokenHash);
     if (!valid) {
-      throw new UnauthorizedException();
+      throw new UnauthorizedException(INVALID_REFRESH);
     }
 
-    // FIX: no longer routes through login(); issues tokens directly,
-    // so no fake password is ever passed anywhere.
-    const { accessToken, refreshToken } = await this.issueTokens(
+    if (refresh.expiresAt < new Date()) {
+      throw new UnauthorizedException(INVALID_REFRESH);
+    }
+
+    // A deactivated user could otherwise keep minting pairs from a token
+    // issued before deactivation.
+    if (!refresh.auth.user.isActive) {
+      throw new UnauthorizedException(INVALID_REFRESH);
+    }
+
+    // Claim the token *before* issuing a replacement. `deleteMany` is the
+    // atomic gate: two concurrent refreshes both pass the checks above, but
+    // only one sees count === 1, so exactly one pair is ever minted from a
+    // given token. Previously the new pair was issued first and the old row
+    // deleted afterwards, so a race produced two live pairs — and the loser's
+    // `delete` then threw on an already-deleted row.
+    const claimed = await this.prisma.$transaction(async (tx) => {
+      const res = await tx.refreshToken.deleteMany({ where: { tokenId } });
+
+      // Opportunistic cleanup: rows only linger for abandoned logins, and this
+      // keeps any given user's table from growing without a scheduled job.
+      await tx.refreshToken.deleteMany({
+        where: { authId: refresh.authId, expiresAt: { lt: new Date() } },
+      });
+
+      return res.count;
+    });
+
+    if (claimed === 0) {
+      throw new UnauthorizedException(INVALID_REFRESH);
+    }
+
+    // Issues tokens directly rather than routing through login(), so no real
+    // password is ever needed here.
+    return this.issueTokens(
       refresh.auth.authId,
       refresh.auth.user.role,
       refresh.auth.tokenVersion,
     );
-
-    await this.prisma.refreshToken.delete({ where: { tokenId } });
-
-    return { accessToken, refreshToken };
   }
 
   async getMe(authId: string) {

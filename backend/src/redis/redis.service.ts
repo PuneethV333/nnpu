@@ -27,6 +27,22 @@ export class RedisService implements OnModuleDestroy {
     await this.redis.set(key, JSON.stringify(value), 'EX', ttl);
   }
 
+  /**
+   * Atomic increment, used for attempt counters where a read-then-write would
+   * lose counts under concurrency.
+   *
+   * Returns -1 when the key does not exist, matching ioredis, so callers can
+   * apply a TTL only on first use.
+   */
+  async incr(key: string): Promise<number> {
+    return this.redis.incr(key);
+  }
+
+  /** Sets a TTL on a key that has no expiry yet. */
+  async expire(key: string, ttl: number): Promise<void> {
+    await this.redis.expire(key, ttl);
+  }
+
   async del(key: string): Promise<boolean> {
     const result = await this.redis.del(key);
     return result > 0;

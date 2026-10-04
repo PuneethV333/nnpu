@@ -51,6 +51,9 @@ describe('AuthService', () => {
               deleteMany: jest.fn(),
               findUnique: jest.fn(),
             },
+            // refresh() claims the token inside a transaction; per AGENTS.md
+            // $transaction is mocked as jest.fn((callback) => callback(tx)).
+            $transaction: jest.fn(),
           },
         },
         {
@@ -65,6 +68,9 @@ describe('AuthService', () => {
             get: jest.fn(),
             set: jest.fn(),
             del: jest.fn(),
+            // incr/expire back the per-auth-id login lockout.
+            incr: jest.fn(),
+            expire: jest.fn(),
           },
         },
         {
@@ -83,6 +89,15 @@ describe('AuthService', () => {
     prisma = module.get(PrismaService);
     jwtService = module.get(JwtService);
     redis = module.get(RedisService);
+
+    // Default transaction behaviour: run the callback against the same mock, and
+    // report one row claimed so refresh() proceeds.
+    (prisma.$transaction as jest.Mock).mockImplementation(
+      (cb: (tx: unknown) => unknown) => cb(prisma),
+    );
+    (prisma.refreshToken.deleteMany as jest.Mock).mockResolvedValue({
+      count: 1,
+    });
   });
 
   afterEach(() => {
@@ -104,14 +119,14 @@ describe('AuthService', () => {
 
       await expect(
         service.login({ authId: mockAuth.authId, password: 'wrong' }),
-      ).rejects.toThrow('Invalid school ID or password');
+      ).rejects.toThrow('Invalid auth id or password');
 
       // The deactivation guard runs before the password check, so a wrong
       // password must not be reported as a deactivated account.
       expect(bcrypt.compare).toHaveBeenCalled();
     });
 
-    it('throws UnauthorizedException if the account is deactivated', async () => {
+    it('reports a deactivated account with the same message as a bad password', async () => {
       (prisma.auth.findUnique as jest.Mock).mockResolvedValue({
         ...mockAuth,
         user: { ...mockAuth.user, isActive: false },
@@ -119,12 +134,31 @@ describe('AuthService', () => {
 
       await expect(
         service.login({ authId: mockAuth.authId, password: 'correct' }),
-      ).rejects.toThrow('This account has been deactivated');
+      ).rejects.toThrow('Invalid auth id or password');
 
-      // Must reject before doing any credential work or issuing a token.
-      expect(bcrypt.compare).not.toHaveBeenCalled();
+      // Deliberately no longer says "This account has been deactivated": that
+      // told anyone who guessed a valid auth id that the account existed.
       expect(jwtService.signAsync).not.toHaveBeenCalled();
       expect(prisma.refreshToken.create).not.toHaveBeenCalled();
+    });
+
+    it('uses the same message for an unknown auth id as for a wrong password', async () => {
+      (prisma.auth.findUnique as jest.Mock).mockResolvedValue(null);
+
+      await expect(
+        service.login({ authId: 'does-not-exist', password: 'whatever' }),
+      ).rejects.toThrow('Invalid auth id or password');
+    });
+
+    it('still runs bcrypt on the unknown-auth-id path', async () => {
+      // Otherwise response time alone reveals which auth ids exist.
+      (prisma.auth.findUnique as jest.Mock).mockResolvedValue(null);
+
+      await expect(
+        service.login({ authId: 'does-not-exist', password: 'whatever' }),
+      ).rejects.toBeInstanceOf(UnauthorizedException);
+
+      expect(bcrypt.compare).toHaveBeenCalled();
     });
 
     it('returns an accessToken, refreshToken, and user on successful login', async () => {
@@ -365,7 +399,7 @@ describe('AuthService', () => {
       auth: {
         authId: mockAuth.authId,
         tokenVersion: 0,
-        user: { id: 'user-1', role: 'Student' },
+        user: { id: 'user-1', role: 'Student', isActive: true },
       },
     };
 
@@ -429,9 +463,12 @@ describe('AuthService', () => {
         accessToken: 'new-access-token',
         refreshToken: expect.any(String),
       });
-      expect(prisma.refreshToken.delete).toHaveBeenCalledWith({
+      // Claims the token with deleteMany (the atomic gate) rather than delete,
+      // so a concurrent refresh of the same token cannot both proceed.
+      expect(prisma.refreshToken.deleteMany).toHaveBeenCalledWith({
         where: { tokenId: 'token-1' },
       });
+      expect(prisma.refreshToken.delete).not.toHaveBeenCalled();
       expect(prisma.refreshToken.create).toHaveBeenCalled();
     });
   });
@@ -507,6 +544,147 @@ describe('AuthService', () => {
           where: expect.objectContaining({ sectionId: 'section-1' }),
         }),
       );
+    });
+  });
+  describe('per-auth-id login lockout', () => {
+    const asRealUser = () => {
+      (prisma.auth.findUnique as jest.Mock).mockResolvedValue(mockAuth);
+      (bcrypt.compare as jest.Mock).mockResolvedValue(true);
+    };
+
+    it('locks the account after repeated failures', async () => {
+      (prisma.auth.findUnique as jest.Mock).mockResolvedValue(mockAuth);
+      (bcrypt.compare as jest.Mock).mockResolvedValue(false);
+      (redis.get as jest.Mock).mockResolvedValue(5);
+      (redis.incr as jest.Mock).mockResolvedValue(1);
+
+      await expect(
+        service.login({ authId: mockAuth.authId, password: 'wrong' }),
+      ).rejects.toMatchObject({ status: 429 });
+
+      // Must not even reach the credential check once locked.
+      expect(prisma.auth.findUnique).not.toHaveBeenCalled();
+    });
+
+    it('records each failure against the auth id, not the IP', async () => {
+      // Regression: the route throttle was keyed on IP at 5/min, so a school
+      // behind one NAT locked each other out.
+      (prisma.auth.findUnique as jest.Mock).mockResolvedValue(mockAuth);
+      (bcrypt.compare as jest.Mock).mockResolvedValue(false);
+      (redis.get as jest.Mock).mockResolvedValue(0);
+      (redis.incr as jest.Mock).mockResolvedValue(1);
+
+      await service
+        .login({ authId: mockAuth.authId, password: 'wrong' })
+        .catch(() => undefined);
+
+      expect(redis.incr).toHaveBeenCalledWith(
+        `login:fail:${mockAuth.authId.toLowerCase()}`,
+      );
+    });
+
+    it('sets the lock TTL only on the first failure', async () => {
+      (prisma.auth.findUnique as jest.Mock).mockResolvedValue(mockAuth);
+      (bcrypt.compare as jest.Mock).mockResolvedValue(false);
+      (redis.get as jest.Mock).mockResolvedValue(0);
+      (redis.incr as jest.Mock).mockResolvedValue(3);
+
+      await service
+        .login({ authId: mockAuth.authId, password: 'wrong' })
+        .catch(() => undefined);
+
+      expect(redis.expire).not.toHaveBeenCalled();
+    });
+
+    it('clears the counter after a successful login', async () => {
+      asRealUser();
+      (redis.get as jest.Mock).mockResolvedValue(0);
+
+      await service.login({ authId: mockAuth.authId, password: 'correct' });
+
+      expect(redis.del).toHaveBeenCalledWith(
+        `login:fail:${mockAuth.authId.toLowerCase()}`,
+      );
+    });
+
+    it('fails open when Redis is unavailable', async () => {
+      // An infrastructure outage must not stop the school logging in.
+      asRealUser();
+      (redis.get as jest.Mock).mockRejectedValue(new Error('redis down'));
+      (redis.incr as jest.Mock).mockRejectedValue(new Error('redis down'));
+      (redis.del as jest.Mock).mockRejectedValue(new Error('redis down'));
+
+      await expect(
+        service.login({ authId: mockAuth.authId, password: 'correct' }),
+      ).resolves.toHaveProperty('accessToken');
+    });
+  });
+
+  describe('refresh atomicity', () => {
+    const activeRefresh = {
+      tokenId: 'token-1',
+      tokenHash: 'hashed-secret',
+      authId: mockAuth.authId,
+      expiresAt: new Date(Date.now() + 1000 * 60 * 60),
+      auth: {
+        authId: mockAuth.authId,
+        tokenVersion: 0,
+        user: { id: 'user-1', role: 'Student', isActive: true },
+      },
+    };
+
+    it('rejects a second use of the same refresh token', async () => {
+      (prisma.refreshToken.findUnique as jest.Mock).mockResolvedValue(
+        activeRefresh,
+      );
+      (bcrypt.compare as jest.Mock).mockResolvedValue(true);
+      // Simulates the loser's claim: the row is already gone.
+      (prisma.refreshToken.deleteMany as jest.Mock).mockResolvedValue({
+        count: 0,
+      });
+
+      await expect(
+        service.refresh({ refreshToken: 'token-1.secret' }),
+      ).rejects.toThrow('Invalid refresh token');
+
+      expect(prisma.refreshToken.create).not.toHaveBeenCalled();
+    });
+
+    it('rejects a refresh for a deactivated user', async () => {
+      // Regression: no isActive check, so a deactivated account could keep
+      // minting pairs from a token issued before deactivation.
+      (prisma.refreshToken.findUnique as jest.Mock).mockResolvedValue({
+        ...activeRefresh,
+        auth: {
+          ...activeRefresh.auth,
+          user: { ...activeRefresh.auth.user, isActive: false },
+        },
+      });
+      (bcrypt.compare as jest.Mock).mockResolvedValue(true);
+
+      await expect(
+        service.refresh({ refreshToken: 'token-1.secret' }),
+      ).rejects.toThrow('Invalid refresh token');
+    });
+
+    it('purges the user expired refresh tokens while claiming', async () => {
+      (prisma.refreshToken.findUnique as jest.Mock).mockResolvedValue(
+        activeRefresh,
+      );
+      (bcrypt.compare as jest.Mock).mockResolvedValue(true);
+      (prisma.refreshToken.deleteMany as jest.Mock).mockResolvedValue({
+        count: 1,
+      });
+
+      await service.refresh({ refreshToken: 'token-1.secret' });
+
+      // Expired rows were never cleaned up, so they accumulated indefinitely.
+      expect(prisma.refreshToken.deleteMany).toHaveBeenCalledWith({
+        where: {
+          authId: mockAuth.authId,
+          expiresAt: { lt: expect.any(Date) },
+        },
+      });
     });
   });
 });
