@@ -8,16 +8,20 @@ type Props = {
 };
 
 const SchoolStatsGrid = ({ school }: Props) => {
+  const hasGenderStats = school?.noOfBoys != null || school?.noOfGirls != null;
+
   return (
     <View className="px-4">
       <View className="flex-row mb-2">
         <StatCard label="Students" value={school?.noOfStudents ?? 0} />
         <StatCard label="Teachers" value={school?.noOfTeacher ?? 0} />
       </View>
-      <View className="flex-row">
-        <StatCard label="Boys" value={school?.noOfBoys ?? 0} />
-        <StatCard label="Girls" value={school?.noOfGirls ?? 0} />
-      </View>
+      {hasGenderStats && (
+        <View className="flex-row">
+          <StatCard label="Boys" value={school?.noOfBoys ?? 0} />
+          <StatCard label="Girls" value={school?.noOfGirls ?? 0} />
+        </View>
+      )}
     </View>
   );
 };

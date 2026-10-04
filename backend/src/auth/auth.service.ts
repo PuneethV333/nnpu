@@ -231,6 +231,36 @@ export class AuthService {
     );
   }
 
+  /**
+   * Live counts for the admin dashboard.
+   *
+   * Deliberately NOT read from `School.noOfStudents` / `noOfTeacher`: those
+   * columns are only ever written by `prisma/dummy.ts`, so they froze at the
+   * seed value and every enrolment, transfer or deactivation left them stale.
+   * Counting is cheap here (two indexed counts on `schoolId`) and cannot drift.
+   *
+   * `noOfBoys` / `noOfGirls` are always null: `User` has no gender field, so
+   * the seeded values were an invented even split. Returning null lets the
+   * client omit those tiles instead of showing a fabricated 50/50.
+   */
+  private async schoolStats(schoolId: string) {
+    const [noOfStudents, noOfTeacher] = await Promise.all([
+      this.prisma.user.count({
+        where: { schoolId, role: 'Student', isActive: true },
+      }),
+      this.prisma.user.count({
+        where: { schoolId, role: 'Teacher', isActive: true },
+      }),
+    ]);
+
+    return {
+      noOfStudents,
+      noOfTeacher,
+      noOfBoys: null as number | null,
+      noOfGirls: null as number | null,
+    };
+  }
+
   async getMe(authId: string) {
     this.logger.log('[get-me]');
     const cacheKey = `me:${authId}`;
@@ -289,12 +319,8 @@ export class AuthService {
       school: user.school
         ? {
             name: user.school.name,
-            ...(user.role === 'Admin' && {
-              noOfStudents: user.school.noOfStudents,
-              noOfTeacher: user.school.noOfTeacher,
-              noOfBoys: user.school.noOfBoys,
-              noOfGirls: user.school.noOfGirls,
-            }),
+            ...(user.role === 'Admin' &&
+              (await this.schoolStats(user.school.id))),
           }
         : null,
       section: user.section
@@ -478,20 +504,22 @@ export class AuthService {
       select: {
         role: true,
         details: { select: { name: true, profilePic: true } },
-        school: {
-          select: {
-            name: true,
-            noOfStudents: true,
-            noOfTeacher: true,
-            noOfBoys: true,
-            noOfGirls: true,
-          },
-        },
+        school: { select: { id: true, name: true } },
       },
     });
 
     if (!user) throw new NotFoundException('profile not found');
-    return user;
+
+    return {
+      role: user.role,
+      details: user.details,
+      school: user.school
+        ? {
+            name: user.school.name,
+            ...(await this.schoolStats(user.school.id)),
+          }
+        : null,
+    };
   }
 
   async getAllStudents(sectionId: string, authId: string) {

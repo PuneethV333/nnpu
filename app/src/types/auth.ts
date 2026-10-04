@@ -30,8 +30,10 @@ const ProfileSchoolSchema = z.object({
   name: z.string(),
   noOfStudents: z.number().optional(),
   noOfTeacher: z.number().optional(),
-  noOfBoys: z.number().optional(),
-  noOfGirls: z.number().optional(),
+  // The API returns null here: User has no gender field, so these are omitted
+  // rather than faked. Callers must handle null.
+  noOfBoys: z.number().nullable().optional(),
+  noOfGirls: z.number().nullable().optional(),
 });
 
 const ProfileClassSchema = z.object({

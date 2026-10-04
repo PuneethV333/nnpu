@@ -40,6 +40,7 @@ describe('AuthService', () => {
             user: {
               findUnique: jest.fn(),
               findMany: jest.fn(),
+              count: jest.fn(),
             },
             sectionSubject: {
               findFirst: jest.fn(),
@@ -221,6 +222,44 @@ describe('AuthService', () => {
       );
     });
 
+    it('reports live school counts for an Admin and never fabricates gender stats', async () => {
+      (redis.get as jest.Mock).mockResolvedValue(null);
+      (prisma.auth.findUnique as jest.Mock).mockResolvedValue({
+        userId: 'user-1',
+      });
+      (prisma.user.findUnique as jest.Mock).mockResolvedValue({
+        id: 'user-1',
+        role: 'Admin',
+        isActive: true,
+        details: { name: 'Admin', profilePic: null, email: 'a@b.com' },
+        section: null,
+        teachingSubjects: [],
+        classTeacherOf: null,
+        combination: null,
+        school: { id: 'school-1', name: 'School' },
+      });
+      (prisma.user.count as jest.Mock)
+        .mockResolvedValueOnce(500) // students
+        .mockResolvedValueOnce(20); // teachers
+
+      // getMe wraps the profile in { source, data }.
+      const { data } = await service.getMe(mockAuth.authId);
+
+      expect(prisma.user.count).toHaveBeenCalledWith({
+        where: { schoolId: 'school-1', role: 'Student', isActive: true },
+      });
+      expect(prisma.user.count).toHaveBeenCalledWith({
+        where: { schoolId: 'school-1', role: 'Teacher', isActive: true },
+      });
+      expect((data as { school: unknown }).school).toEqual({
+        name: 'School',
+        noOfStudents: 500,
+        noOfTeacher: 20,
+        noOfBoys: null,
+        noOfGirls: null,
+      });
+    });
+
     it('fetches from DB and caches the result on a cache miss', async () => {
       const fullUser = {
         id: 'user-1',
@@ -237,13 +276,7 @@ describe('AuthService', () => {
         classTeacherOf: null,
         combination: { name: 'PCMB', stream: 'Science' },
         language: 'Kannada',
-        school: {
-          name: 'School',
-          noOfStudents: 0,
-          noOfTeacher: 0,
-          noOfBoys: 0,
-          noOfGirls: 0,
-        },
+        school: { id: 'school-1', name: 'School' },
       };
       (redis.get as jest.Mock).mockResolvedValue(null);
       (prisma.auth.findUnique as jest.Mock).mockResolvedValue({

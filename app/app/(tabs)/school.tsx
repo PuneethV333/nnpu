@@ -129,10 +129,12 @@ const School = () => {
           <StatCard label="Students" value={school?.noOfStudents ?? 0} />
           <StatCard label="Teachers" value={school?.noOfTeacher ?? 0} />
         </View>
-        <View className="flex-row mx-3 mb-4">
-          <StatCard label="Boys" value={school?.noOfBoys ?? 0} />
-          <StatCard label="Girls" value={school?.noOfGirls ?? 0} />
-        </View>
+        {school?.noOfBoys != null || school?.noOfGirls != null ? (
+          <View className="flex-row mx-3 mb-4">
+            <StatCard label="Boys" value={school?.noOfBoys ?? 0} />
+            <StatCard label="Girls" value={school?.noOfGirls ?? 0} />
+          </View>
+        ) : null}
 
         {isLoading ? (
           <>
