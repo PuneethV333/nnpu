@@ -3,6 +3,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import {
   BadRequestException,
   ForbiddenException,
+  NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
 import { MarksService } from './marks.service';
@@ -30,9 +31,13 @@ describe('MarksService', () => {
           provide: PrismaService,
           useValue: {
             auth: { findUnique: jest.fn() },
-            user: { findMany: jest.fn() },
-            assessment: { findUnique: jest.fn(), create: jest.fn() },
-            sectionSubject: { findUnique: jest.fn() },
+            user: { findMany: jest.fn(), findUnique: jest.fn() },
+            assessment: {
+              findUnique: jest.fn(),
+              findMany: jest.fn(),
+              create: jest.fn(),
+            },
+            sectionSubject: { findUnique: jest.fn(), findFirst: jest.fn() },
             subject: { findUnique: jest.fn() },
             mark: { findMany: jest.fn(), upsert: jest.fn() },
             $transaction: jest.fn(),
@@ -191,6 +196,116 @@ describe('MarksService', () => {
 
       // Unlike attendance, marks need not cover the whole section.
       expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+    });
+  });
+  describe('listAssessments authorization', () => {
+    const asTeacher = () =>
+      (prisma.auth.findUnique as jest.Mock).mockResolvedValue({
+        userId: 'teacher-1',
+        user: { role: 'Teacher' },
+      });
+
+    it('rejects a teacher with no assignment in that section', async () => {
+      // Regression: sectionId/subjectId arrived unvalidated and authorization was
+      // skipped entirely, so any logged-in user could list every assessment in
+      // the school.
+      asTeacher();
+      (prisma.sectionSubject.findFirst as jest.Mock).mockResolvedValue(null);
+
+      await expect(
+        service.listAssessments('section-1', undefined, 'teacher-auth'),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+
+      expect(prisma.assessment.findMany).not.toHaveBeenCalled();
+    });
+
+    it('allows a teacher assigned to the section', async () => {
+      asTeacher();
+      (prisma.sectionSubject.findFirst as jest.Mock).mockResolvedValue({
+        id: 'ss-1',
+      });
+      (prisma.assessment.findMany as jest.Mock).mockResolvedValue([]);
+
+      await expect(
+        service.listAssessments('section-1', undefined, 'teacher-auth'),
+      ).resolves.toEqual([]);
+
+      expect(prisma.assessment.findMany).toHaveBeenCalledWith({
+        where: { sectionId: 'section-1' },
+        orderBy: { createdAt: 'asc' },
+      });
+    });
+
+    it('uses the stricter subject check when subjectId is supplied', async () => {
+      asTeacher();
+      (prisma.sectionSubject.findUnique as jest.Mock).mockResolvedValue(null);
+      (prisma.assessment.findMany as jest.Mock).mockResolvedValue([]);
+
+      await expect(
+        service.listAssessments('section-1', 'subject-1', 'teacher-auth'),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+    });
+
+    it('lets an Admin list without any assignment lookup', async () => {
+      asAdmin();
+      (prisma.assessment.findMany as jest.Mock).mockResolvedValue([]);
+
+      await expect(
+        service.listAssessments('section-1', undefined, 'admin-auth'),
+      ).resolves.toEqual([]);
+    });
+  });
+
+  describe('getFinalReport authorization', () => {
+    it('rejects a teacher who does not teach that student', async () => {
+      // Regression: role === 'Teacher' alone granted access to ANY student's
+      // report for ANY subject.
+      (prisma.auth.findUnique as jest.Mock).mockResolvedValue({
+        userId: 'teacher-1',
+        user: { role: 'Teacher' },
+      });
+      (prisma.user.findUnique as jest.Mock).mockResolvedValue({
+        sectionId: 'section-9',
+      });
+      (prisma.sectionSubject.findUnique as jest.Mock).mockResolvedValue(null);
+
+      await expect(
+        service.getFinalReport('student-9', 'subject-1', 'teacher-auth'),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+
+      expect(prisma.mark.findMany).not.toHaveBeenCalled();
+    });
+
+    it("allows a teacher assigned to the student's own section", async () => {
+      (prisma.auth.findUnique as jest.Mock).mockResolvedValue({
+        userId: 'teacher-1',
+        user: { role: 'Teacher' },
+      });
+      (prisma.user.findUnique as jest.Mock).mockResolvedValue({
+        sectionId: 'section-1',
+      });
+      (prisma.sectionSubject.findUnique as jest.Mock).mockResolvedValue({
+        sectionId: 'section-1',
+        subjectId: 'subject-1',
+        teacherId: 'teacher-1',
+      });
+      (prisma.mark.findMany as jest.Mock).mockResolvedValue([]);
+
+      await expect(
+        service.getFinalReport('student-1', 'subject-1', 'teacher-auth'),
+      ).resolves.toBeDefined();
+    });
+
+    it('throws NotFound for an unknown student', async () => {
+      (prisma.auth.findUnique as jest.Mock).mockResolvedValue({
+        userId: 'teacher-1',
+        user: { role: 'Teacher' },
+      });
+      (prisma.user.findUnique as jest.Mock).mockResolvedValue(null);
+
+      await expect(
+        service.getFinalReport('ghost', 'subject-1', 'teacher-auth'),
+      ).rejects.toBeInstanceOf(NotFoundException);
     });
   });
 });

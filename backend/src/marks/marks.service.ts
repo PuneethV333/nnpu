@@ -4,6 +4,7 @@ import {
   BadRequestException,
   ForbiddenException,
   Injectable,
+  NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
 import { CreateAssessmentDto } from './dto/create-assessment.dto';
@@ -55,6 +56,28 @@ export class MarksService {
     }
   }
 
+  /**
+   * Section-level counterpart to `assertAssignedTeacher`, for endpoints where the
+   * subject is optional. Without it, omitting `subjectId` skipped authorization
+   * entirely and returned every assessment in the section to any logged-in user.
+   */
+  private async assertAssignedToSection(
+    sectionId: string,
+    userId: string,
+    role: string,
+  ): Promise<void> {
+    if (role === 'Admin') return;
+
+    const assignment = await this.prisma.sectionSubject.findFirst({
+      where: { sectionId, teacherId: userId },
+      select: { id: true },
+    });
+
+    if (!assignment) {
+      throw new ForbiddenException('You are not assigned to this section');
+    }
+  }
+
   async createAssessment(dto: CreateAssessmentDto, authId: string) {
     this.logger.log('[create-assessment]');
     const { userId, role } = await this.resolveUser(authId);
@@ -92,8 +115,22 @@ export class MarksService {
     });
   }
 
-  async listAssessments(sectionId: string, subjectId?: string) {
+  async listAssessments(
+    sectionId: string,
+    subjectId: string | undefined,
+    authId: string,
+  ) {
     this.logger.log('[list-assessments]');
+    const { userId, role } = await this.resolveUser(authId);
+
+    // With a subjectId we can use the strict subject-level check; without one
+    // any assignment in the section is enough to justify seeing its assessments.
+    if (subjectId) {
+      await this.assertAssignedTeacher(sectionId, subjectId, userId, role);
+    } else {
+      await this.assertAssignedToSection(sectionId, userId, role);
+    }
+
     return this.prisma.assessment.findMany({
       where: { sectionId, ...(subjectId ? { subjectId } : {}) },
       orderBy: { createdAt: 'asc' },
@@ -189,10 +226,32 @@ export class MarksService {
     const { userId, role } = await this.resolveUser(authId);
 
     const isSelf = role === 'Student' && userId === studentId;
-    const isStaff = role === 'Teacher' || role === 'Admin';
 
-    if (!isSelf && !isStaff) {
-      throw new ForbiddenException('You are not allowed to view this report');
+    if (!isSelf && role !== 'Admin') {
+      if (role !== 'Teacher') {
+        throw new ForbiddenException('You are not allowed to view this report');
+      }
+
+      // A teacher may only read a report for a student they actually teach, for
+      // the subject they teach them. The section comes from the *student's* row,
+      // never from caller input, so this cannot be steered elsewhere. Previously
+      // `role === 'Teacher'` alone was sufficient, which let any teacher read any
+      // student's report for any subject.
+      const student = await this.prisma.user.findUnique({
+        where: { id: studentId },
+        select: { sectionId: true },
+      });
+
+      if (!student?.sectionId) {
+        throw new NotFoundException('Student not found');
+      }
+
+      await this.assertAssignedTeacher(
+        student.sectionId,
+        subjectId,
+        userId,
+        role,
+      );
     }
 
     const marks = await this.prisma.mark.findMany({

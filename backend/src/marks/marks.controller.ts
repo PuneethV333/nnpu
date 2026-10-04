@@ -16,6 +16,7 @@ import { CreateAssessmentDto } from './dto/create-assessment.dto';
 import { CurrentUser } from '@/auth/decorators/current-user.decorator';
 import type { JwtPayload } from '@/auth/types/jwt-payload.type';
 import { EnterMarksDto } from './dto/enter-marks.dto';
+import { ListAssessmentsQueryDto } from './dto/list-assessments-query.dto';
 import { Throttle } from '@nestjs/throttler';
 
 @Controller('marks')
@@ -36,17 +37,22 @@ export class MarksController {
     return this.marksService.createAssessment(dto, user.authId);
   }
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('Teacher', 'Admin')
   @Get('assessment')
   @Throttle({ default: { limit: 60, ttl: 60000 } })
   @ApiOperation({
     summary: 'List assessments for a section (optionally filtered by subject)',
   })
   listAssessments(
-    @Query('sectionId') sectionId: string,
-    @Query('subjectId') subjectId?: string,
+    @Query() query: ListAssessmentsQueryDto,
+    @CurrentUser() user: JwtPayload,
   ) {
-    return this.marksService.listAssessments(sectionId, subjectId);
+    return this.marksService.listAssessments(
+      query.sectionId,
+      query.subjectId,
+      user.authId,
+    );
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)
