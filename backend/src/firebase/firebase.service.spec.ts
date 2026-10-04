@@ -17,11 +17,11 @@ jest.mock('firebase-admin/messaging', () => ({
 
 describe('FirebaseService', () => {
   let service: FirebaseService;
-  let mockLogger: { log: jest.Mock; error: jest.Mock };
+  let mockLogger: { log: jest.Mock; warn: jest.Mock; error: jest.Mock };
   let mockConfig: { get: jest.Mock };
 
   beforeEach(async () => {
-    mockLogger = { log: jest.fn(), error: jest.fn() };
+    mockLogger = { log: jest.fn(), warn: jest.fn(), error: jest.fn() };
     mockConfig = {
       get: jest.fn((key: string) => {
         const values: Record<string, string> = {
@@ -109,10 +109,16 @@ describe('FirebaseService', () => {
       expect(result).toEqual({ successCount: 2, invalidTokens: [] });
     });
 
-    it('collects invalid tokens from failed responses', async () => {
+    it('collects tokens FCM reports as unregistered', async () => {
       const mockSendEachForMulticast = jest.fn().mockResolvedValue({
         successCount: 1,
-        responses: [{ success: true }, { success: false }],
+        responses: [
+          { success: true },
+          {
+            success: false,
+            error: { code: 'messaging/registration-token-not-registered' },
+          },
+        ],
       });
       (getMessaging as jest.Mock).mockReturnValue({
         sendEachForMulticast: mockSendEachForMulticast,
@@ -128,6 +134,72 @@ describe('FirebaseService', () => {
         successCount: 1,
         invalidTokens: ['dead-token'],
       });
+    });
+
+    it('keeps a token after a transient failure instead of invalidating it', async () => {
+      // Regression: every failed response was treated as an invalid token, and
+      // callers delete the tokens they receive — so one Firebase blip
+      // permanently unsubscribed a teacher from push.
+      const mockSendEachForMulticast = jest.fn().mockResolvedValue({
+        successCount: 1,
+        responses: [
+          { success: true },
+          { success: false, error: { code: 'messaging/internal-error' } },
+        ],
+      });
+      (getMessaging as jest.Mock).mockReturnValue({
+        sendEachForMulticast: mockSendEachForMulticast,
+      });
+
+      const result = await service.sendPush(
+        ['good-token', 'flaky-token'],
+        'Title',
+        'Body',
+      );
+
+      expect(result).toEqual({ successCount: 1, invalidTokens: [] });
+    });
+
+    it('keeps a token when FCM gives no error code at all', async () => {
+      const mockSendEachForMulticast = jest.fn().mockResolvedValue({
+        successCount: 0,
+        responses: [{ success: false }],
+      });
+      (getMessaging as jest.Mock).mockReturnValue({
+        sendEachForMulticast: mockSendEachForMulticast,
+      });
+
+      const result = await service.sendPush(['mystery'], 'Title', 'Body');
+
+      expect(result).toEqual({ successCount: 0, invalidTokens: [] });
+    });
+
+    it('splits more than 500 tokens into batches', async () => {
+      // Realistic mock: FCM reports per-batch counts, so the aggregate must be
+      // the sum across batches rather than a fixed per-call number.
+      const mockSendEachForMulticast = jest
+        .fn<unknown, [{ tokens: string[] }]>()
+        .mockImplementation((msg) =>
+          Promise.resolve({
+            successCount: msg.tokens.length,
+            responses: msg.tokens.map(() => ({ success: true })),
+          }),
+        );
+      (getMessaging as jest.Mock).mockReturnValue({
+        sendEachForMulticast: mockSendEachForMulticast,
+      });
+
+      const tokens = Array.from({ length: 501 }, (_, i) => `t${i}`);
+
+      const result = await service.sendPush(tokens, 'Title', 'Body');
+
+      // FCM rejects a multicast larger than 500, so a whole cohort would
+      // otherwise be dropped.
+      expect(mockSendEachForMulticast).toHaveBeenCalledTimes(2);
+      expect(
+        mockSendEachForMulticast.mock.calls.map((c) => c[0].tokens.length),
+      ).toEqual([500, 1]);
+      expect(result?.successCount).toBe(501);
     });
 
     it('returns a safe fallback if the send throws', async () => {

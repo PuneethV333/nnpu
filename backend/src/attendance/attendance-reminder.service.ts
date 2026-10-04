@@ -98,11 +98,16 @@ export class AttendanceReminderService {
       .flatMap((r) => r.invalidTokens);
 
     if (allInvalidTokens.length > 0) {
-      await this.prisma.deviceToken.deleteMany({
+      // Only tokens FCM reported as unregistered or malformed reach this list
+      // (FirebaseService filters transient failures), so deleting them is safe.
+      // Deleting a token is destructive — it silently unsubscribes that teacher
+      // until they re-register — so this must never run on a best guess.
+      const removed = await this.prisma.deviceToken.deleteMany({
         where: { token: { in: allInvalidTokens } },
       });
+
       this.logger.log(
-        `[attendance-reminder] cleaned up ${allInvalidTokens.length} invalid device tokens`,
+        `[attendance-reminder] cleaned up ${removed.count} unregistered device tokens`,
       );
     }
 
