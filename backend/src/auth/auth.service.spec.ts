@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
 /* eslint-disable @typescript-eslint/unbound-method */
 import { Test, TestingModule } from '@nestjs/testing';
-import { UnauthorizedException } from '@nestjs/common';
+import { ForbiddenException, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
 import { AuthService } from './auth.service';
@@ -39,6 +39,10 @@ describe('AuthService', () => {
             },
             user: {
               findUnique: jest.fn(),
+              findMany: jest.fn(),
+            },
+            sectionSubject: {
+              findFirst: jest.fn(),
             },
             // FIX: was missing entirely — issueTokens()/changePassword() need this
             refreshToken: {
@@ -247,7 +251,7 @@ describe('AuthService', () => {
       const nowInSeconds = Math.floor(Date.now() / 1000);
       const exp = nowInSeconds + 600;
 
-      const result = await service.logOut('some-jti', exp);
+      const result = await service.logOut(mockAuth.authId, 'some-jti', exp);
 
       expect(redis.set).toHaveBeenCalledWith(
         'blacklist:some-jti',
@@ -257,13 +261,34 @@ describe('AuthService', () => {
       expect(result).toEqual({ message: 'Logged out successful' });
     });
 
-    it('does not blacklist if the token is already expired', async () => {
+    it('revokes the 30-day refresh tokens, not just the access token', async () => {
       const nowInSeconds = Math.floor(Date.now() / 1000);
-      const exp = nowInSeconds - 10;
 
-      await service.logOut('some-jti', exp);
+      await service.logOut(mockAuth.authId, 'some-jti', nowInSeconds + 600);
+
+      // Without this, "logout" left a usable refresh token behind.
+      expect(prisma.refreshToken.deleteMany).toHaveBeenCalledWith({
+        where: { authId: mockAuth.authId },
+      });
+    });
+
+    it('clears the cached profile', async () => {
+      const nowInSeconds = Math.floor(Date.now() / 1000);
+
+      await service.logOut(mockAuth.authId, 'some-jti', nowInSeconds + 600);
+
+      expect(redis.del).toHaveBeenCalledWith(`me:${mockAuth.authId}`);
+    });
+
+    it('revokes refresh tokens even when the access token already expired', async () => {
+      const nowInSeconds = Math.floor(Date.now() / 1000);
+
+      await service.logOut(mockAuth.authId, 'some-jti', nowInSeconds - 10);
 
       expect(redis.set).not.toHaveBeenCalled();
+      expect(prisma.refreshToken.deleteMany).toHaveBeenCalledWith({
+        where: { authId: mockAuth.authId },
+      });
     });
   });
 
@@ -408,6 +433,80 @@ describe('AuthService', () => {
         where: { tokenId: 'token-1' },
       });
       expect(prisma.refreshToken.create).toHaveBeenCalled();
+    });
+  });
+  describe('getAllStudents authorization', () => {
+    const asAdmin = () => {
+      (prisma.auth.findUnique as jest.Mock).mockResolvedValue({
+        authId: 'admin-auth',
+        userId: 'admin-1',
+      });
+      (prisma.user.findUnique as jest.Mock).mockResolvedValue({
+        role: 'Admin',
+      });
+    };
+
+    const asTeacher = () => {
+      (prisma.auth.findUnique as jest.Mock).mockResolvedValue({
+        authId: 'teacher-auth',
+        userId: 'teacher-1',
+      });
+      (prisma.user.findUnique as jest.Mock).mockResolvedValue({
+        role: 'Teacher',
+      });
+    };
+
+    it('rejects a teacher who is not assigned to that section', async () => {
+      // Regression: only role gating existed, so any teacher could pass any
+      // sectionId and read that section roster.
+      asTeacher();
+      (prisma.sectionSubject.findFirst as jest.Mock).mockResolvedValue(null);
+
+      await expect(
+        service.getAllStudents('section-9', 'teacher-auth'),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+
+      expect(prisma.user.findMany).not.toHaveBeenCalled();
+    });
+
+    it('allows a teacher assigned to the section', async () => {
+      asTeacher();
+      (prisma.sectionSubject.findFirst as jest.Mock).mockResolvedValue({
+        id: 'ss-1',
+      });
+      (prisma.user.findMany as jest.Mock).mockResolvedValue([
+        { id: 'student-1', details: { name: 'A' } },
+      ]);
+
+      await expect(
+        service.getAllStudents('section-1', 'teacher-auth'),
+      ).resolves.toEqual([{ id: 'student-1', name: 'A' }]);
+    });
+
+    it('lets an Admin list any section without an assignment check', async () => {
+      asAdmin();
+      (prisma.user.findMany as jest.Mock).mockResolvedValue([]);
+
+      await expect(
+        service.getAllStudents('section-1', 'admin-auth'),
+      ).resolves.toEqual([]);
+
+      expect(prisma.sectionSubject.findFirst).not.toHaveBeenCalled();
+    });
+
+    it('always filters by the requested section and active students', async () => {
+      asAdmin();
+      (prisma.user.findMany as jest.Mock).mockResolvedValue([]);
+
+      await service.getAllStudents('section-1', 'admin-auth');
+
+      // Guards the original bug shape: an undefined sectionId would drop this
+      // filter and return the whole school.
+      expect(prisma.user.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ sectionId: 'section-1' }),
+        }),
+      );
     });
   });
 });

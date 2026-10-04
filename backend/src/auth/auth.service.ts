@@ -1,6 +1,7 @@
 import { PrismaService } from '@/prisma/prisma.service';
 import {
   Injectable,
+  ForbiddenException,
   NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
@@ -239,7 +240,7 @@ export class AuthService {
     return { data: profile, source: 'db' };
   }
 
-  async logOut(jti: string, exp: number) {
+  async logOut(authId: string, jti: string, exp: number) {
     this.logger.warn('[logged-out]');
     const nowInSeconds = Math.floor(Date.now() / 1000);
     const ttl = exp - nowInSeconds;
@@ -247,6 +248,15 @@ export class AuthService {
     if (ttl > 0) {
       await this.redis.set(`blacklist:${jti}`, true, ttl);
     }
+
+    // Blacklisting the access token alone was not a logout: refresh tokens live
+    // for 30 days, so the caller could silently mint a fresh access token
+    // straight after "logging out" and carry on indefinitely.
+    await this.prisma.refreshToken.deleteMany({ where: { authId } });
+
+    // Drop the cached profile so the next request cannot be served from a
+    // pre-logout snapshot.
+    await this.redis.del(`me:${authId}`);
 
     return { message: 'Logged out successful' };
   }
@@ -382,7 +392,28 @@ export class AuthService {
     return user;
   }
 
-  async getAllStudents(sectionId: string) {
+  async getAllStudents(sectionId: string, authId: string) {
+    const auth = await this.prisma.auth.findUnique({ where: { authId } });
+    if (!auth) throw new UnauthorizedException('user not found');
+
+    const role = await this.prisma.user.findUnique({
+      where: { id: auth.userId },
+      select: { role: true },
+    });
+
+    // Role gating alone was not enough: any teacher could pass any sectionId and
+    // read that section's roster. A teacher must be assigned to the section.
+    if (role?.role !== 'Admin') {
+      const assignment = await this.prisma.sectionSubject.findFirst({
+        where: { sectionId, teacherId: auth.userId },
+        select: { id: true },
+      });
+
+      if (!assignment) {
+        throw new ForbiddenException('You are not assigned to this section');
+      }
+    }
+
     const res = await this.prisma.user.findMany({
       where: {
         role: 'Student',

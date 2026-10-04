@@ -10,6 +10,7 @@ import { Throttle } from '@nestjs/throttler';
 import { refreshDto } from './dto/refresh.dto';
 import { RolesGuard } from './guard/roles.guard';
 import { Roles } from './decorators/roles.decorator';
+import { StudentsDetailsQueryDto } from './dto/students-details-query.dto';
 
 @Controller('auth')
 export class AuthController {
@@ -42,7 +43,7 @@ export class AuthController {
   @Post('logout')
   @ApiOperation({ summary: 'Logout and invalidate current user' })
   logout(@CurrentUser() user: JwtPayload & { exp: number }) {
-    return this.authService.logOut(user.jti, user.exp);
+    return this.authService.logOut(user.authId, user.jti, user.exp);
   }
 
   @ApiBearerAuth()
@@ -63,7 +64,10 @@ export class AuthController {
   @ApiOperation({
     summary: 'Get students details based on sectionId',
   })
-  getAllStudents(@Query('sectionId') sectionId: string) {
-    return this.authService.getAllStudents(sectionId);
+  getAllStudents(
+    @Query() query: StudentsDetailsQueryDto,
+    @CurrentUser() user: JwtPayload,
+  ) {
+    return this.authService.getAllStudents(query.sectionId, user.authId);
   }
 }
