@@ -8,6 +8,7 @@ import {
   ForbiddenException,
   Injectable,
   NotFoundException,
+  ServiceUnavailableException,
   UnauthorizedException,
 } from '@nestjs/common';
 import { CreateFeeStructureDto } from './dto/create-fee-structure.dto';
@@ -295,6 +296,43 @@ export class FeesService {
       throw new BadRequestException('Invoice is already fully paid');
     }
 
+    // Reuse the open order instead of minting a second one. Previously every
+    // call created a fresh Razorpay order for the full outstanding amount, so a
+    // double tap (or a retry after a dropped response) left two live orders for
+    // one invoice. Both could then be paid, which drove paidAmount past
+    // totalAmount and marked a "Paid" invoice with a negative balance.
+    const openPayment = await this.prisma.payment.findFirst({
+      where: { invoiceId, status: 'Pending' },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    if (openPayment?.razorpayOrderId && openPayment.amount === pendingAmount) {
+      // Same invoice, same outstanding balance: the existing order is still
+      // valid, so hand it back rather than failing a legitimate retry.
+      this.logger.log(
+        `[payment-order] reusing open order ${openPayment.razorpayOrderId} for invoice ${invoiceId}`,
+      );
+      return {
+        orderId: openPayment.razorpayOrderId,
+        amount: openPayment.amount,
+        currency: 'INR',
+        key: this.config.get<string>('RAZORPAY_KEY_ID'),
+      };
+    }
+
+    // An open order for a different amount is stale — the balance moved after it
+    // was created, so it can no longer be settled correctly. Retire it first,
+    // which also frees the one-pending-per-invoice slot.
+    if (openPayment) {
+      await this.prisma.payment.update({
+        where: { id: openPayment.id },
+        data: { status: 'Failed' },
+      });
+      this.logger.warn(
+        `[payment-order] retired stale order ${openPayment.razorpayOrderId ?? openPayment.id} for invoice ${invoiceId}`,
+      );
+    }
+
     const order = await this.razorpay.createOrder(
       pendingAmount,
       `inv_${invoiceId}`,
@@ -379,20 +417,28 @@ export class FeesService {
         return { alreadyProcessed: true, invoiceId: payment.invoiceId };
       }
 
-      const invoice = await tx.invoice.findUnique({
-        where: { id: payment.invoiceId },
-        select: { paidAmount: true, totalAmount: true },
-      });
-      if (!invoice) throw new NotFoundException('Invoice not found');
+      // Applied as a single statement on purpose. The previous version read
+      // paidAmount, computed the new total in JS, then wrote it back — so two
+      // concurrent payments both read the same starting balance, both derived
+      // "Partial", and the last writer won with a status that no longer matched
+      // the balance. Deriving `status` from the post-update value in the same
+      // statement makes it correct regardless of interleaving, and leaves
+      // `paidAmount` monotonic without a read-modify-write race.
+      const updated = await tx.$executeRaw`
+        UPDATE "Invoice"
+        SET "paidAmount" = "paidAmount" + ${payment.amount},
+            "status" = CASE
+              WHEN "paidAmount" + ${payment.amount} >= "totalAmount"
+              THEN 'Paid'::"InvoiceStatus"
+              ELSE 'Partial'::"InvoiceStatus"
+            END,
+            "updatedAt" = NOW()
+        WHERE "id" = ${payment.invoiceId}
+      `;
 
-      const newPaidAmount = invoice.paidAmount + payment.amount;
-      await tx.invoice.update({
-        where: { id: payment.invoiceId },
-        data: {
-          paidAmount: { increment: payment.amount },
-          status: newPaidAmount >= invoice.totalAmount ? 'Paid' : 'Partial',
-        },
-      });
+      if (updated === 0) {
+        throw new NotFoundException('Invoice not found');
+      }
 
       return { alreadyProcessed: false, invoiceId: payment.invoiceId };
     });
@@ -401,10 +447,21 @@ export class FeesService {
   async handleWebhookEvent(rawBody: Buffer, signature: string) {
     this.logger.log('[razorpay-webhook] received');
 
-    const expectedSignature = createHmac(
-      'sha256',
-      this.config.get<string>('RAZORPAY_WEBHOOK_SECRET')!,
-    )
+    const webhookSecret = this.config.get<string>('RAZORPAY_WEBHOOK_SECRET');
+
+    // Optional in Joi (so boot does not fail without it) but unusable here.
+    // Previously it was asserted with `!` and fed straight into createHmac,
+    // which threw a TypeError and surfaced as an opaque 500 on every delivery.
+    if (!webhookSecret) {
+      this.logger.error(
+        '[razorpay-webhook] RAZORPAY_WEBHOOK_SECRET is not configured',
+      );
+      throw new ServiceUnavailableException(
+        'Razorpay webhook is not configured on this server',
+      );
+    }
+
+    const expectedSignature = createHmac('sha256', webhookSecret)
       .update(rawBody)
       .digest('hex');
 
@@ -414,6 +471,25 @@ export class FeesService {
     }
 
     const event = JSON.parse(rawBody.toString('utf8'));
+
+    // A failed payment leaves an order nobody will ever settle. Marking it
+    // Failed is what frees the one-pending-per-invoice slot so the student can
+    // retry; otherwise the stale order is reused forever.
+    if (event.event === 'payment.failed') {
+      const failedOrderId = event.payload?.payment?.entity?.order_id;
+
+      if (failedOrderId) {
+        await this.prisma.payment.updateMany({
+          where: { razorpayOrderId: failedOrderId, status: 'Pending' },
+          data: { status: 'Failed' },
+        });
+        this.logger.warn(
+          `[razorpay-webhook] payment failed for order ${failedOrderId}`,
+        );
+      }
+
+      return { received: true };
+    }
 
     if (event.event !== 'payment.captured') {
       this.logger.log(`[razorpay-webhook] ignoring event type: ${event.event}`);
