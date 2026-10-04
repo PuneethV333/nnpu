@@ -2,6 +2,7 @@ import {
   Injectable,
   NotFoundException,
   BadRequestException,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import { PrismaService } from '@/prisma/prisma.service';
 import { LoggerService } from '@/logger/logger.service';
@@ -10,7 +11,12 @@ import { MailService } from '@/mail/mail.service';
 import { CreateDriveDto } from './dto/create-drive.dto';
 import { hash } from 'bcrypt';
 import { randomBytes } from 'crypto';
-import { EnrollmentSubmissionStatus, Prisma, Stream } from '@/generated/prisma';
+import {
+  EnrollmentSubmissionStatus,
+  Prisma,
+  Stream,
+  User,
+} from '@/generated/prisma';
 import type { forms_v1 } from 'googleapis';
 import { getDriveReturnType } from './types/enrollment.types';
 import { COMBO_CODE, LANG_CODE, STREAM_CODE } from '@/onboarding/helper/helper';
@@ -145,6 +151,9 @@ export class EnrollmentService {
       );
     }
 
+    // Assigned inside the try, consumed after it.
+    let created: { newUser: User; authId: string; tempPassword: string };
+
     try {
       const drive = await this.prisma.enrollmentDrive.findUniqueOrThrow({
         where: { id: submission.driveId },
@@ -235,23 +244,118 @@ export class EnrollmentService {
         return { newUser, authId, tempPassword };
       });
 
-      await this.mail.send({
-        to: submission.email,
-        subject: 'Your School Portal Login',
-        body: `Hi ${submission.name},\n\nYour login details:\nAuth ID: ${user.authId}\nTemporary Password: ${user.tempPassword}\n\nPlease log in and change your password.`,
-      });
-
-      return user.newUser;
+      created = user;
     } catch (err) {
+      // Only a failure of the *creation transaction* makes this submission
+      // retryable. It resets status to Pending so it can be picked up again.
+      //
+      // It used to wrap the email send in the same try, which meant a mail
+      // provider hiccup reset the status while the User and Auth rows stayed
+      // committed. Every retry then died on P2002 (PersonalDetails.email is
+      // unique), so the student existed with credentials nobody had received
+      // and could not be re-promoted.
       await this.prisma.enrollmentSubmission.update({
         where: { id: submissionId },
         data: { status: 'Pending' },
       });
       throw err;
     }
+
+    // The account exists from here on, so this must stay outside the catch.
+    await this.sendCredentials(
+      submission,
+      created.authId,
+      created.tempPassword,
+    );
+
+    return created.newUser;
+  }
+
+  /**
+   * Delivers login credentials for an account that already exists.
+   *
+   * A failure here is a delivery failure, not a creation failure: the
+   * submission stays Promoted and the operator retries via
+   * `resendOrPromote`. Signalling 503 rather than a generic 500 makes that
+   * distinction visible to the client.
+   */
+  private async sendCredentials(
+    submission: { name: string; email: string },
+    authId: string,
+    tempPassword: string,
+  ): Promise<void> {
+    try {
+      await this.mail.send({
+        to: submission.email,
+        subject: 'Your School Portal Login',
+        body: `Hi ${submission.name},\n\nYour login details:\nAuth ID: ${authId}\nTemporary Password: ${tempPassword}\n\nPlease log in and change your password.`,
+      });
+    } catch (err) {
+      this.logger.error(
+        `[enrollment] account created for ${submission.email} but the credentials email failed: ${String(err)}`,
+      );
+      throw new ServiceUnavailableException(
+        'Account was created but the credentials email could not be sent. Use resend to deliver them.',
+      );
+    }
+  }
+
+  /**
+   * Re-issues credentials for an already-promoted submission.
+   *
+   * Resets the temporary password rather than reusing it, and bumps
+   * `tokenVersion` so any session established with the old password stops
+   * validating. Note the old password is only recoverable from the earlier
+   * email, so a fresh one is generated instead.
+   */
+  async resendCredentials(submissionId: string) {
+    const submission = await this.prisma.enrollmentSubmission.findUniqueOrThrow(
+      { where: { id: submissionId } },
+    );
+
+    if (submission.status !== 'Promoted' || !submission.promotedUserId) {
+      throw new BadRequestException(
+        'Only a promoted submission has credentials to resend',
+      );
+    }
+
+    const auth = await this.prisma.auth.findFirst({
+      where: { userId: submission.promotedUserId },
+    });
+
+    if (!auth) {
+      throw new NotFoundException(
+        'No auth record found for the promoted student',
+      );
+    }
+
+    const tempPassword = randomBytes(4).toString('hex');
+
+    await this.prisma.auth.update({
+      where: { id: auth.id },
+      data: {
+        password: await hash(tempPassword, 10),
+        tokenVersion: { increment: 1 },
+      },
+    });
+
+    await this.sendCredentials(submission, auth.authId, tempPassword);
+
+    return { resent: true, authId: auth.authId };
   }
 
   async resendOrPromote(submissionId: string) {
+    const submission = await this.prisma.enrollmentSubmission.findUniqueOrThrow(
+      { where: { id: submissionId } },
+    );
+
+    // Already promoted means the account exists — promoting again would fail on
+    // the unique email. This method previously delegated straight to
+    // promoteOne(), so "resend" could never actually resend.
+    if (submission.status === 'Promoted' && submission.promotedUserId) {
+      return this.resendCredentials(submissionId);
+    }
+
     return this.promoteOne(submissionId);
   }
 
