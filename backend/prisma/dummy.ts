@@ -35,6 +35,10 @@
 import { PrismaClient } from '@/generated/prisma';
 import { PrismaPg } from '@prisma/adapter-pg';
 import * as bcrypt from 'bcrypt';
+import {
+  sectionDisplayName,
+  sectionSessionKey,
+} from '@/common/utils/section-session.util';
 
 const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL });
 const prisma = new PrismaClient({ adapter });
@@ -387,37 +391,43 @@ async function main() {
   // ── 6. Sections — 4 total (1-A, 1-B, 2-A, 2-B) ───────────────────────────
   // session A = Science half, session B = Commerce half (by convention)
   const sectionMap: Record<string, string> = {}; // "classYear-session" → id
+  // `session` is stored stream-disambiguated ("SCI-A" / "COM-B") because
+  // Section is unique on [classId, session, academicYearId] with no stream
+  // column. `sectionMap` stays keyed by the plain label ("1-A") because the
+  // timetable plans below refer to sections that way.
   const sectionSessions = [
-    { classYear: '1', session: 'A', name: '1-A' },
-    { classYear: '1', session: 'B', name: '1-B' },
-    { classYear: '2', session: 'A', name: '2-A' },
-    { classYear: '2', session: 'B', name: '2-B' },
-  ];
+    { classYear: '1', session: 'A', stream: 'Science' },
+    { classYear: '1', session: 'B', stream: 'Commerce' },
+    { classYear: '2', session: 'A', stream: 'Science' },
+    { classYear: '2', session: 'B', stream: 'Commerce' },
+  ] as const;
   for (const s of sectionSessions) {
+    const sessionKey = sectionSessionKey(s.stream, s.session);
     const existing = await prisma.section.findUnique({
       where: {
         classId_session_academicYearId: {
           classId: classMap[s.classYear],
-          session: s.session,
+          session: sessionKey,
           academicYearId: academicYear.id,
         },
       },
     });
     if (existing) {
-      sectionMap[`${s.classYear}-${s.session}`] = existing.id;
+      sectionMap[`${s.classYear}-${sectionDisplayName(sessionKey)}`] =
+        existing.id;
     } else {
       const sec = await prisma.section.create({
         data: {
-          name: s.name,
+          name: `${s.classYear}-${sessionKey}`,
           classId: classMap[s.classYear],
-          session: s.session,
+          session: sessionKey,
           academicYearId: academicYear.id,
         },
       });
-      sectionMap[`${s.classYear}-${s.session}`] = sec.id;
+      sectionMap[`${s.classYear}-${sectionDisplayName(sessionKey)}`] = sec.id;
     }
   }
-  console.log(`✅ Sections: 1-A, 1-B, 2-A, 2-B`);
+  console.log(`✅ Sections: 1-SCI-A, 1-COM-B, 2-SCI-A, 2-COM-B`);
 
   // ── 7. Teachers (20) & Admins (2) ─────────────────────────────────────────
   const hashedPw = await hashPw(DEFAULT_PW);

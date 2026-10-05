@@ -88,7 +88,9 @@ export class AttendanceReminderService {
         return this.firebase.sendPush(
           tokens,
           'Attendance not taken',
-          `${s.class.name}-${s.name} attendance is pending.`,
+          // `Section.name` is already `${className}-${sessionKey}` (e.g.
+          // "1-SCI-A"), so prefixing class.name again rendered "1-1-SCI-A".
+          `${s.name} attendance is pending.`,
         );
       }),
     );

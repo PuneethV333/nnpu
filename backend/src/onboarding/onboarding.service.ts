@@ -287,10 +287,10 @@ export class OnboardingService {
     try {
       return await this.prisma.section.create({
         data: {
-          name: `${classRecord.name}-${dto.session}`,
+          // Both `name` and `session` are stream-prefixed, matching
+          // EnrollmentService, so a section looks the same however it was made.
+          name: `${classRecord.name}-${sessionKey}`,
           classId: classRecord.id,
-          // Stream-disambiguated, matching EnrollmentService. `name` stays the
-          // plain label for display.
           session: sessionKey,
           academicYearId: academicYear.id,
         },
@@ -338,7 +338,7 @@ export class OnboardingService {
       try {
         await this.prisma.section.create({
           data: {
-            name: `${classRecord.name}-${session}`,
+            name: `${classRecord.name}-${sessionKey}`,
             classId: classRecord.id,
             session: sessionKey,
             academicYearId: academicYear.id,
