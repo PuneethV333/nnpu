@@ -13,20 +13,15 @@ import type { RosterType, RosterArray } from './types/roster.type';
 import { MarkAttendanceDto } from './dto/mark-attendance.dto';
 import { AttendanceStatus } from '@/generated/prisma';
 import {
+  ATTENDANCE_EDIT_GRACE_DAYS,
+  attendanceEditWindow,
+} from './utils/edit-window.util';
+import {
   assertNoDuplicateStudents,
   assertStudentsInSection,
 } from '@/common/utils/section-students.util';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { schoolTimeZone, zonedToday } from '@/common/utils/date.util';
-
-const DAY_MS = 24 * 60 * 60 * 1000;
-
-/**
- * How long after a date its attendance may still be edited.
- *
- * One day: a teacher can still correct yesterday before the day is closed off.
- */
-const ATTENDANCE_EDIT_GRACE_DAYS = 1;
 
 @Injectable()
 export class AttendanceService {
@@ -372,15 +367,15 @@ export class AttendanceService {
     // actually means.
     const today = zonedToday();
 
-    if (dateObj > today) {
+    // Same function getAttendanceStatus uses, so the UI and this endpoint can
+    // never disagree about whether a day is editable.
+    const editWindow = attendanceEditWindow(dateObj, today);
+
+    if (!editWindow.editable && editWindow.reason === 'future') {
       throw new BadRequestException('Cannot mark attendance for a future date');
     }
 
-    const daysAgo = Math.floor(
-      (today.getTime() - dateObj.getTime()) / (1000 * 60 * 60 * 24),
-    );
-
-    if (daysAgo > ATTENDANCE_EDIT_GRACE_DAYS) {
+    if (!editWindow.editable) {
       throw new ForbiddenException(
         `Attendance for ${dto.date} is locked — it can only be edited up to ${ATTENDANCE_EDIT_GRACE_DAYS} day(s) after the date`,
       );
@@ -491,14 +486,12 @@ export class AttendanceService {
     const isMarked =
       rows.length > 0 && rows.every((r) => r.status !== 'NotMarked');
 
-    // ANY student locked -> whole section reports locked, so the UI matches
-    // markAttendance's actual per-student, all-or-nothing check instead of
-    // only looking at the first marked row.
-    const now = Date.now();
-    const lockedRows = rows.filter(
-      (r) => r.markedAt && now - r.markedAt.getTime() > DAY_MS,
-    );
-    const isLocked = lockedRows.length > 0;
+    // Shares the predicate with markAttendance. This used to be "any row whose
+    // markedAt is more than 24 hours old", which contradicted the write path's
+    // calendar-day rule: a day marked at 08:00 yesterday read as LOCKED at 09:00
+    // today while the API still accepted the edit, and an unmarked date two days
+    // back read as OPEN while the API rejected it with 403.
+    const isLocked = !attendanceEditWindow(dateObj).editable;
 
     // still surface the earliest markedAt for display purposes
     const markedTimestamps = rows

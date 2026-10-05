@@ -251,6 +251,73 @@ describe('AttendanceService', () => {
       ).rejects.toBeInstanceOf(BadRequestException);
     });
   });
+  /**
+   * The invariant that motivated extracting attendanceEditWindow: the read and
+   * write paths must agree about whether a date is editable, in every case.
+   */
+  describe('getAttendanceStatus / markAttendance lock agreement', () => {
+    const iso = (d: Date) => d.toISOString().slice(0, 10);
+    const today = zonedToday();
+    const shift = (days: number) =>
+      iso(new Date(today.getTime() + days * 24 * 60 * 60 * 1000));
+
+    const primeRead = (date: string, rows: unknown[]) => {
+      (prisma.auth.findUnique as jest.Mock).mockResolvedValue({
+        userId: 'teacher-1',
+        user: { role: 'Teacher' },
+      });
+      (prisma.section.findFirst as jest.Mock).mockResolvedValue({
+        id: 'section-1',
+      });
+      (prisma.academicCalendarDay.findUnique as jest.Mock).mockResolvedValue({
+        date: new Date(date),
+        type: 'Working',
+      });
+      (prisma.attendance.findMany as jest.Mock).mockResolvedValue(rows);
+    };
+
+    it.each([
+      ['today', 0],
+      ['yesterday', -1],
+      ['two days ago', -2],
+      ['a week ago', -7],
+      ['tomorrow', 1],
+    ])(
+      'reports the same verdict for %s from both endpoints',
+      async (_label, offset) => {
+        const date = shift(offset);
+
+        // Read path: yesterday marked a long time ago, so a markedAt-based lock
+        // would disagree with the calendar-day rule.
+        primeRead(date, [{ status: 'Present', markedAt: new Date(0) }]);
+        const status = await service.getAttendanceStatus(
+          'section-1',
+          date,
+          'auth-1',
+        );
+
+        // Write path.
+        (prisma.user.findMany as jest.Mock).mockResolvedValue([{ id: 's1' }]);
+
+        let writeAllowed = true;
+        try {
+          await service.markAttendance(
+            {
+              sectionId: 'section-1',
+              date,
+              entries: [{ studentId: 's1', status: 'Present' }],
+            } as never,
+            'auth-1',
+          );
+        } catch {
+          writeAllowed = false;
+        }
+
+        expect(status.isLocked).toBe(!writeAllowed);
+      },
+    );
+  });
+
   describe('markAttendance sentinel guard', () => {
     it('refuses a batch containing NotMarked before any write happens', async () => {
       (prisma.auth.findUnique as jest.Mock).mockResolvedValue({

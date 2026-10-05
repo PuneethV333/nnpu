@@ -161,12 +161,12 @@ const MarkAttendancePage = () => {
 
         {sectionId && status && (
           <>
-            {isLocked && (
+{isLocked && (
               <View style={[styles.banner, styles.bannerAmber]}>
                 <Feather name="lock" size={15} color="#92400E" />
-                <Text style={[styles.bannerText, { color: "#92400E" }]}>
-                  Locked — marked more than 24 hours ago. Changes can&apos;t be
-                  saved.
+                <Text style={[styles.bannerText, { color: '#92400E' }]}>
+                  Locked — attendance can only be edited for today and the
+                  previous day. Changes can&apos;t be saved.
                 </Text>
               </View>
             )}
