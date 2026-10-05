@@ -6,6 +6,11 @@ import { OverrideDayParamDto } from '@/calendar/dto/override-day-param.dto';
 import { FeeStructureQueryDto } from '@/fees/dto/fee-structure-query.dto';
 import { MySubjectsQueryDto } from '@/marks/dto/my-subjects-query.dto';
 import { ReportParamsDto } from '@/marks/dto/report-params.dto';
+import {
+  MarkAttendanceDto,
+  MARKABLE_ATTENDANCE_STATUSES,
+} from '@/attendance/dto/mark-attendance.dto';
+import { AttendanceStatus } from '@/generated/prisma';
 
 const errorsFor = async (
   cls: new () => object,
@@ -125,6 +130,48 @@ describe('query DTO validation', () => {
         subjectId: 'subject-1',
       });
       expect(errors).toContain('studentId');
+    });
+  });
+
+  describe('MarkAttendanceDto statuses', () => {
+    const entry = (status: unknown) => ({
+      sectionId: 'section-1',
+      date: '2026-10-04',
+      entries: [{ studentId: 'student-1', status }],
+    });
+
+    it('exposes exactly the three submittable statuses', () => {
+      expect(MARKABLE_ATTENDANCE_STATUSES).toEqual([
+        'Present',
+        'Absent',
+        'Late',
+      ]);
+      expect(MARKABLE_ATTENDANCE_STATUSES).not.toContain('NotMarked');
+    });
+
+    it.each(['Present', 'Absent', 'Late'])('accepts %s', async (status) => {
+      expect(await errorsFor(MarkAttendanceDto, entry(status))).toEqual([]);
+    });
+
+    it('rejects NotMarked, which is a system-only sentinel', async () => {
+      // The seeding cron creates rows with no status, which defaults to
+      // NotMarked. A client declaring it would also get markedById/markedAt
+      // stamped, making an unmarked row read as locked and teacher-attributed.
+      const errors = await errorsFor(MarkAttendanceDto, entry('NotMarked'));
+      expect(errors).toContain('entries');
+    });
+
+    it('rejects an unknown status', async () => {
+      expect(
+        await errorsFor(MarkAttendanceDto, entry('Present-ish')),
+      ).not.toEqual([]);
+    });
+
+    it('still reports NotMarked as a valid enum member on the generated type', () => {
+      // Guards against someone "fixing" this by narrowing the Prisma enum, which
+      // would break the cron seeding path and the status:{not:'NotMarked'} reads.
+      expect(AttendanceStatus.NotMarked).toBe('NotMarked');
+      expect(Object.values(AttendanceStatus)).toContain('NotMarked');
     });
   });
 });

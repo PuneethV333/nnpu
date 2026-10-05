@@ -10,6 +10,7 @@ import { PrismaService } from '@/prisma/prisma.service';
 import { LoggerService } from '@/logger/logger.service';
 import { RedisService } from '@/redis/redis.service';
 import { zonedToday } from '@/common/utils/date.util';
+import type { MarkAttendanceDto } from './dto/mark-attendance.dto';
 
 const WORKING_DAY = { date: new Date(), type: 'Working', label: null };
 
@@ -250,6 +251,34 @@ describe('AttendanceService', () => {
       ).rejects.toBeInstanceOf(BadRequestException);
     });
   });
+  describe('markAttendance sentinel guard', () => {
+    it('refuses a batch containing NotMarked before any write happens', async () => {
+      (prisma.auth.findUnique as jest.Mock).mockResolvedValue({
+        userId: 'teacher-1',
+        user: { role: 'Teacher' },
+      });
+
+      const dto = {
+        sectionId: 'section-1',
+        date: '2026-10-04',
+        entries: [
+          { studentId: 's1', status: 'Present' },
+          // Bypasses the DTO to prove the service guards the write itself.
+          { studentId: 's2', status: 'NotMarked' },
+        ],
+      } as unknown as MarkAttendanceDto;
+
+      await expect(
+        service.markAttendance(dto, 'auth-1'),
+      ).rejects.toBeInstanceOf(BadRequestException);
+
+      // Nothing may be written: the upsert would have stamped markedById and
+      // markedAt onto a row that reads as unmarked.
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+      expect(prisma.attendance.upsert).not.toHaveBeenCalled();
+    });
+  });
+
   describe('markAttendance date window', () => {
     const asClassTeacher = () => {
       (prisma.auth.findUnique as jest.Mock).mockResolvedValue({

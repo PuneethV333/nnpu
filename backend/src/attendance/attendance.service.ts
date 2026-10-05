@@ -11,6 +11,7 @@ import { AttendanceArray, GetMyType } from './types/getMy.type';
 import { AttendanceSummary } from './types/summary.type';
 import type { RosterType, RosterArray } from './types/roster.type';
 import { MarkAttendanceDto } from './dto/mark-attendance.dto';
+import { AttendanceStatus } from '@/generated/prisma';
 import {
   assertNoDuplicateStudents,
   assertStudentsInSection,
@@ -339,6 +340,24 @@ export class AttendanceService {
 
   async markAttendance(dto: MarkAttendanceDto, authId: string) {
     this.logger.log('[mark]');
+
+    // `NotMarked` is a system sentinel (the seeding cron creates rows without a
+    // status, which defaults to it) and must never arrive from a client. The
+    // DTO already rejects it at runtime; this guards the write itself so no
+    // future caller can stamp `markedById`/`markedAt` onto an unmarked row.
+    // Checked once for the whole batch, not per entry.
+    //
+    // The cast is required, and the reason is the point of this check:
+    // `MarkableAttendanceStatus` excludes 'NotMarked' at the type level, so TS
+    // already proves this comparison is impossible — for a *typed* caller. The
+    // value here came off the wire as JSON, where those types no longer apply.
+    if (
+      dto.entries.some(
+        (e) => (e.status as string) === AttendanceStatus.NotMarked,
+      )
+    ) {
+      throw new BadRequestException('NotMarked is not a submittable status');
+    }
 
     // Resolves the caller AND asserts section access in one query pair.
     const teacherId = await this.assertSectionAccess(dto.sectionId, authId);
