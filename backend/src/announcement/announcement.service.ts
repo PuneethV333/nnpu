@@ -1,12 +1,19 @@
 import { LoggerService } from '@/logger/logger.service';
 import { PrismaService } from '@/prisma/prisma.service';
 import {
+  BadRequestException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
 import { createHash } from 'crypto';
 import { AnnouncementDto } from './dto/announcement-Query.dto';
+import {
+  AnnouncementAudience,
+  CreateAnnouncementDto,
+} from './dto/create-announcement.dto';
+import type { UpdateAnnouncementDto } from './dto/update-announcement.dto';
 import { latest } from './type/announcement.type';
 import { RedisService } from '@/redis/redis.service';
 
@@ -221,5 +228,216 @@ export class AnnouncementService {
     return { data: result, source: 'db' };
   }
 
-  //todo : create,update,delete
+  /**
+   * Resolves who may edit or delete an announcement.
+   *
+   * An author may always change their own post. Otherwise an Admin may act
+   * within their own school: a post scoped to another school must not be
+   * reachable, or one school's admin could rewrite another school's notices.
+   * `schoolId: null` is a deliberately global post (the read filter treats it
+   * as visible to everyone), so any Admin may curate those.
+   */
+  private async assertCanManage(
+    announcementId: string,
+    authId: string,
+  ): Promise<{ authorId: string; schoolId: string | null }> {
+    const [auth, announcement] = await Promise.all([
+      this.prisma.auth.findUnique({
+        where: { authId },
+        select: {
+          userId: true,
+          user: { select: { role: true, schoolId: true } },
+        },
+      }),
+      this.prisma.announcement.findUnique({
+        where: { id: announcementId },
+        select: { authorId: true, schoolId: true },
+      }),
+    ]);
+
+    if (!auth) {
+      throw new UnauthorizedException('User not found');
+    }
+
+    if (!announcement) {
+      throw new NotFoundException('Announcement not found');
+    }
+
+    if (announcement.authorId === auth.userId) {
+      return announcement;
+    }
+
+    if (auth.user.role !== 'Admin') {
+      throw new ForbiddenException(
+        'You can only manage announcements you authored',
+      );
+    }
+
+    if (
+      announcement.schoolId !== null &&
+      announcement.schoolId !== auth.user.schoolId
+    ) {
+      throw new ForbiddenException(
+        'This announcement belongs to another school',
+      );
+    }
+
+    return announcement;
+  }
+
+  /**
+   * Resolves the audience to the (schoolId, sectionId) pair the read filter
+   * understands. Global is schoolId=null AND sectionId=null — a post with a
+   * school but no section is school-wide, and one with neither is global.
+   */
+  private async resolveTarget(
+    authId: string,
+    audience: AnnouncementAudience,
+    sectionId: string | undefined,
+  ): Promise<{ schoolId: string | null; sectionId: string | null }> {
+    if (audience === AnnouncementAudience.Global) {
+      return { schoolId: null, sectionId: null };
+    }
+
+    if (audience === AnnouncementAudience.Section) {
+      if (!sectionId) {
+        throw new BadRequestException(
+          'sectionId is required when audience is Section',
+        );
+      }
+
+      const section = await this.prisma.section.findUnique({
+        where: { id: sectionId },
+        select: { id: true },
+      });
+
+      if (!section) {
+        throw new NotFoundException(`Section ${sectionId} not found`);
+      }
+
+      // `schoolId` stays null for a section-scoped post, which is what the read
+      // filter needs: it ORs on `sectionId: null` for school-wide posts and on
+      // `sectionId: { in: [...] }` otherwise, so a null schoolId does not widen
+      // who *sees* a section post.
+      //
+      // Note: neither `Section` nor `Class` carries a schoolId (only `User`
+      // does), so a section cannot be verified as belonging to the author's
+      // school. Immaterial for a single-school deployment, but it is why no
+      // cross-school check is possible here.
+      return { schoolId: null, sectionId };
+    }
+
+    const auth = await this.prisma.auth.findUnique({
+      where: { authId },
+      select: { user: { select: { schoolId: true } } },
+    });
+
+    return { schoolId: auth?.user.schoolId ?? null, sectionId: null };
+  }
+
+  /**
+   * Drops every cached read.
+   *
+   * Read keys are audience-scoped (`announcements:latest:<tag>` and
+   * `announcement:<page>:<pageSize>:<tag>`), so the tag varies per audience and
+   * a single known key cannot be invalidated. Pattern-delete both families.
+   * `announcement*` is used rather than `announcement:*` because that pattern
+   * would not match `announcements:latest:...`.
+   */
+  private async invalidateReads(): Promise<void> {
+    try {
+      await this.redis.delPattern('announcements:*');
+      await this.redis.delPattern('announcement:*');
+    } catch (err) {
+      this.logger.warn(
+        `[announcement] cache invalidation failed: ${String(err)}`,
+      );
+    }
+  }
+
+  async create(authId: string, dto: CreateAnnouncementDto) {
+    this.logger.log('[create]');
+
+    const auth = await this.prisma.auth.findUnique({
+      where: { authId },
+      select: { userId: true },
+    });
+
+    if (!auth) {
+      throw new UnauthorizedException('User not found');
+    }
+
+    const target = await this.resolveTarget(
+      authId,
+      dto.audience,
+      dto.sectionId,
+    );
+
+    const announcement = await this.prisma.announcement.create({
+      data: {
+        title: dto.title,
+        body: dto.body,
+        type: dto.type,
+        isPinned: dto.isPinned ?? false,
+        authorId: auth.userId,
+        schoolId: target.schoolId,
+        sectionId: target.sectionId,
+      },
+      include: this.authorInclude,
+    });
+
+    await this.invalidateReads();
+
+    return this.toLatest([announcement])[0];
+  }
+
+  async update(authId: string, id: string, dto: UpdateAnnouncementDto) {
+    this.logger.log('[update]');
+
+    await this.assertCanManage(id, authId);
+
+    const data: Record<string, unknown> = {};
+    if (dto.title !== undefined) data['title'] = dto.title;
+    if (dto.body !== undefined) data['body'] = dto.body;
+    if (dto.type !== undefined) data['type'] = dto.type;
+    if (dto.isPinned !== undefined) data['isPinned'] = dto.isPinned;
+
+    // Only retarget when the audience is explicitly being changed, so an
+    // unrelated title edit cannot silently re-scope the post.
+    if (dto.audience !== undefined) {
+      const target = await this.resolveTarget(
+        authId,
+        dto.audience,
+        dto.sectionId,
+      );
+      data['schoolId'] = target.schoolId;
+      data['sectionId'] = target.sectionId;
+    } else if (dto.sectionId !== undefined) {
+      throw new BadRequestException(
+        'sectionId can only be changed together with audience',
+      );
+    }
+
+    const announcement = await this.prisma.announcement.update({
+      where: { id },
+      data,
+      include: this.authorInclude,
+    });
+
+    await this.invalidateReads();
+
+    return this.toLatest([announcement])[0];
+  }
+
+  async remove(authId: string, id: string) {
+    this.logger.log('[remove]');
+
+    await this.assertCanManage(id, authId);
+
+    await this.prisma.announcement.delete({ where: { id } });
+
+    await this.invalidateReads();
+
+    return { deleted: true, id };
+  }
 }

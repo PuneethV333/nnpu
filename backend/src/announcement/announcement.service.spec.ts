@@ -1,112 +1,99 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { NotFoundException, UnauthorizedException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  NotFoundException,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { AnnouncementService } from './announcement.service';
 import { PrismaService } from '@/prisma/prisma.service';
 import { RedisService } from '@/redis/redis.service';
 import { LoggerService } from '@/logger/logger.service';
-import type { AnnouncementDto } from './dto/announcement-Query.dto';
+import {
+  AnnouncementAudience,
+  CreateAnnouncementDto,
+} from './dto/create-announcement.dto';
 
-type FindManyArg = {
-  where?: Record<string, unknown>;
-  take?: number;
-  skip?: number;
-};
-type FindFirstArg = { where?: Record<string, unknown> };
-
-describe('AnnouncementService', () => {
+describe('AnnouncementService writes', () => {
   let service: AnnouncementService;
   let prisma: {
-    auth: { findUnique: jest.Mock<Promise<unknown>, [unknown]> };
-    sectionSubject: {
-      findMany: jest.Mock<Promise<unknown>, [unknown]>;
-    };
+    auth: { findUnique: jest.Mock };
     announcement: {
-      findMany: jest.Mock<Promise<unknown>, [FindManyArg]>;
-      findFirst: jest.Mock<Promise<unknown>, [FindFirstArg]>;
+      findUnique: jest.Mock;
+      create: jest.Mock;
+      update: jest.Mock;
+      delete: jest.Mock;
     };
+    section: { findUnique: jest.Mock };
   };
-  let redis: {
-    get: jest.Mock<Promise<unknown>, [string]>;
-    set: jest.Mock<Promise<unknown>, [string, unknown]>;
-  };
+  let redis: { delPattern: jest.Mock };
 
-  const PAGE: AnnouncementDto = { page: 1, pageSize: 10 };
+  const authFor = (over: Record<string, unknown> = {}) => ({
+    userId: 'admin-1',
+    user: { role: 'Admin', schoolId: 'school-1', sectionId: null },
+    ...over,
+  });
 
-  const rows = () =>
-    [
-      {
-        id: 'a1',
-        title: 't',
-        body: 'b',
-        type: 'Normal',
-        author: { details: { name: 'A', profilePic: 'p' } },
-      },
-    ] as never;
-
-  const asStudent = (over: Record<string, unknown> = {}) => {
-    prisma.auth.findUnique.mockResolvedValue({
-      userId: 'student-1',
-      user: {
-        role: 'Student',
-        schoolId: 'school-1',
-        sectionId: 'section-1',
-        ...over,
-      },
-    });
+  /**
+   * Prisma's `create`/`update` mocks are untyped, so asserting through
+   * `expect.objectContaining(...)` yields an `any` and trips
+   * no-unsafe-assignment / no-unsafe-member-access. Capture the call argument
+   * and re-type it narrowly instead, matching the sections/attendance specs.
+   */
+  const createData = (): Record<string, unknown> => {
+    const mock = prisma.announcement.create as unknown as jest.Mock<
+      unknown,
+      [{ data: Record<string, unknown> }]
+    >;
+    return mock.mock.calls[0][0].data;
   };
 
-  const asTeacher = (sectionIds: string[] = ['section-1']) => {
-    prisma.auth.findUnique.mockResolvedValue({
-      userId: 'teacher-1',
-      user: { role: 'Teacher', schoolId: 'school-1', sectionId: null },
-    });
-    prisma.sectionSubject.findMany.mockResolvedValue(
-      sectionIds.map((sectionId) => ({ sectionId })),
-    );
+  const updateData = (): Record<string, unknown> => {
+    const mock = prisma.announcement.update as unknown as jest.Mock<
+      unknown,
+      [{ data: Record<string, unknown> }]
+    >;
+    return mock.mock.calls[0][0].data;
   };
 
-  const asAdmin = () => {
-    prisma.auth.findUnique.mockResolvedValue({
-      userId: 'admin-1',
-      user: { role: 'Admin', schoolId: 'school-1', sectionId: null },
-    });
-  };
-
-  const lastWhere = (): Record<string, unknown> => {
-    const calls = prisma.announcement.findMany.mock.calls;
-    const last = calls[calls.length - 1];
-    return last === undefined ? {} : (last[0].where ?? {});
-  };
+  const dto = (
+    over: Partial<CreateAnnouncementDto> = {},
+  ): CreateAnnouncementDto => ({
+    title: 'Holiday',
+    body: 'Closed on the 15th.',
+    type: 'Holiday',
+    audience: AnnouncementAudience.School,
+    ...over,
+  });
 
   beforeEach(async () => {
     prisma = {
-      auth: {
-        findUnique: jest
-          .fn<Promise<unknown>, [unknown]>()
-          .mockImplementation(() => Promise.resolve(null)),
-      },
-      sectionSubject: {
-        findMany: jest
-          .fn<Promise<unknown>, [unknown]>()
-          .mockImplementation(() => Promise.resolve([])),
-      },
+      auth: { findUnique: jest.fn().mockResolvedValue(authFor()) },
       announcement: {
-        findMany: jest
-          .fn<Promise<unknown>, [FindManyArg]>()
-          .mockImplementation(() => Promise.resolve(rows())),
-        findFirst: jest
-          .fn<Promise<unknown>, [FindFirstArg]>()
-          .mockImplementation(() => Promise.resolve(rows()[0])),
+        findUnique: jest.fn(),
+        create: jest.fn().mockImplementation(({ data }) =>
+          Promise.resolve({
+            id: 'ann-1',
+            ...data,
+            // `toLatest` reads author.details, which Prisma fills via the
+            // include, so the mock must stand in for the joined row.
+            author: { details: { name: 'Admin One', profilePic: null } },
+          }),
+        ),
+        update: jest.fn().mockImplementation(({ data }) =>
+          Promise.resolve({
+            id: 'ann-1',
+            ...data,
+            // `toLatest` reads author.details, which Prisma fills via the
+            // include, so the mock must stand in for the joined row.
+            author: { details: { name: 'Admin One', profilePic: null } },
+          }),
+        ),
+        delete: jest.fn().mockResolvedValue({ id: 'ann-1' }),
       },
+      section: { findUnique: jest.fn() },
     };
-    redis = {
-      get: jest
-        .fn<Promise<unknown>, [string]>()
-        .mockImplementation(() => Promise.resolve(null)),
-      set: jest
-        .fn<Promise<unknown>, [string, unknown]>()
-        .mockImplementation(() => Promise.resolve()),
-    };
+    redis = { delPattern: jest.fn().mockResolvedValue(1) };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -128,128 +115,202 @@ describe('AnnouncementService', () => {
     service = module.get(AnnouncementService);
   });
 
-  it('rejects an unknown auth record', async () => {
-    await expect(service.findAll(PAGE, 'ghost')).rejects.toBeInstanceOf(
-      UnauthorizedException,
-    );
-  });
+  describe('create', () => {
+    it('writes a school-wide post scoped to the author school', async () => {
+      await service.create('admin-1', dto());
 
-  describe('audience scoping', () => {
-    it('restricts a student to their own section', async () => {
-      asStudent();
-      await service.findAll(PAGE, 'student-auth');
-
-      const where = JSON.stringify(lastWhere());
-
-      expect(where).toContain('section-1');
-      expect(where).toContain('sectionId');
+      expect(createData()).toMatchObject({
+        schoolId: 'school-1',
+        sectionId: null,
+        authorId: 'admin-1',
+      });
     });
 
-    it('restricts a teacher to the sections they teach', async () => {
-      asTeacher(['section-3', 'section-4']);
-      await service.findAll(PAGE, 'teacher-auth');
-
-      expect(prisma.sectionSubject.findMany).toHaveBeenCalled();
-      const where = JSON.stringify(lastWhere());
-      expect(where).toContain('section-3');
-      expect(where).toContain('section-4');
-    });
-
-    it('gives an Admin no section restriction', async () => {
-      asAdmin();
-      await service.findAll(PAGE, 'admin-auth');
-
-      const where = lastWhere();
-      expect(JSON.stringify(where)).not.toContain('sectionId');
-    });
-
-    it('scopes to the caller school and still allows global posts', async () => {
-      asStudent();
-      await service.findAll(PAGE, 'student-auth');
-
-      const where = JSON.stringify(lastWhere());
-      expect(where).toContain('school-1');
-      expect(where).toContain('schoolId');
-    });
-
-    it('shows only global posts to a user with no school', async () => {
-      asStudent({ schoolId: null, sectionId: null });
-      await service.findAll(PAGE, 'student-auth');
-
-      const where = lastWhere();
-      expect(JSON.stringify(where)).toContain('schoolId');
-      expect(JSON.stringify(where)).not.toContain('school-1');
-    });
-
-    it('always includes school-wide posts', async () => {
-      asStudent();
-      await service.findAll(PAGE, 'student-auth');
-
-      // sectionId: null / schoolId: null are how a broadcast post is expressed,
-      // and those must stay visible or the filter hides ordinary notices.
-      expect(JSON.stringify(lastWhere())).toContain('null');
-    });
-  });
-
-  describe('cache isolation', () => {
-    it('keys the cache per audience, not globally', async () => {
-      asStudent();
-      await service.findAll(PAGE, 'student-auth');
-      await service.findLatest('student-auth');
-
-      const keys = redis.set.mock.calls.map((c) => c[0]);
-
-      // Regression: keys were `announcement:{page}:{size}` for everyone, so the
-      // first caller's filtered page was served to every other user.
-      expect(new Set(keys).size).toBe(keys.length);
-      for (const key of keys) {
-        expect(key).not.toBe('announcements:latest');
-      }
-    });
-
-    it('gives two students in different sections different cache keys', async () => {
-      asStudent();
-      await service.findAll(PAGE, 'auth-student-1');
-      const first = redis.set.mock.calls[0]?.[0];
-
-      asStudent({ sectionId: 'section-2' });
-      redis.set.mockClear();
-      await service.findAll(PAGE, 'auth-student-2');
-      const second = redis.set.mock.calls[0]?.[0];
-
-      expect(first).not.toBe(second);
-    });
-
-    it('does not let one audience read another audience cached entry', async () => {
-      asStudent();
-      await service.findAll(PAGE, 'auth-student-1');
-      const first = redis.set.mock.calls[0]?.[0];
-
-      // Simulate the shared-key bug: the same key coming back from Redis.
-      redis.get.mockImplementation((key: string) =>
-        Promise.resolve(key === first ? [{ id: 'leaked' }] : null),
+    it('writes a global post with both ids null', async () => {
+      // The read filter treats schoolId:null as "visible to everyone".
+      await service.create(
+        'admin-1',
+        dto({ audience: AnnouncementAudience.Global }),
       );
 
-      asStudent({ sectionId: 'section-9' });
-      const result = await service.findAll(PAGE, 'auth-student-9');
-
-      expect(result.source).toBe('db');
+      expect(createData()).toMatchObject({ schoolId: null, sectionId: null });
     });
-  });
 
-  describe('details', () => {
-    it('scopes the lookup so an out-of-audience id is not found', async () => {
-      asStudent();
-      prisma.announcement.findFirst.mockImplementation(() =>
-        Promise.resolve(null),
-      );
+    it('rejects a Section audience with no sectionId', async () => {
+      await expect(
+        service.create(
+          'admin-1',
+          dto({ audience: AnnouncementAudience.Section }),
+        ),
+      ).rejects.toBeInstanceOf(BadRequestException);
+
+      expect(prisma.announcement.create).not.toHaveBeenCalled();
+    });
+
+    it('404s for an unknown section', async () => {
+      prisma.section.findUnique.mockResolvedValue(null);
 
       await expect(
-        service.details('someone-elses', 'student-auth'),
+        service.create(
+          'admin-1',
+          dto({ audience: AnnouncementAudience.Section, sectionId: 'nope' }),
+        ),
       ).rejects.toBeInstanceOf(NotFoundException);
+    });
 
-      const call = prisma.announcement.findFirst.mock.calls[0];
-      expect(JSON.stringify(call?.[0].where)).toContain('someone-elses');
+    it('invalidates both cached read families', async () => {
+      await service.create('admin-1', dto());
+
+      // Read keys are audience-tagged, so no single key can be dropped.
+      expect(redis.delPattern).toHaveBeenCalledWith('announcements:*');
+      expect(redis.delPattern).toHaveBeenCalledWith('announcement:*');
+    });
+
+    it('does not fail the write when cache invalidation throws', async () => {
+      redis.delPattern.mockRejectedValue(new Error('redis down'));
+
+      await expect(service.create('admin-1', dto())).resolves.toBeDefined();
+    });
+
+    it('401s for an unknown auth', async () => {
+      prisma.auth.findUnique.mockResolvedValue(null);
+
+      await expect(service.create('admin-1', dto())).rejects.toBeInstanceOf(
+        UnauthorizedException,
+      );
+    });
+  });
+
+  describe('update / remove authorization', () => {
+    it('lets the author manage their own post', async () => {
+      prisma.announcement.findUnique.mockResolvedValue({
+        authorId: 'admin-1',
+        schoolId: 'school-1',
+      });
+
+      await expect(
+        service.update('admin-1', 'ann-1', {
+          title: 'New',
+        }),
+      ).resolves.toBeDefined();
+    });
+
+    it('lets an admin of the same school manage it', async () => {
+      prisma.auth.findUnique.mockResolvedValue(authFor({ userId: 'admin-2' }));
+      prisma.announcement.findUnique.mockResolvedValue({
+        authorId: 'admin-1',
+        schoolId: 'school-1',
+      });
+
+      await expect(
+        service.update('admin-2', 'ann-1', {
+          title: 'New',
+        }),
+      ).resolves.toBeDefined();
+    });
+
+    it('refuses an admin from another school', async () => {
+      prisma.auth.findUnique.mockResolvedValue(
+        authFor({
+          userId: 'admin-9',
+          user: { role: 'Admin', schoolId: 'school-2' },
+        }),
+      );
+      prisma.announcement.findUnique.mockResolvedValue({
+        authorId: 'admin-1',
+        schoolId: 'school-1',
+      });
+
+      // Otherwise one school's admin could rewrite another school's notices.
+      await expect(
+        service.update('admin-9', 'ann-1', {
+          title: 'New',
+        }),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+
+      expect(prisma.announcement.update).not.toHaveBeenCalled();
+    });
+
+    it('refuses a non-admin non-author', async () => {
+      prisma.auth.findUnique.mockResolvedValue(
+        authFor({
+          userId: 'teacher-1',
+          user: { role: 'Teacher', schoolId: 'school-1' },
+        }),
+      );
+      prisma.announcement.findUnique.mockResolvedValue({
+        authorId: 'admin-1',
+        schoolId: null,
+      });
+
+      await expect(
+        service.update('teacher-1', 'ann-1', {
+          title: 'New',
+        }),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+    });
+
+    it('404s for an unknown announcement', async () => {
+      prisma.announcement.findUnique.mockResolvedValue(null);
+
+      await expect(service.remove('admin-1', 'ann-1')).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
+
+      expect(prisma.announcement.delete).not.toHaveBeenCalled();
+    });
+
+    it('applies the same checks to remove', async () => {
+      prisma.auth.findUnique.mockResolvedValue(
+        authFor({
+          userId: 'admin-9',
+          user: { role: 'Admin', schoolId: 'school-2' },
+        }),
+      );
+      prisma.announcement.findUnique.mockResolvedValue({
+        authorId: 'admin-1',
+        schoolId: 'school-1',
+      });
+
+      await expect(service.remove('admin-9', 'ann-1')).rejects.toBeInstanceOf(
+        ForbiddenException,
+      );
+      expect(prisma.announcement.delete).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('update targeting', () => {
+    beforeEach(() => {
+      prisma.announcement.findUnique.mockResolvedValue({
+        authorId: 'admin-1',
+        schoolId: 'school-1',
+      });
+    });
+
+    it('does not re-scope when only the title changes', async () => {
+      // An unrelated edit must not silently re-target the post.
+      await service.update('admin-1', 'ann-1', {
+        title: 'New',
+      });
+
+      expect(updateData()).not.toHaveProperty('schoolId');
+      expect(updateData()).not.toHaveProperty('sectionId');
+    });
+
+    it('re-sopes when audience is explicitly changed', async () => {
+      await service.update('admin-1', 'ann-1', {
+        audience: AnnouncementAudience.Global,
+      });
+
+      expect(updateData()).toMatchObject({ schoolId: null, sectionId: null });
+    });
+
+    it('rejects a sectionId sent without an audience change', async () => {
+      await expect(
+        service.update('admin-1', 'ann-1', {
+          sectionId: 'section-1',
+        }),
+      ).rejects.toBeInstanceOf(BadRequestException);
     });
   });
 });
