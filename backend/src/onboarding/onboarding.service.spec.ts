@@ -307,10 +307,15 @@ describe('OnboardingService', () => {
         [{ data: { authId: string } }]
       >;
       const authArg = authMock.mock.calls[0][0];
-      // nnpu + 1 + S + B + 26 + K + A + 001
+      // nnpu + 1 + S + B + 26 + K + A + 001 — and exactly that length, since the
+      // segment is derived through authIdSessionSegment rather than by trusting
+      // Section.session.
       expect(authArg.data.authId).toBe('nnpu1SB26KA001');
       expect(authArg.data.authId).not.toContain('SCI');
       expect(authArg.data.authId).not.toContain('undefined');
+      expect(authArg.data.authId).toMatch(
+        /^nnpu[12][SBC][BCS][0-9]{2}[KHS][A-Z][0-9]{3}$/,
+      );
     });
   });
 

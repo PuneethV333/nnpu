@@ -37,6 +37,7 @@ import { PrismaPg } from '@prisma/adapter-pg';
 import * as bcrypt from 'bcrypt';
 import {
   sectionDisplayName,
+  sectionName,
   sectionSessionKey,
 } from '@/common/utils/section-session.util';
 
@@ -418,7 +419,7 @@ async function main() {
     } else {
       const sec = await prisma.section.create({
         data: {
-          name: `${s.classYear}-${sessionKey}`,
+          name: sectionName(s.classYear, sessionKey),
           classId: classMap[s.classYear],
           session: sessionKey,
           academicYearId: academicYear.id,

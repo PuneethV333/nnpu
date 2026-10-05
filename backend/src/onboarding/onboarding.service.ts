@@ -16,7 +16,8 @@ import * as bcrypt from 'bcrypt';
 import { COMBO_CODE, LANG_CODE, STREAM_CODE } from './helper/helper';
 import { zonedToday } from '@/common/utils/date.util';
 import {
-  sectionDisplayName,
+  authIdSessionSegment,
+  sectionName,
   sectionSessionKey,
 } from '@/common/utils/section-session.util';
 import { Prisma } from '@/generated/prisma';
@@ -132,11 +133,10 @@ export class OnboardingService {
         .slice(-2);
       const langCode = LANG_CODE[dto.language as SecondLanguage];
 
-      // The plain display label, not `Section.session`. Sections now store the
-      // stream-disambiguated key ("SCI-A"), so reading the column directly would
-      // put "SCI-A" into the authId. EnrollmentService passes the display name
-      // for the same reason.
-      const sessionCode = sectionDisplayName(section.session);
+      // Derived from the section's own stored session by the shared helper, so
+      // the id segment can only ever be the plain label ("A") — never the key
+      // ("SCI-A"), and never a multi-character label.
+      const sessionCode = authIdSessionSegment(section.session);
 
       const bucketKey = `nnpu-${puYear}-${streamCode}-${comboCode}-${joinYear2}-${langCode}-${sessionCode}`;
 
@@ -289,7 +289,7 @@ export class OnboardingService {
         data: {
           // Both `name` and `session` are stream-prefixed, matching
           // EnrollmentService, so a section looks the same however it was made.
-          name: `${classRecord.name}-${sessionKey}`,
+          name: sectionName(classRecord.name, sessionKey),
           classId: classRecord.id,
           session: sessionKey,
           academicYearId: academicYear.id,
@@ -338,7 +338,7 @@ export class OnboardingService {
       try {
         await this.prisma.section.create({
           data: {
-            name: `${classRecord.name}-${sessionKey}`,
+            name: sectionName(classRecord.name, sessionKey),
             classId: classRecord.id,
             session: sessionKey,
             academicYearId: academicYear.id,

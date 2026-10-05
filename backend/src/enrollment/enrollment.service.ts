@@ -20,7 +20,11 @@ import {
 import type { forms_v1 } from 'googleapis';
 import { getDriveReturnType } from './types/enrollment.types';
 import { COMBO_CODE, LANG_CODE, STREAM_CODE } from '@/onboarding/helper/helper';
-import { sectionSessionKey as buildSectionSessionKey } from '@/common/utils/section-session.util';
+import {
+  authIdSessionSegment,
+  sectionName,
+  sectionSessionKey as buildSectionSessionKey,
+} from '@/common/utils/section-session.util';
 
 @Injectable()
 export class EnrollmentService {
@@ -72,6 +76,10 @@ export class EnrollmentService {
           byStream[stream],
           academicYear,
           classRecord.id,
+          // The name, not a hardcoded "1". Enrollment is PU1-only today, but the
+          // function already takes a classId and so looks general; passing the
+          // name makes a class-2 section impossible to mislabel.
+          classRecord.name,
           dto.closesAt,
         ),
       ),
@@ -413,6 +421,7 @@ export class EnrollmentService {
     sessions: string[],
     academicYear: { id: string; label: string },
     classId: string,
+    className: string,
     closesAt: string,
   ) {
     const sectionResults: { session: string; created: boolean }[] = [];
@@ -437,7 +446,7 @@ export class EnrollmentService {
 
       await this.prisma.section.create({
         data: {
-          name: `1-${sectionSessionKey}`,
+          name: sectionName(className, sectionSessionKey),
           classId,
           session: sectionSessionKey,
           academicYearId: academicYear.id,
@@ -563,7 +572,10 @@ export class EnrollmentService {
     const comboCode = COMBO_CODE[params.comboIdCode];
     const joinYear2 = params.joinYear.toString().slice(-2);
     const langCode = LANG_CODE[params.language];
-    const sessionCode = params.session;
+    // Same helper OnboardingService uses, so both id-building paths agree on the
+    // segment's width. Previously this trusted a caller-supplied value while the
+    // other path derived it from Section.session.
+    const sessionCode = authIdSessionSegment(params.session);
 
     if (!comboCode) {
       throw new BadRequestException(

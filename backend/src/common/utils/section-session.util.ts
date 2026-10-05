@@ -1,4 +1,5 @@
 import { Stream } from '@/generated/prisma';
+import { BadRequestException } from '@nestjs/common';
 
 /**
  * Internal, stream-disambiguated value for `Section.session`.
@@ -34,4 +35,47 @@ export const sectionSessionKey = (
 export const sectionDisplayName = (sessionKey: string): string => {
   const match = /^(?:SCI|COM)-(.*)$/.exec(sessionKey);
   return match ? match[1] : sessionKey;
+};
+
+/**
+ * The canonical stored `Section.name`: `"<className>-<sessionKey>"`, e.g.
+ * `1-SCI-A`.
+ *
+ * Every write path used to build this by hand. They drifted:
+ * `EnrollmentService.createStreamDrive` took a `classId` parameter but
+ * hardcoded the literal `"1"`, so a class-2 section was named `1-SCI-A` while
+ * pointing at class 2 — a name that lies about the section it identifies.
+ * Taking the class *name* as an argument makes that impossible to express.
+ */
+export const sectionName = (className: string, sessionKey: string): string =>
+  `${className}-${sessionKey}`;
+
+/**
+ * The session segment of a student authId.
+ *
+ * authIds are fixed-width by design:
+ *
+ *     nnpu{classYear}{stream}{combo}{joinYear2}{lang}{session}{serial:3}
+ *     e.g. nnpu1SB26KA001
+ *
+ * so the segment must be the plain label (`A`), never the stored key (`SCI-A`).
+ * Both id-building paths now derive it here from the section's own session
+ * value rather than one reading `Section.session` and the other trusting a
+ * caller-supplied parameter — which is how the two came to disagree about the
+ * width of the segment.
+ *
+ * Throws on a multi-character label instead of silently producing a longer
+ * authId: a wrong-length id is unrecoverable for the user, whereas a rejected
+ * session label is fixable by whoever typed it.
+ */
+export const authIdSessionSegment = (sessionKey: string): string => {
+  const label = sectionDisplayName(sessionKey);
+
+  if (label.length !== 1) {
+    throw new BadRequestException(
+      `Session label "${label}" must be a single character to keep authIds fixed-width (got "${sessionKey}")`,
+    );
+  }
+
+  return label.toUpperCase();
 };

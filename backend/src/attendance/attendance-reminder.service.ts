@@ -66,7 +66,8 @@ export class AttendanceReminderService {
         userId: s.classTeacherId as string,
         type: 'AttendancePending',
         title: 'Attendance not taken',
-        body: `Attendance for ${s.class.name}-${s.name} hasn't been marked yet.`,
+        // `Section.name` already embeds the class (e.g. "1-SCI-A").
+        body: `Attendance for ${s.name} hasn't been marked yet.`,
       })),
     });
 
