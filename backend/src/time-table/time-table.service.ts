@@ -65,7 +65,6 @@ export class TimetableService {
     }
 
     const sectionId = auth.user.sectionId;
-    const studentId = auth.userId;
     const studentCombinationId = auth.user.combinationId ?? null;
 
     if (!sectionId) {
@@ -159,12 +158,11 @@ export class TimetableService {
         // Slots with no combination (i.e. not a split/elective period) are
         // common to everyone and always pass through. Slots tied to a
         // combination are narrowed down to this student's own combination.
-        const filtered = studentId
-          ? candidates.filter(
-              (s) =>
-                !s.combination || s.combination.id === studentCombinationId,
-            )
-          : candidates;
+        // `auth.userId` is always present, so there is no "unknown student"
+        // case to fall back to.
+        const filtered = candidates.filter(
+          (s) => !s.combination || s.combination.id === studentCombinationId,
+        );
 
         return {
           periodId: period.id,

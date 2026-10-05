@@ -1,5 +1,3 @@
-/* eslint-disable @typescript-eslint/no-unsafe-member-access */
-/* eslint-disable @typescript-eslint/no-unsafe-assignment */
 import { LoggerService } from '@/logger/logger.service';
 import { PrismaService } from '@/prisma/prisma.service';
 import {
@@ -20,6 +18,7 @@ import { ConfigService } from '@nestjs/config';
 import { HandleRazorpayWebhookDto } from './dto/handle-razorpay-webhook.dto';
 import { createHmac } from 'crypto';
 import { StudentInvoice, StudentInvoices } from './type/studentInvoice.type';
+import { RazorpayWebhookEvent } from './type/razorpay-webhook.type';
 
 @Injectable()
 export class FeesService {
@@ -470,7 +469,7 @@ export class FeesService {
       throw new BadRequestException('Invalid webhook signature');
     }
 
-    const event = JSON.parse(rawBody.toString('utf8'));
+    const event = JSON.parse(rawBody.toString('utf8')) as RazorpayWebhookEvent;
 
     // A failed payment leaves an order nobody will ever settle. Marking it
     // Failed is what frees the one-pending-per-invoice slot so the student can
@@ -510,7 +509,7 @@ export class FeesService {
     let result: { alreadyProcessed: boolean; invoiceId: string };
     try {
       result = await this.confirmPayment(orderId, {
-        razorpayPaymentId: paymentId as string,
+        razorpayPaymentId: paymentId,
       });
     } catch (error) {
       if (error instanceof NotFoundException) {
