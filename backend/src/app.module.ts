@@ -23,6 +23,7 @@ import { TimeTableModule } from './time-table/time-table.module';
 import { EnrollmentModule } from './enrollment/enrollment.module';
 import { GoogleModule } from './google/google.module';
 import { MailModule } from './mail/mail.module';
+import { UsersModule } from './users/users.module';
 import { SectionsModule } from './sections/sections.module';
 import { DashboardModule } from './dashboard/dashboard.module';
 
@@ -99,6 +100,7 @@ import { DashboardModule } from './dashboard/dashboard.module';
     EnrollmentModule,
     GoogleModule,
     MailModule,
+    UsersModule,
     SectionsModule,
     DashboardModule,
   ],
