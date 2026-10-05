@@ -2,6 +2,7 @@ import { LoggerService } from '@/logger/logger.service';
 import { PrismaService } from '@/prisma/prisma.service';
 
 import {
+  BadRequestException,
   ConflictException,
   Injectable,
   NotFoundException,
@@ -14,6 +15,10 @@ import { CreateSectionDto } from './dto/create-section.dto';
 import * as bcrypt from 'bcrypt';
 import { COMBO_CODE, LANG_CODE, STREAM_CODE } from './helper/helper';
 import { zonedToday } from '@/common/utils/date.util';
+import {
+  sectionDisplayName,
+  sectionSessionKey,
+} from '@/common/utils/section-session.util';
 import { Prisma } from '@/generated/prisma';
 import { SecondLanguage } from '@/generated/prisma';
 import { CreateSectionsBulkDto } from './dto/create-sections-bulk.dto';
@@ -64,11 +69,17 @@ export class OnboardingService {
       );
     }
 
+    // Looked up by the stream-disambiguated key, matching what enrollment
+    // stores. Previously this used the plain label ("A") while enrollment
+    // created sections as "SCI-A", so a manually created student never matched
+    // an enrollment-created section.
+    const sessionKey = sectionSessionKey(dto.stream, dto.session);
+
     const section = await tx.section.findUnique({
       where: {
         classId_session_academicYearId: {
           classId: classRecord.id,
-          session: dto.session,
+          session: sessionKey,
           academicYearId: academicYear.id,
         },
       },
@@ -77,7 +88,7 @@ export class OnboardingService {
 
     if (!section) {
       throw new NotFoundException(
-        `No section exists for class ${dto.classYear}, session ${dto.session}, academic year ${academicYear.label}`,
+        `No section exists for class ${dto.classYear}, stream ${dto.stream}, session ${dto.session} (stored as ${sessionKey}), academic year ${academicYear.label}`,
       );
     }
 
@@ -101,12 +112,31 @@ export class OnboardingService {
       const puYear = dto.classYear;
       const streamCode = STREAM_CODE[combination.stream];
       const comboCode = COMBO_CODE[combination.idCode];
+
+      // `COMBO_CODE` is a plain `Record<string, string>`, so TypeScript cannot
+      // prove the lookup is total the way it can for `STREAM_CODE` /
+      // `LANG_CODE` (which are keyed by enums). A Combination row whose idCode is
+      // absent from the map yields `undefined`, which used to be interpolated
+      // straight into the authId — producing ids like `nnpu1Sundefined26KA001`,
+      // and collapsing every unmapped combination into one id-sequence bucket.
+      // EnrollmentService.generateAuthId has always guarded this.
+      if (!comboCode) {
+        throw new BadRequestException(
+          `No authId code mapping for combination "${combination.idCode}"`,
+        );
+      }
+
       const joinYear2 = section.academicYear.startDate
         .getFullYear()
         .toString()
         .slice(-2);
       const langCode = LANG_CODE[dto.language as SecondLanguage];
-      const sessionCode = section.session;
+
+      // The plain display label, not `Section.session`. Sections now store the
+      // stream-disambiguated key ("SCI-A"), so reading the column directly would
+      // put "SCI-A" into the authId. EnrollmentService passes the display name
+      // for the same reason.
+      const sessionCode = sectionDisplayName(section.session);
 
       const bucketKey = `nnpu-${puYear}-${streamCode}-${comboCode}-${joinYear2}-${langCode}-${sessionCode}`;
 
@@ -252,12 +282,16 @@ export class OnboardingService {
       );
     }
 
+    const sessionKey = sectionSessionKey(dto.stream, dto.session);
+
     try {
       return await this.prisma.section.create({
         data: {
           name: `${classRecord.name}-${dto.session}`,
           classId: classRecord.id,
-          session: dto.session,
+          // Stream-disambiguated, matching EnrollmentService. `name` stays the
+          // plain label for display.
+          session: sessionKey,
           academicYearId: academicYear.id,
         },
       });
@@ -299,12 +333,14 @@ export class OnboardingService {
     // Sequential, not $transaction — a duplicate session shouldn't roll back
     // the ones that succeeded; each session is independent.
     for (const session of dto.sessions) {
+      const sessionKey = sectionSessionKey(dto.stream, session);
+
       try {
         await this.prisma.section.create({
           data: {
             name: `${classRecord.name}-${session}`,
             classId: classRecord.id,
-            session,
+            session: sessionKey,
             academicYearId: academicYear.id,
           },
         });

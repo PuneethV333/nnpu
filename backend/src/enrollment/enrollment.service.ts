@@ -20,11 +20,7 @@ import {
 import type { forms_v1 } from 'googleapis';
 import { getDriveReturnType } from './types/enrollment.types';
 import { COMBO_CODE, LANG_CODE, STREAM_CODE } from '@/onboarding/helper/helper';
-
-const SECTION_STREAM_PREFIX: Record<'Science' | 'Commerce', string> = {
-  Science: 'SCI',
-  Commerce: 'COM',
-};
+import { sectionSessionKey as buildSectionSessionKey } from '@/common/utils/section-session.util';
 
 @Injectable()
 export class EnrollmentService {
@@ -171,7 +167,10 @@ export class EnrollmentService {
         where: { name: '1' },
       });
 
-      const sectionSessionKey = `${SECTION_STREAM_PREFIX[submission.stream]}-${submission.session}`;
+      const sectionSessionKey = buildSectionSessionKey(
+        submission.stream,
+        submission.session,
+      );
 
       const section = await this.prisma.section.findUnique({
         where: {
@@ -419,7 +418,7 @@ export class EnrollmentService {
     const sectionResults: { session: string; created: boolean }[] = [];
 
     for (const displayName of sessions) {
-      const sectionSessionKey = `${SECTION_STREAM_PREFIX[stream]}-${displayName}`;
+      const sectionSessionKey = buildSectionSessionKey(stream, displayName);
 
       const existing = await this.prisma.section.findUnique({
         where: {

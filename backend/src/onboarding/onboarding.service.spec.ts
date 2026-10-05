@@ -2,7 +2,7 @@
 /* eslint-disable @typescript-eslint/no-unsafe-call */
 /* eslint-disable @typescript-eslint/no-unsafe-argument */
 import { Test, TestingModule } from '@nestjs/testing';
-import { NotFoundException } from '@nestjs/common';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { OnboardingService } from './onboarding.service';
 import { LoggerService } from '@/logger/logger.service';
 import { PrismaService } from '@/prisma/prisma.service';
@@ -186,7 +186,7 @@ describe('OnboardingService', () => {
           startDate: new Date('2025-06-01'),
         },
         language: 'Kannada',
-        session: 'A',
+        session: 'SCI-A',
       };
 
       tx.class.findUnique.mockResolvedValue({ id: 'class-1', name: '1' });
@@ -205,6 +205,112 @@ describe('OnboardingService', () => {
       const result = await service.resolveSection(tx as any, dto);
 
       expect(result).toEqual(mockSection);
+    });
+  });
+
+  describe('section session keys', () => {
+    it('looks up the section by the stream-disambiguated key', async () => {
+      tx.class.findUnique.mockResolvedValue({ id: 'class-1', name: '1' });
+      tx.academicYear.findFirst.mockResolvedValue({
+        id: 'year-1',
+        label: '2025-2026',
+        startDate: new Date('2025-06-01'),
+      });
+      tx.section.findUnique.mockResolvedValue(null);
+
+      await expect(
+        service.resolveSection(tx as any, {
+          classYear: '1',
+          subjectCode: 'PCMB',
+          language: 'Kannada',
+          session: 'A',
+          stream: 'Commerce',
+          name: 'Test Student',
+          schoolId: 'school-1',
+        }),
+      ).rejects.toBeInstanceOf(NotFoundException);
+
+      // Enrollment stores "SCI-A"/"COM-A". Looking up the plain label "A" never
+      // matched, so a manually created student could not join an
+      // enrollment-created section at all.
+      // Captured rather than asserted through nested expect.objectContaining,
+      // which is typed `any` and trips no-unsafe-assignment.
+      const lookup = tx.section.findUnique as unknown as jest.Mock<
+        unknown,
+        [{ where: { classId_session_academicYearId: { session: string } } }]
+      >;
+      expect(
+        lookup.mock.calls[0][0].where.classId_session_academicYearId.session,
+      ).toBe('COM-A');
+    });
+  });
+
+  describe('createStudent authId integrity', () => {
+    it('never interpolates "undefined" for an unmapped combination', async () => {
+      jest.spyOn(service, 'resolveSection').mockResolvedValue({
+        id: 'section-1',
+        academicYear: { startDate: new Date('2026-06-01') },
+        session: 'SCI-A',
+      } as never);
+      tx.combination.findFirst.mockResolvedValue({
+        id: 'combo-x',
+        idCode: 'PCEB', // absent from COMBO_CODE
+        stream: 'Science',
+      });
+
+      // `COMBO_CODE` is Record<string, string>, so TS cannot prove the lookup is
+      // total. Without the guard the authId became nnpu1Sundefined26KA001 and
+      // every unmapped combination shared one id-sequence bucket.
+      await expect(
+        service.createStudent({
+          classYear: '1',
+          subjectCode: 'PCEB',
+          language: 'Kannada',
+          session: 'A',
+          stream: 'Science',
+          name: 'Test Student',
+          schoolId: 'school-1',
+        }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+
+      expect(tx.auth.create).not.toHaveBeenCalled();
+    });
+
+    it('puts the plain session label in the authId, not the stored key', async () => {
+      jest.spyOn(service, 'resolveSection').mockResolvedValue({
+        id: 'section-1',
+        academicYear: { startDate: new Date('2026-06-01') },
+        // Stored key. Enrollment passes the display name for exactly this reason.
+        session: 'SCI-A',
+      } as never);
+      tx.combination.findFirst.mockResolvedValue({
+        id: 'combo-1',
+        idCode: 'PCMB',
+        stream: 'Science',
+      });
+      tx.idSequence.upsert.mockResolvedValue({ lastValue: 1 });
+      tx.user.create.mockResolvedValue({ id: 'user-1' });
+      tx.auth.create.mockResolvedValue({});
+
+      await service.createStudent({
+        classYear: '1',
+        subjectCode: 'PCMB',
+        language: 'Kannada',
+        session: 'A',
+        stream: 'Science',
+        name: 'Test Student',
+        schoolId: 'school-1',
+      });
+
+      const authMock = tx.auth.create as unknown as jest.Mock<
+        unknown,
+        [{ data: { authId: string } }]
+      >;
+      const authArg = authMock.mock.calls[0][0];
+      // nnpu + 1 + S + B + 26 + K + A + 001
+      expect(authArg.data.authId).toBe('nnpu1SB26KA001');
+      expect(authArg.data.authId).not.toContain('SCI');
+      expect(authArg.data.authId).not.toContain('undefined');
     });
   });
 
@@ -229,7 +335,7 @@ describe('OnboardingService', () => {
         startDate: new Date('2025-06-01'),
       },
       language: 'Kannada',
-      session: 'A',
+      session: 'SCI-A',
     };
 
     beforeEach(() => {
