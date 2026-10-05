@@ -339,12 +339,23 @@ export class EnrollmentService {
 
     const tempPassword = randomBytes(4).toString('hex');
 
-    await this.prisma.auth.update({
-      where: { id: auth.id },
-      data: {
-        password: await hash(tempPassword, 10),
-        tokenVersion: { increment: 1 },
-      },
+    // Bumping `tokenVersion` only invalidates *access* tokens: jwt-auth.guard
+    // compares the embedded version against the current one. `refresh()` never
+    // compares it — it re-reads the current value and re-embeds it — so without
+    // this deleteMany an old refresh token would still mint a fresh valid pair
+    // after the password was reset. `changePassword` revokes for the same
+    // reason. Wrapped in a transaction so a failure between the two writes
+    // cannot leave a new password with the old sessions still live.
+    await this.prisma.$transaction(async (tx) => {
+      await tx.auth.update({
+        where: { id: auth.id },
+        data: {
+          password: await hash(tempPassword, 10),
+          tokenVersion: { increment: 1 },
+        },
+      });
+
+      await tx.refreshToken.deleteMany({ where: { authId: auth.authId } });
     });
 
     await this.sendCredentials(submission, auth.authId, tempPassword);

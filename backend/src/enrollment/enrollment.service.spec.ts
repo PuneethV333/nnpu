@@ -40,6 +40,7 @@ describe('EnrollmentService', () => {
     idSequence: { upsert: jest.Mock; update: jest.Mock };
     user: { create: jest.Mock };
     auth: { findFirst: jest.Mock; update: jest.Mock };
+    refreshToken: { deleteMany: jest.Mock };
     $transaction: jest.Mock;
   }
 
@@ -85,6 +86,7 @@ describe('EnrollmentService', () => {
       idSequence: { upsert: jest.fn(), update: jest.fn() },
       user: { create: jest.fn() },
       auth: { findFirst: jest.fn(), update: jest.fn() },
+      refreshToken: { deleteMany: jest.fn() },
       $transaction: jest.fn(),
     };
     mail = {
@@ -184,6 +186,10 @@ describe('EnrollmentService', () => {
         authId: 'nnpu1SB26KA001',
       });
       prisma.auth.update.mockResolvedValue({});
+      prisma.refreshToken.deleteMany.mockResolvedValue({ count: 2 });
+      prisma.$transaction.mockImplementation((cb: (tx: unknown) => unknown) =>
+        cb(prisma),
+      );
 
       const result = await service.resendCredentials('sub-1');
 
@@ -206,6 +212,57 @@ describe('EnrollmentService', () => {
       expect(mail.send).toHaveBeenCalledWith(
         expect.objectContaining({ to: 'asha@example.com' }),
       );
+    });
+
+    it('revokes every refresh token, so a password reset ends old sessions', async () => {
+      prisma.enrollmentSubmission.findUnique.mockResolvedValue({
+        ...SUBMISSION,
+        status: 'Promoted',
+        promotedUserId: 'user-1',
+      });
+      prisma.auth.findFirst.mockResolvedValue({
+        id: 'auth-1',
+        authId: 'nnpu1SB26KA001',
+      });
+      prisma.auth.update.mockResolvedValue({});
+      prisma.refreshToken.deleteMany.mockResolvedValue({ count: 2 });
+      prisma.$transaction.mockImplementation((cb: (tx: unknown) => unknown) =>
+        cb(prisma),
+      );
+
+      await service.resendCredentials('sub-1');
+
+      // Bumping tokenVersion alone is NOT enough: jwt-auth.guard compares it, so
+      // access tokens die, but refresh() never compares it and would re-mint a
+      // valid pair from the old token. The rows must actually be deleted.
+      expect(prisma.refreshToken.deleteMany).toHaveBeenCalledWith({
+        where: { authId: 'nnpu1SB26KA001' },
+      });
+    });
+
+    it('does not send credentials if the revocation fails', async () => {
+      prisma.enrollmentSubmission.findUnique.mockResolvedValue({
+        ...SUBMISSION,
+        status: 'Promoted',
+        promotedUserId: 'user-1',
+      });
+      prisma.auth.findFirst.mockResolvedValue({
+        id: 'auth-1',
+        authId: 'nnpu1SB26KA001',
+      });
+      prisma.refreshToken.deleteMany.mockRejectedValue(
+        new Error('db unavailable'),
+      );
+      prisma.$transaction.mockImplementation((cb: (tx: unknown) => unknown) =>
+        cb(prisma),
+      );
+
+      await expect(service.resendCredentials('sub-1')).rejects.toThrow(
+        'db unavailable',
+      );
+      // Transactional: the password write is rolled back rather than leaving a
+      // new password alongside still-live old sessions.
+      expect(mail.send).not.toHaveBeenCalled();
     });
 
     it('404s when the promoted student has no auth record', async () => {
@@ -234,12 +291,19 @@ describe('EnrollmentService', () => {
         authId: 'nnpu1SB26KA001',
       });
       prisma.auth.update.mockResolvedValue({});
+      prisma.refreshToken.deleteMany.mockResolvedValue({ count: 1 });
+      prisma.$transaction.mockImplementation((cb: (tx: unknown) => unknown) =>
+        cb(prisma),
+      );
 
       const result = await service.resendOrPromote('sub-1');
 
       expect(result).toEqual({ resent: true, authId: 'nnpu1SB26KA001' });
-      // Promoting again would hit the unique email and fail.
-      expect(prisma.$transaction).not.toHaveBeenCalled();
+      // Assert on the account insert, which only promoteOne performs. `$transaction`
+      // used to be a stand-in for "did not promote", but resendCredentials now
+      // uses a transaction too (to pair the password write with the revocation),
+      // so that proxy no longer distinguishes the two paths.
+      expect(prisma.user.create).not.toHaveBeenCalled();
     });
 
     it('promotes a pending submission', async () => {
