@@ -94,6 +94,34 @@ describe('OnboardingService', () => {
       schoolId: 'school-1',
     } as CreateStudentDto;
 
+    /**
+     * The same UTC-day defect as the admin dashboard: `resolveSection` picked the
+     * academic year with `new Date()`. Academic years start on a fixed date, so
+     * around local midnight that resolves to the previous calendar day. At 02:00
+     * IST on 1 June it selects the year that ended on 31 May, placing new
+     * students in the wrong academic year.
+     */
+    it('selects the academic year by school day, not by UTC day', async () => {
+      tx.class.findUnique.mockResolvedValue({ id: 'class-1', name: '1' });
+
+      // 2026-06-01 02:00 IST == 2026-05-31 20:30 UTC, inside the window.
+      const clock = new Date('2026-05-31T20:30:00.000Z');
+      jest.useFakeTimers().setSystemTime(clock);
+
+      try {
+        await service.resolveSection(tx as any, dto).catch(() => undefined);
+
+        expect(tx.academicYear.findFirst).toHaveBeenCalledWith({
+          where: {
+            startDate: { lte: new Date(Date.UTC(2026, 5, 1)) },
+            endDate: { gte: new Date(Date.UTC(2026, 5, 1)) },
+          },
+        });
+      } finally {
+        jest.useRealTimers();
+      }
+    });
+
     it('throws NotFoundException if class does not exist', async () => {
       tx.class.findUnique.mockResolvedValue(null);
 

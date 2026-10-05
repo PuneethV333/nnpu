@@ -3,6 +3,7 @@ import { PrismaService } from '@/prisma/prisma.service';
 import { RedisService } from '@/redis/redis.service';
 import { Injectable } from '@nestjs/common';
 import { AdminDashboard } from './types/dashboard.type';
+import { toDayKey, zonedToday } from '@/common/utils/date.util';
 
 @Injectable()
 export class DashboardService {
@@ -15,16 +16,19 @@ export class DashboardService {
   async getAdminDashboard(): Promise<AdminDashboard> {
     this.logger.log('[dashboard-admin]');
 
-    const cacheKey = 'dashboard:admin';
+    // The school day, not the UTC day. This file used to build "today" from
+    // `new Date()` truncated to UTC midnight, which is only correct while UTC
+    // and IST share a date. IST is UTC+5:30, so between 00:00 and 05:30 local
+    // time the UTC date is still the previous one and the dashboard rendered
+    // yesterday's attendance, calendar day and upcoming events.
+    const today = zonedToday();
+
+    // The day is part of the key so the rollover is immediate. Without it the
+    // 300s TTL would keep serving the previous school day's figures for up to
+    // five minutes after local midnight.
+    const cacheKey = `dashboard:admin:${toDayKey(today)}`;
     const cached = await this.redis.get<AdminDashboard>(cacheKey);
     if (cached) return cached;
-
-    // UTC-safe "today" — matches how @db.Date columns are stored/compared
-    // everywhere else (new Date('YYYY-MM-DD') parses as UTC midnight).
-    const now = new Date();
-    const today = new Date(
-      Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()),
-    );
 
     const [
       calendarDay,
@@ -76,7 +80,7 @@ export class DashboardService {
 
     const dashboard: AdminDashboard = {
       today: {
-        date: today.toISOString().slice(0, 10),
+        date: toDayKey(today),
         type: calendarDay?.type ?? null,
         label: calendarDay?.label ?? null,
       },

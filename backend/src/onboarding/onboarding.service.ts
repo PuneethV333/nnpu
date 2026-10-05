@@ -13,6 +13,7 @@ import { CreateAcademicYearDto } from './dto/create-academic-year.dto';
 import { CreateSectionDto } from './dto/create-section.dto';
 import * as bcrypt from 'bcrypt';
 import { COMBO_CODE, LANG_CODE, STREAM_CODE } from './helper/helper';
+import { zonedToday } from '@/common/utils/date.util';
 import { Prisma } from '@/generated/prisma';
 import { SecondLanguage } from '@/generated/prisma';
 import { CreateSectionsBulkDto } from './dto/create-sections-bulk.dto';
@@ -46,7 +47,11 @@ export class OnboardingService {
       throw new NotFoundException(`Class "${dto.classYear}" not found`);
     }
 
-    const today = new Date();
+    // `zonedToday()`, not `new Date()`: academic years start on a fixed date,
+    // so in the hours around local midnight `new Date()` is still the previous
+    // calendar day. At 02:00 IST on 1 June it resolves to 31 May and selects the
+    // academic year that just ended, putting new students in the wrong year.
+    const today = zonedToday();
     const academicYear = await tx.academicYear.findFirst({
       where: {
         startDate: { lte: today },
