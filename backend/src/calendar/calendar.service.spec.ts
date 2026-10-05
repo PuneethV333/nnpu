@@ -1,3 +1,4 @@
+import { BadRequestException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { CalendarService } from './calendar.service';
 import { PrismaService } from '@/prisma/prisma.service';
@@ -31,7 +32,11 @@ describe('CalendarService', () => {
     };
     $transaction: jest.Mock<Promise<unknown>, [unknown[]]>;
   };
-  let redis: { delPattern: jest.Mock<Promise<number>, [string]> };
+  let redis: {
+    delPattern: jest.Mock<Promise<number>, [string]>;
+    get: jest.Mock<Promise<null>, [string]>;
+    set: jest.Mock<Promise<unknown>, [string, unknown]>;
+  };
 
   const dto = (
     overrides: GenerateCalendarDto['overrides'] = [],
@@ -75,6 +80,12 @@ describe('CalendarService', () => {
       delPattern: jest
         .fn<Promise<number>, [string]>()
         .mockImplementation(() => Promise.resolve(1)),
+      get: jest
+        .fn<Promise<null>, [string]>()
+        .mockImplementation(() => Promise.resolve(null)),
+      set: jest
+        .fn<Promise<unknown>, [string, unknown]>()
+        .mockImplementation(() => Promise.resolve('OK')),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -185,6 +196,35 @@ describe('CalendarService', () => {
       await expect(
         service.overrideDay('2026-01-07', 'Holiday'),
       ).resolves.toBeDefined();
+    });
+  });
+
+  describe('getRange cache keyspace', () => {
+    it('rejects a range wider than the cap before touching Redis', async () => {
+      await expect(
+        service.getRange('2020-01-01', '2026-01-01'),
+      ).rejects.toBeInstanceOf(BadRequestException);
+
+      // A rejected range must not create a cache entry.
+      expect(redis.get).not.toHaveBeenCalled();
+      expect(prisma.academicCalendarDay.findMany).not.toHaveBeenCalled();
+    });
+
+    it('rejects an unparseable date rather than caching under it', async () => {
+      await expect(
+        service.getRange('not-a-date', 'also-not-a-date'),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(redis.get).not.toHaveBeenCalled();
+    });
+
+    it('allows a full academic year', async () => {
+      (prisma.academicCalendarDay.findMany as jest.Mock).mockResolvedValue([]);
+
+      await expect(
+        service.getRange('2026-06-01', '2027-05-31'),
+      ).resolves.toBeDefined();
+
+      expect(redis.get).toHaveBeenCalledWith('range:2026-06-01:2027-05-31');
     });
   });
 });

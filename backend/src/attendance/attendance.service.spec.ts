@@ -75,6 +75,33 @@ describe('AttendanceService', () => {
         user: { role: 'Teacher' },
       });
 
+    it.each([
+      ['undefined', undefined],
+      ['null', null],
+      ['empty string', ''],
+      ['whitespace', '   '],
+    ])(
+      'refuses a %s sectionId instead of querying without a section filter',
+      async (_label, sectionId) => {
+        asTeacher();
+
+        // Prisma drops `undefined` from a `where` clause, so before this guard
+        // `findFirst({ where: { id: undefined, OR: [...] } })` matched any
+        // section the teacher taught, passed, and the subsequent user query ran
+        // unfiltered — returning every student in the school.
+        await expect(
+          service.getRoster(
+            sectionId as unknown as string,
+            '2026-08-01',
+            'auth-1',
+          ),
+        ).rejects.toBeInstanceOf(BadRequestException);
+
+        expect(prisma.section.findFirst).not.toHaveBeenCalled();
+        expect(prisma.user.findMany).not.toHaveBeenCalled();
+      },
+    );
+
     it('rejects getRoster when the caller does not teach the section', async () => {
       asTeacher();
       (prisma.section.findFirst as jest.Mock).mockResolvedValue(null);

@@ -8,6 +8,7 @@ import { getMyAttendanceDto } from './dto/get-me.dto';
 import { RolesGuard } from '@/auth/guard/roles.guard';
 import { Roles } from '@/auth/decorators/roles.decorator';
 import { MarkAttendanceDto } from './dto/mark-attendance.dto';
+import { SectionDateQueryDto } from './dto/section-date-query.dto';
 import { Throttle } from '@nestjs/throttler';
 
 @ApiTags('attendance')
@@ -52,11 +53,14 @@ export class AttendanceController {
     summary: 'Get or create attendance roster for a section+date',
   })
   getRoster(
-    @Query('sectionId') sectionId: string,
-    @Query('date') date: string,
+    @Query() query: SectionDateQueryDto,
     @CurrentUser() user: JwtPayload,
   ) {
-    return this.attendanceService.getRoster(sectionId, date, user.authId);
+    return this.attendanceService.getRoster(
+      query.sectionId,
+      query.date,
+      user.authId,
+    );
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)
@@ -79,13 +83,12 @@ export class AttendanceController {
     summary: 'Check if attendance is marked/locked for a section+date',
   })
   getStatus(
-    @Query('sectionId') sectionId: string,
-    @Query('date') date: string,
+    @Query() query: SectionDateQueryDto,
     @CurrentUser() user: JwtPayload,
   ) {
     return this.attendanceService.getAttendanceStatus(
-      sectionId,
-      date,
+      query.sectionId,
+      query.date,
       user.authId,
     );
   }

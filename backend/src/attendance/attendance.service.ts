@@ -49,6 +49,15 @@ export class AttendanceService {
     sectionId: string,
     authId: string,
   ): Promise<string> {
+    // Prisma DROPS an `undefined` field from a `where` clause instead of
+    // matching nothing, so `where: { id: undefined, OR: [...] }` degrades into
+    // "any section I teach" — which would let the caller's own query run with
+    // no section filter and return the whole school. The DTO makes this
+    // unreachable from HTTP; this guard keeps it impossible for any other caller.
+    if (typeof sectionId !== 'string' || sectionId.trim() === '') {
+      throw new BadRequestException('sectionId is required');
+    }
+
     const auth = await this.prisma.auth.findUnique({
       where: { authId },
       select: { userId: true, user: { select: { role: true } } },

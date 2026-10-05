@@ -17,6 +17,8 @@ import { CurrentUser } from '@/auth/decorators/current-user.decorator';
 import type { JwtPayload } from '@/auth/types/jwt-payload.type';
 import { EnterMarksDto } from './dto/enter-marks.dto';
 import { ListAssessmentsQueryDto } from './dto/list-assessments-query.dto';
+import { MySubjectsQueryDto } from './dto/my-subjects-query.dto';
+import { ReportParamsDto } from './dto/report-params.dto';
 import { Throttle } from '@nestjs/throttler';
 
 @Controller('marks')
@@ -85,11 +87,14 @@ export class MarksController {
       'Get final report (theory+practical+internal) for a student+subject',
   })
   getFinalReport(
-    @Param('studentId') studentId: string,
-    @Param('subjectId') subjectId: string,
+    @Param() params: ReportParamsDto,
     @CurrentUser() user: JwtPayload,
   ) {
-    return this.marksService.getFinalReport(studentId, subjectId, user.authId);
+    return this.marksService.getFinalReport(
+      params.studentId,
+      params.subjectId,
+      user.authId,
+    );
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)
@@ -110,9 +115,9 @@ export class MarksController {
     summary: 'List subjects the current teacher teaches for a given section',
   })
   getMySubjects(
-    @Query('sectionId') sectionId: string,
+    @Query() query: MySubjectsQueryDto,
     @CurrentUser() user: JwtPayload,
   ) {
-    return this.marksService.getMySubjects(sectionId, user.authId);
+    return this.marksService.getMySubjects(query.sectionId, user.authId);
   }
 }

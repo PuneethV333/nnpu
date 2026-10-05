@@ -18,6 +18,8 @@ import { RolesGuard } from '@/auth/guard/roles.guard';
 import { Roles } from '@/auth/decorators/roles.decorator';
 import { ApiOperation } from '@nestjs/swagger';
 import { CreateFeeStructureDto } from './dto/create-fee-structure.dto';
+import { FeeStructureQueryDto } from './dto/fee-structure-query.dto';
+import { IdParamDto } from '@/common/dto/id-param.dto';
 import { UpdateFeeStructureDto } from './dto/update-fee-structure.dto';
 import { GenerateInvoicesDto } from './dto/generate-invoices.dto';
 import { HandleRazorpayWebhookDto } from './dto/handle-razorpay-webhook.dto';
@@ -47,11 +49,11 @@ export class FeesController {
   @ApiOperation({
     summary: 'Get the fee structure for a section+academic year',
   })
-  getFeeStructure(
-    @Query('sectionId') sectionId: string,
-    @Query('academicYearId') academicYearId: string,
-  ) {
-    return this.feesService.getFeeStructure(sectionId, academicYearId);
+  getFeeStructure(@Query() query: FeeStructureQueryDto) {
+    return this.feesService.getFeeStructure(
+      query.sectionId,
+      query.academicYearId,
+    );
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)
@@ -62,10 +64,10 @@ export class FeesController {
     summary: 'Update a fee structure (only before any invoices exist)',
   })
   updateFeeStructure(
-    @Param('id') id: string,
+    @Param() params: IdParamDto,
     @Body() dto: UpdateFeeStructureDto,
   ) {
-    return this.feesService.updateFeeStructure(id, dto);
+    return this.feesService.updateFeeStructure(params.id, dto);
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)

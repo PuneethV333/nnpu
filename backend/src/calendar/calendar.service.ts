@@ -5,6 +5,10 @@ import { GenerateCalendarDto } from './dto/generate-calendar.dto';
 import { DayType } from '@/generated/prisma';
 import { range } from './types/range.type';
 import { RedisService } from '@/redis/redis.service';
+import { BadRequestException } from '@nestjs/common';
+
+/** See getRange: bounds the `range:*` cache keyspace. */
+const MAX_RANGE_DAYS = 732;
 
 @Injectable()
 export class CalendarService {
@@ -77,6 +81,29 @@ export class CalendarService {
 
   async getRange(from: string, to: string) {
     this.logger.log('[get-range]');
+
+    // The cache key is built from the raw from/to pair, so every distinct pair
+    // is a distinct Redis entry. Format validation (CalendarRangeQueryDto) caps
+    // the shape of a key, but not how many there are — without this, any
+    // authenticated user could mint an entry per request and grow the keyspace
+    // without bound. Two years covers a full academic year with room to spare;
+    // the app only ever asks for a month or a year (getMonthRange/getYearRange).
+    const fromDate = new Date(from);
+    const toDate = new Date(to);
+    const spanDays = Math.round(
+      (toDate.getTime() - fromDate.getTime()) / (1000 * 60 * 60 * 24),
+    );
+
+    if (Number.isNaN(spanDays)) {
+      throw new BadRequestException('from and to must be valid dates');
+    }
+
+    if (spanDays > MAX_RANGE_DAYS) {
+      throw new BadRequestException(
+        `Range too large: ${spanDays} days (max ${MAX_RANGE_DAYS}).`,
+      );
+    }
+
     const cacheKey = `range:${from}:${to}`;
 
     const cached = await this.redis.get<range[]>(cacheKey);
