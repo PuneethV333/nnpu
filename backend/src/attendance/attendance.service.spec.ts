@@ -32,6 +32,7 @@ describe('AttendanceService', () => {
             attendance: {
               findMany: jest.fn(),
               createMany: jest.fn(),
+              updateMany: jest.fn(),
               upsert: jest.fn(),
             },
             $transaction: jest.fn(),
@@ -316,6 +317,118 @@ describe('AttendanceService', () => {
         expect(status.isLocked).toBe(!writeAllowed);
       },
     );
+  });
+
+  describe('getRoster currency', () => {
+    // Resolved per call: `service` is assigned in beforeEach, so it does not
+    // exist yet while this describe body is being evaluated.
+    const redis = () => (service as unknown as { redis: RedisService }).redis;
+
+    const prime = (date: string) => {
+      (redis().get as jest.Mock).mockResolvedValue(null);
+      (prisma.auth.findUnique as jest.Mock).mockResolvedValue({
+        userId: 'teacher-1',
+        user: { role: 'Teacher' },
+      });
+      (prisma.section.findFirst as jest.Mock).mockResolvedValue({
+        id: 'section-1',
+      });
+      (prisma.academicCalendarDay.findUnique as jest.Mock).mockResolvedValue({
+        date: new Date(date),
+        type: 'Working',
+      });
+    };
+
+    const studentRow = (id: string) => ({
+      id: `att-${id}`,
+      studentId: id,
+      sectionId: 'section-1',
+      date: new Date('2026-10-04'),
+      status: 'NotMarked',
+      markedById: null,
+      markedAt: null,
+      createdAt: new Date('2026-10-04'),
+      updatedAt: new Date('2026-10-04'),
+      student: { id, details: { name: `S ${id}`, profilePic: null } },
+    });
+
+    it("scopes the roster query to the section's current students", async () => {
+      prime('2026-10-04');
+      (prisma.user.findMany as jest.Mock).mockResolvedValue([
+        { id: 's1', details: { name: 'S1', profilePic: null } },
+      ]);
+      (prisma.attendance.findMany as jest.Mock).mockResolvedValue([
+        studentRow('s1'),
+      ]);
+
+      await service.getRoster('section-1', '2026-10-04', 'auth-1');
+
+      // Rows are seeded at 06:00, so without this a student deactivated or
+      // transferred out later still had a row here: the roster listed them and
+      // assertStudentsInSection then rejected the whole submission.
+      //
+      // Asserting the captured `where` directly rather than via
+      // expect.objectContaining: the latter is typed `any` and trips
+      // no-unsafe-assignment. Same re-typing approach as the upsert assertion.
+      const findManyMock = prisma.attendance.findMany as unknown as jest.Mock<
+        unknown,
+        [{ where: Record<string, unknown> }]
+      >;
+      expect(findManyMock.mock.calls[0][0].where).toEqual({
+        sectionId: 'section-1',
+        date: new Date('2026-10-04'),
+        student: { isActive: true, sectionId: 'section-1' },
+      });
+    });
+
+    it('re-points rows of students who transferred in after the seed', async () => {
+      prime('2026-10-04');
+      (prisma.user.findMany as jest.Mock).mockResolvedValue([
+        { id: 's1', details: { name: 'S1', profilePic: null } },
+      ]);
+      (prisma.attendance.findMany as jest.Mock).mockResolvedValue([
+        studentRow('s1'),
+      ]);
+
+      await service.getRoster('section-1', '2026-10-04', 'auth-1');
+
+      // Unique key is [studentId, date], so a transfer-in already has a row
+      // pointing at the old section and createMany skips them as a duplicate —
+      // leaving them absent from the roster while markAttendance still requires
+      // them, which blocked every submission for the section.
+      expect(prisma.attendance.updateMany).toHaveBeenCalledWith({
+        where: {
+          date: new Date('2026-10-04'),
+          studentId: { in: ['s1'] },
+          sectionId: { not: 'section-1' },
+        },
+        data: { sectionId: 'section-1' },
+      });
+    });
+
+    it('reassigns before creating, so no row is left on the old section', async () => {
+      prime('2026-10-04');
+      (prisma.user.findMany as jest.Mock).mockResolvedValue([
+        { id: 's1', details: { name: 'S1', profilePic: null } },
+      ]);
+      (prisma.attendance.findMany as jest.Mock).mockResolvedValue([
+        studentRow('s1'),
+      ]);
+
+      const calls: string[] = [];
+      (prisma.attendance.updateMany as jest.Mock).mockImplementation(() => {
+        calls.push('updateMany');
+        return Promise.resolve({ count: 1 });
+      });
+      (prisma.attendance.createMany as jest.Mock).mockImplementation(() => {
+        calls.push('createMany');
+        return Promise.resolve({ count: 0 });
+      });
+
+      await service.getRoster('section-1', '2026-10-04', 'auth-1');
+
+      expect(calls).toEqual(['updateMany', 'createMany']);
+    });
   });
 
   describe('markAttendance sentinel guard', () => {

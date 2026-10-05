@@ -298,6 +298,25 @@ export class AttendanceService {
       throw new BadRequestException('No students found in this section');
     }
 
+    const studentIds = students.map((s) => s.id);
+
+    // Re-point rows belonging to students who transferred INTO this section
+    // after the 06:00 seed. `Attendance` is unique on [studentId, date] and that
+    // key says nothing about section, so a transfer-in already has a row that
+    // still points at their old section — `createMany` below skips them as
+    // duplicates, they never appear in this section's roster, and
+    // markAttendance's "must include every active student" check then rejects
+    // every submission for this section for this date. Verified against the dev
+    // database: omittedIds was the entire section.
+    await this.prisma.attendance.updateMany({
+      where: {
+        date: dateObj,
+        studentId: { in: studentIds },
+        sectionId: { not: sectionId },
+      },
+      data: { sectionId },
+    });
+
     await this.prisma.attendance.createMany({
       data: students.map((s) => ({
         studentId: s.id,
@@ -308,7 +327,18 @@ export class AttendanceService {
     });
 
     const roster = await this.prisma.attendance.findMany({
-      where: { sectionId, date: dateObj },
+      // Scoped to the section's CURRENT students, not just rows stamped with
+      // this sectionId. Rows are created by the 06:00 seed, so a student
+      // deactivated or transferred out afterwards still had a row here — the
+      // roster showed them, markAttendance's `assertStudentsInSection` rejected
+      // them, and the teacher could not submit at all. Deactivated and
+      // transferred-away students are filtered out of the response rather than
+      // deleted, so reactivation or a transfer back is not lossy.
+      where: {
+        sectionId,
+        date: dateObj,
+        student: { isActive: true, sectionId },
+      },
       include: {
         student: {
           select: {
