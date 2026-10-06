@@ -18,6 +18,7 @@ import {
 } from './utils/edit-window.util';
 import {
   assertNoDuplicateStudents,
+  assertSectionAccess,
   assertStudentsInSection,
 } from '@/common/utils/section-students.util';
 import { Cron, CronExpression } from '@nestjs/schedule';
@@ -41,52 +42,12 @@ export class AttendanceService {
    *
    * Returns the caller's userId so callers don't re-query auth.
    */
+  /** Delegates to the shared util so fees and marks scope identically. */
   private async assertSectionAccess(
     sectionId: string,
     authId: string,
   ): Promise<string> {
-    // Prisma DROPS an `undefined` field from a `where` clause instead of
-    // matching nothing, so `where: { id: undefined, OR: [...] }` degrades into
-    // "any section I teach" — which would let the caller's own query run with
-    // no section filter and return the whole school. The DTO makes this
-    // unreachable from HTTP; this guard keeps it impossible for any other caller.
-    if (typeof sectionId !== 'string' || sectionId.trim() === '') {
-      throw new BadRequestException('sectionId is required');
-    }
-
-    const auth = await this.prisma.auth.findUnique({
-      where: { authId },
-      select: { userId: true, user: { select: { role: true } } },
-    });
-
-    if (!auth) {
-      throw new UnauthorizedException('User not found');
-    }
-
-    const userId = auth.userId;
-
-    if (auth.user.role === 'Admin') {
-      return userId;
-    }
-
-    const section = await this.prisma.section.findFirst({
-      where: {
-        id: sectionId,
-        OR: [
-          { classTeacherId: userId },
-          { subjects: { some: { teacherId: userId } } },
-        ],
-      },
-      select: { id: true },
-    });
-
-    if (!section) {
-      throw new ForbiddenException(
-        'You are not assigned to teach this section',
-      );
-    }
-
-    return userId;
+    return assertSectionAccess(this.prisma, sectionId, authId);
   }
 
   // 06:00 in the school's timezone; without it this ran at 11:30 IST on a UTC

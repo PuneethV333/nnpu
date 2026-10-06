@@ -1,7 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import {
   BadRequestException,
-  ConflictException,
   ForbiddenException,
   NotFoundException,
   ServiceUnavailableException,
@@ -47,6 +46,8 @@ describe('FeesService', () => {
   beforeEach(async () => {
     prisma = {
       auth: { findUnique: jest.fn() },
+      section: { findFirst: jest.fn() },
+      feeStructure: { findUnique: jest.fn() },
       invoice: {
         findUnique: jest.fn(),
         update: jest.fn(),
@@ -243,8 +244,63 @@ describe('FeesService', () => {
       expect(prisma.payment.updateMany).not.toHaveBeenCalled();
     });
   });
-});
 
-// Referenced so the unused-import lint does not fire on exception types that are
-// part of this suite's contract but not exercised by the current cases.
-void ConflictException;
+  describe('getFeeStructure authorization', () => {
+    it('refuses a teacher who does not teach the section', async () => {
+      const db = prisma;
+      db.auth.findUnique.mockResolvedValue({
+        userId: 'teacher-1',
+        user: { role: 'Teacher' },
+      });
+      db.section.findFirst.mockResolvedValue(null);
+
+      // Previously the method took no authId, so any teacher could read any
+      // section's fee amounts by changing sectionId.
+      await expect(
+        service.getFeeStructure('section-9', 'year-1', 'auth-1'),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+
+      expect(db.feeStructure.findUnique).not.toHaveBeenCalled();
+    });
+
+    it('allows the section class teacher', async () => {
+      const db = prisma;
+      db.auth.findUnique.mockResolvedValue({
+        userId: 'teacher-1',
+        user: { role: 'Teacher' },
+      });
+      db.section.findFirst.mockResolvedValue({ id: 'section-1' });
+      db.feeStructure.findUnique.mockResolvedValue({ id: 'fs-1' });
+
+      await expect(
+        service.getFeeStructure('section-1', 'year-1', 'auth-1'),
+      ).resolves.toEqual({ id: 'fs-1' });
+    });
+
+    it('lets an Admin through without a section lookup', async () => {
+      const db = prisma;
+      db.auth.findUnique.mockResolvedValue({
+        userId: 'admin-1',
+        user: { role: 'Admin' },
+      });
+      db.feeStructure.findUnique.mockResolvedValue({ id: 'fs-1' });
+
+      await expect(
+        service.getFeeStructure('section-1', 'year-1', 'auth-1'),
+      ).resolves.toEqual({ id: 'fs-1' });
+
+      expect(db.section.findFirst).not.toHaveBeenCalled();
+    });
+
+    it('rejects a blank sectionId before querying', async () => {
+      const db = prisma;
+
+      // Blank is the shape Prisma drops from a `where` clause entirely.
+      await expect(
+        service.getFeeStructure('   ', 'year-1', 'auth-1'),
+      ).rejects.toBeInstanceOf(BadRequestException);
+
+      expect(db.auth.findUnique).not.toHaveBeenCalled();
+    });
+  });
+});

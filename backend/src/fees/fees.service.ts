@@ -19,6 +19,7 @@ import { HandleRazorpayWebhookDto } from './dto/handle-razorpay-webhook.dto';
 import { createHmac } from 'crypto';
 import { StudentInvoice, StudentInvoices } from './type/studentInvoice.type';
 import { RazorpayWebhookEvent } from './type/razorpay-webhook.type';
+import { assertSectionAccess } from '@/common/utils/section-students.util';
 
 @Injectable()
 export class FeesService {
@@ -75,8 +76,18 @@ export class FeesService {
     });
   }
 
-  async getFeeStructure(sectionId: string, academicYearId: string) {
+  async getFeeStructure(
+    sectionId: string,
+    academicYearId: string,
+    authId: string,
+  ) {
     this.logger.log('[get-fee-structure]');
+
+    // Previously this method took no `authId` at all, so there was nothing to
+    // authorize against and `@Roles('Admin','Teacher')` at the route was the only
+    // thing standing between any teacher and any section's fee amounts. Every
+    // other teacher-facing endpoint scopes through this same helper.
+    await assertSectionAccess(this.prisma, sectionId, authId);
 
     const feeStructure = await this.prisma.feeStructure.findUnique({
       where: {

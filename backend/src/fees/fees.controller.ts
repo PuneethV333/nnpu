@@ -49,10 +49,14 @@ export class FeesController {
   @ApiOperation({
     summary: 'Get the fee structure for a section+academic year',
   })
-  getFeeStructure(@Query() query: FeeStructureQueryDto) {
+  getFeeStructure(
+    @Query() query: FeeStructureQueryDto,
+    @CurrentUser() user: JwtPayload,
+  ) {
     return this.feesService.getFeeStructure(
       query.sectionId,
       query.academicYearId,
+      user.authId,
     );
   }
 
