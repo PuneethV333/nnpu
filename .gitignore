@@ -146,3 +146,7 @@ opencode.json
 /opencode
 .opencode
 
+
+# ad-hoc source archives (local backup copies, not part of the build)
+backend/src.zip
+backend/*.zip

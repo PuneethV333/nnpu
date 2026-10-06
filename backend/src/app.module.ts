@@ -16,7 +16,6 @@ import { ScheduleModule } from '@nestjs/schedule';
 import { FirebaseModule } from './firebase/firebase.module';
 import { MarksModule } from './marks/marks.module';
 import { FeesModule } from './fees/fees.module';
-// import { ReportCardModule } from './report-card/report-card.module';
 import { OnboardingModule } from './onboarding/onboarding.module';
 import { AnnouncementModule } from './announcement/announcement.module';
 import { TimeTableModule } from './time-table/time-table.module';
@@ -93,7 +92,6 @@ import { DashboardModule } from './dashboard/dashboard.module';
     FirebaseModule,
     MarksModule,
     FeesModule,
-    // ReportCardModule,
     OnboardingModule,
     AnnouncementModule,
     TimeTableModule,
