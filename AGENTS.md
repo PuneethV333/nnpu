@@ -238,17 +238,58 @@ feature/
   loudly (correctly) on any shape drift. Update the test, don't loosen
   the assertion.
 
+## Session keys vs. session labels (do not conflate)
+
+`Section.session` is an internal storage key and `Section.name` is what
+users see. They are related but not interchangeable, and confusing the two
+causes silent cross-stream collisions rather than a thrown error.
+
+- `sectionSessionKey()` builds the stored key as `"SCI-A"` / `"COM-B"`. It
+  MUST be stream-prefixed because `Section`'s composite unique is
+  `[classId, session, academicYearId]` with no `stream` column — without the
+  prefix, Science "A" and Commerce "A" in one class would be the same row.
+- `sectionDisplayName()` builds the visible name as `"1-SCI-A"`. It is
+  derived from `name`, not from the key, so it can never drift.
+- `authIdSessionSegment()` returns the **plain** label segment (`"A"`) for
+  authIds, never the key. Auth IDs are fixed-width, so a multi-character
+  segment would shift every following digit.
+- Never construct a session value by string manipulation at a call site.
+  Use the shared helpers in `common/utils/section-session.util.ts`.
+
 ## Known open items (as of last working session)
 
-- `EnrollmentService`/onboarding's `createStudent` path passes
-  `email: ''` for manually-admin-created students — this WILL collide
-  on `PersonalDetails.email`'s `@unique` constraint for the second such
-  student. Needs a real `email` param added to `CreateStudentDto` if
-  that manual-creation path is still active (vs. fully superseded by
-  the enrollment flow for 1st PUC).
+- **Multi-school scoping is not implemented.** Only `User` carries a
+  `schoolId`. `Section`, `Attendance`, `Invoice`, `EnrollmentSubmission`,
+  `EnrollmentDrive` and `AcademicCalendarDay` have no `schoolId`, so all of
+  them are global. Any cross-school deployment today would leak data across
+  tenants. Fixing this properly needs a `schoolId` on each of those models
+  plus a migration and a backfill — it is NOT a query-level filter.
 - No admin-facing endpoint yet to edit an `EnrollmentSubmission`'s
   fields before re-promoting it (the "fix a typo" flow) — only
   re-triggering promotion on the row as-is exists so far.
 - Promotion of continuing students (1st → 2nd PUC) is an intentionally
   separate, not-yet-built flow — do not conflate with the enrollment
   (fresher-only) pipeline.
+
+### Resolved — do not re-flag these
+
+These were open at one point and are now fixed. They are listed because each
+one looks like a live bug when you read the code cold, and re-investigating
+costs a cycle:
+
+- `createStudent` no longer writes `email: ''`. The column is now
+  `email String? @unique` and the create passes `null`, because `''` is a
+  real value that collided on the unique index for the second manually
+  created student (P2002 → 500). Postgres excludes NULLs from unique
+  indexes. When adding a nullable-unique column, write `null`, never `''`.
+- The report-card Nest module is deleted, along with its `@nestjs/bullmq` /
+  `bullmq` dependencies. The `ReportCard` Prisma model and
+  `ReportCardStatus` enum remain in the schema on purpose (removing them
+  needs a migration, and the feature is parked rather than cancelled).
+  `src/marks/types/reportCard.type.ts` is NOT dead despite the name —
+  `MarksService` imports `SubjectResultDto` from it.
+- Cache reads/writes fail soft (`RedisService` swallows outages so a cache
+  miss never becomes a user-facing error), but the JWT guard uses
+  `getStrict()` so a Redis outage still yields 503 rather than silently
+  treating a revoked token as valid. Do not "simplify" the guard back onto
+  the soft path.
