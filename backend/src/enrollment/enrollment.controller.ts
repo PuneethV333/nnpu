@@ -13,7 +13,9 @@ import { JwtAuthGuard } from '@/auth/guard/jwt-auth.guard';
 import { RolesGuard } from '@/auth/guard/roles.guard';
 import { Roles } from '@/auth/decorators/roles.decorator';
 import { EnrollmentService } from './enrollment.service';
+import { PromotionService } from './promotion.service';
 import { ImportStudentsDto } from './dto/import-students.dto';
+import { PromoteTo2ndPucDto } from './dto/promote-to-2nd-puc.dto';
 import { BadRequestException } from '@nestjs/common';
 
 /** Refuses oversized uploads before the body is buffered into memory. */
@@ -24,7 +26,10 @@ const MAX_CSV_BYTES = 1024 * 1024;
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles('Admin')
 export class EnrollmentController {
-  constructor(private readonly enrollmentService: EnrollmentService) {}
+  constructor(
+    private readonly enrollmentService: EnrollmentService,
+    private readonly promotionService: PromotionService,
+  ) {}
 
   @Post('students/import')
   @UseInterceptors(
@@ -67,5 +72,17 @@ export class EnrollmentController {
       dto,
       file.buffer.toString('utf8'),
     );
+  }
+
+  @Post('promote-2nd-puc')
+  @ApiOperation({
+    summary:
+      'Move every active student in the given 1st-PUC sections into the matching 2nd-PUC section of the next academic year (admin only).',
+  })
+  // Tighter than the CSV import: this rewrites section membership for a whole
+  // cohort in one call and creates the destination sections.
+  @Throttle({ default: { limit: 5, ttl: 60000 } })
+  promoteTo2ndPuc(@Body() dto: PromoteTo2ndPucDto) {
+    return this.promotionService.promoteTo2ndPuc(dto);
   }
 }

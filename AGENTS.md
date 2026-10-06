@@ -237,8 +237,9 @@ causes silent cross-stream collisions rather than a thrown error.
 - No admin-facing endpoint yet to edit an `EnrollmentSubmission`'s
   fields before re-promoting it (the "fix a typo" flow) — only
   re-triggering promotion on the row as-is exists so far.
-- Promotion of continuing students (1st → 2nd PUC) is an intentionally
-  separate, not-yet-built flow — do not conflate it with CSV import.
+- Promotion of continuing students (1st → 2nd PUC) IS built, as
+  `POST /enrollment/promote-2nd-puc` — see below. It is a separate flow from
+  CSV import, not a variant of it.
 
 ## Student import (CSV, not Google Forms)
 
@@ -277,6 +278,35 @@ deleted (migration `20261006120000_drop_google_forms_enrollment`).
   explicit decision. It is not a secret: anyone who learns one authId can
   guess every other student's password. The email asks recipients to change
   it; that is the only control.
+
+## 1st → 2nd PUC promotion
+
+`POST /enrollment/promote-2nd-puc` — admin only, `@Throttle({ limit: 5 })`.
+Body: `sections[]`, optional `targetAcademicYearId`, optional `dryRun`.
+
+- **No per-row input.** `Section.session` already encodes stream + section
+  label, so a student in `SCI-A` goes to `SCI-A` in class 2. `Section` is
+  unique on [classId, session, academicYearId], so no two sources can ever
+  resolve to the same target.
+- **authIds are deliberately FROZEN.** `nnpu1SB26KA018` stays as-is and means
+  "joined 1st PUC in AY26" — a join record, not a description of the current
+  class. Every login keeps working across a promotion, the cohort is not
+  re-emailed, and no `idSequence` bucket is disturbed. Nothing parses an
+  authId's structure, so the frozen `1` cannot mislead code. There is a test
+  that fails if this ever starts touching `Auth`.
+- The next academic year is **derived** by shifting the source year's own
+  dates +1y, not hardcoded, so the destination inherits whatever span the
+  school uses.
+- Deactivated students are left in 1st PUC and reported with a reason.
+- The `where` clause on the move is scoped to the source section as well as
+  the id list, so a student imported into another section mid-run is not swept
+  up by a stale id list.
+- `dryRun` must not write. This was a real bug caught against a live DB: the
+  target year was resolved (and created) before the dry-run branch. Keep the
+  `allowCreate` flag.
+- **`Section.name` does not include the academic year.** Once two AYs exist,
+  `2-SCI-A` legitimately exists in both, so any UI listing sections must show
+  the academic year alongside the name or the two are indistinguishable.
 
 ### Resolved — do not re-flag these
 

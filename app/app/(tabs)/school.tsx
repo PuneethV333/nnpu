@@ -262,7 +262,7 @@ const School = () => {
                         <Pressable
                           key={section.id}
                           onPress={() => setPickedSectionId(section.id)}
-                          className="px-3 py-2 rounded-full border"
+                          className="px-3 py-2 rounded-full border flex-row items-center gap-1.5"
                           style={{
                             backgroundColor: active ? '#4F46E5' : '#FFFFFF',
                             borderColor: active ? '#4F46E5' : '#E5E7EB',
@@ -273,6 +273,17 @@ const School = () => {
                             style={{ color: active ? '#FFFFFF' : '#374151' }}
                           >
                             {section.name}
+                          </Text>
+                          {/* `Section.name` is "<class>-<session>" with no year
+                              in it, so once more than one academic year exists
+                              two sections can read "2-SCI-A". The year is what
+                              tells them apart, so it belongs next to the name
+                              rather than hidden in a detail view. */}
+                          <Text
+                            className="text-[10px]"
+                            style={{ color: active ? '#E0E7FF' : '#9CA3AF' }}
+                          >
+                            {section.academicYearLabel}
                           </Text>
                         </Pressable>
                       );
@@ -286,8 +297,8 @@ const School = () => {
                   Uploading into{' '}
                   <Text className="font-semibold text-gray-900">
                     {pickedSection.name}
-                  </Text>
-                  .
+                  </Text>{' '}
+                  ({pickedSection.academicYearLabel}).
                 </Text>
               ) : null}
 
