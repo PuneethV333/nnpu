@@ -19,6 +19,7 @@ import { EnterMarksDto } from './dto/enter-marks.dto';
 import { ListAssessmentsQueryDto } from './dto/list-assessments-query.dto';
 import { MySubjectsQueryDto } from './dto/my-subjects-query.dto';
 import { ReportParamsDto } from './dto/report-params.dto';
+import { MyMarksQueryDto } from './dto/my-marks-query.dto';
 import { Throttle } from '@nestjs/throttler';
 
 @Controller('marks')
@@ -72,11 +73,8 @@ export class MarksController {
   @ApiOperation({
     summary: 'Get my own marks (optionally filtered by subject)',
   })
-  getMyMarks(
-    @CurrentUser() user: JwtPayload,
-    @Query('subjectId') subjectId?: string,
-  ) {
-    return this.marksService.getMyMarks(user.authId, subjectId);
+  getMyMarks(@CurrentUser() user: JwtPayload, @Query() query: MyMarksQueryDto) {
+    return this.marksService.getMyMarks(user.authId, query.subjectId);
   }
 
   @UseGuards(JwtAuthGuard)

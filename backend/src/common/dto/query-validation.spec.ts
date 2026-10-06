@@ -6,6 +6,10 @@ import { OverrideDayParamDto } from '@/calendar/dto/override-day-param.dto';
 import { FeeStructureQueryDto } from '@/fees/dto/fee-structure-query.dto';
 import { MySubjectsQueryDto } from '@/marks/dto/my-subjects-query.dto';
 import { ReportParamsDto } from '@/marks/dto/report-params.dto';
+import { IdParamDto } from './id-param.dto';
+import { StudentIdParamDto } from './student-id-param.dto';
+import { SubmissionStatusQueryDto } from '@/enrollment/dto/submission-status-query.dto';
+import { MyMarksQueryDto } from '@/marks/dto/my-marks-query.dto';
 import {
   MarkAttendanceDto,
   MARKABLE_ATTENDANCE_STATUSES,
@@ -172,6 +176,63 @@ describe('query DTO validation', () => {
       // would break the cron seeding path and the status:{not:'NotMarked'} reads.
       expect(AttendanceStatus.NotMarked).toBe('NotMarked');
       expect(Object.values(AttendanceStatus)).toContain('NotMarked');
+    });
+  });
+
+  /**
+   * The last of the unvalidated params. These were safe in practice because each
+   * service guarded its own not-found case, but the controller accepted any
+   * string — including a missing one, which is the shape Prisma drops from a
+   * `where` clause entirely.
+   */
+  describe('remaining param/query DTOs', () => {
+    it('IdParamDto rejects a missing or blank id', async () => {
+      expect(await errorsFor(IdParamDto, {})).toContain('id');
+      expect(await errorsFor(IdParamDto, { id: '   ' })).toContain('id');
+    });
+
+    it('StudentIdParamDto rejects a missing or blank studentId', async () => {
+      expect(await errorsFor(StudentIdParamDto, {})).toContain('studentId');
+      expect(await errorsFor(StudentIdParamDto, { studentId: '' })).toContain(
+        'studentId',
+      );
+    });
+
+    it('StudentIdParamDto rejects an over-long id', async () => {
+      expect(
+        await errorsFor(StudentIdParamDto, { studentId: 'a'.repeat(500) }),
+      ).toContain('studentId');
+    });
+
+    it('SubmissionStatusQueryDto accepts every real status', async () => {
+      for (const status of ['Pending', 'Promoted', 'Rejected']) {
+        expect(await errorsFor(SubmissionStatusQueryDto, { status })).toEqual(
+          [],
+        );
+      }
+    });
+
+    it('SubmissionStatusQueryDto rejects an invented status', async () => {
+      // Replaces an inline Object.values check in the controller, which was
+      // correct but undocumented in the OpenAPI spec.
+      expect(
+        await errorsFor(SubmissionStatusQueryDto, { status: 'Deleted' }),
+      ).toContain('status');
+    });
+
+    it('SubmissionStatusQueryDto allows omitting status entirely', async () => {
+      expect(await errorsFor(SubmissionStatusQueryDto, {})).toEqual([]);
+    });
+
+    it('MyMarksQueryDto allows omitting subjectId', async () => {
+      expect(await errorsFor(MyMarksQueryDto, {})).toEqual([]);
+    });
+
+    it('MyMarksQueryDto rejects a blank subjectId', async () => {
+      // Optional-but-present must still be valid; optional-and-blank must not.
+      expect(await errorsFor(MyMarksQueryDto, { subjectId: '  ' })).toContain(
+        'subjectId',
+      );
     });
   });
 });

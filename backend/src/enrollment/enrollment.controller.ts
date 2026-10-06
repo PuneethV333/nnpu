@@ -1,5 +1,4 @@
 import {
-  BadRequestException,
   Body,
   Controller,
   Get,
@@ -13,8 +12,9 @@ import { JwtAuthGuard } from '@/auth/guard/jwt-auth.guard';
 import { RolesGuard } from '@/auth/guard/roles.guard';
 import { Roles } from '@/auth/decorators/roles.decorator';
 import { CreateDriveDto } from './dto/create-drive.dto';
+import { IdParamDto } from '@/common/dto/id-param.dto';
+import { SubmissionStatusQueryDto } from './dto/submission-status-query.dto';
 import { ApiOperation } from '@nestjs/swagger';
-import { EnrollmentSubmissionStatus } from '@/generated/prisma';
 
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles('Admin')
@@ -36,36 +36,27 @@ export class EnrollmentController {
   }
 
   @Get('drive/:id')
-  getDrive(@Param('id') id: string) {
-    return this.enrollmentService.getDrive(id);
+  getDrive(@Param() params: IdParamDto) {
+    return this.enrollmentService.getDrive(params.id);
   }
 
   @Get('drive/:id/submissions')
-  listSubmissions(@Param('id') id: string, @Query('status') status?: string) {
-    if (
-      status &&
-      !Object.values(EnrollmentSubmissionStatus).includes(
-        status as EnrollmentSubmissionStatus,
-      )
-    ) {
-      throw new BadRequestException(`Invalid status: ${status}`);
-    }
-
-    return this.enrollmentService.listSubmissions(
-      id,
-      status as EnrollmentSubmissionStatus | undefined,
-    );
+  listSubmissions(
+    @Param() params: IdParamDto,
+    @Query() query: SubmissionStatusQueryDto,
+  ) {
+    return this.enrollmentService.listSubmissions(params.id, query.status);
   }
 
   @Post('submission/:id/promote')
   @ApiOperation({ summary: 'Manually promote/resend one submission' })
-  resendOrPromote(@Param('id') id: string) {
-    return this.enrollmentService.resendOrPromote(id);
+  resendOrPromote(@Param() params: IdParamDto) {
+    return this.enrollmentService.resendOrPromote(params.id);
   }
 
   @Post('drive/:id/promote-all')
   @ApiOperation({ summary: 'Manually trigger promotion for an entire drive' })
-  triggerPromotion(@Param('id') id: string) {
-    return this.enrollmentService.triggerPromotionForDrive(id);
+  triggerPromotion(@Param() params: IdParamDto) {
+    return this.enrollmentService.triggerPromotionForDrive(params.id);
   }
 }

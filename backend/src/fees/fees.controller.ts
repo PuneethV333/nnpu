@@ -20,6 +20,7 @@ import { ApiOperation } from '@nestjs/swagger';
 import { CreateFeeStructureDto } from './dto/create-fee-structure.dto';
 import { FeeStructureQueryDto } from './dto/fee-structure-query.dto';
 import { IdParamDto } from '@/common/dto/id-param.dto';
+import { StudentIdParamDto } from '@/common/dto/student-id-param.dto';
 import { UpdateFeeStructureDto } from './dto/update-fee-structure.dto';
 import { GenerateInvoicesDto } from './dto/generate-invoices.dto';
 import { HandleRazorpayWebhookDto } from './dto/handle-razorpay-webhook.dto';
@@ -97,15 +98,15 @@ export class FeesController {
   @Roles('Admin')
   @Get('invoices/student/:studentId')
   @ApiOperation({ summary: 'Get invoices for a specific student (Admin only)' })
-  getStudentInvoices(@Param('studentId') studentId: string) {
-    return this.feesService.getInvoicesForStudent(studentId);
+  getStudentInvoices(@Param() params: StudentIdParamDto) {
+    return this.feesService.getInvoicesForStudent(params.studentId);
   }
 
   @UseGuards(JwtAuthGuard)
   @Get('invoices/:id')
   @ApiOperation({ summary: 'Get a single invoice by id (owner or Admin only)' })
-  getInvoice(@Param('id') id: string, @CurrentUser() user: JwtPayload) {
-    return this.feesService.getInvoice(id, user.authId);
+  getInvoice(@Param() params: IdParamDto, @CurrentUser() user: JwtPayload) {
+    return this.feesService.getInvoice(params.id, user.authId);
   }
 
   @UseGuards(JwtAuthGuard)
@@ -113,8 +114,11 @@ export class FeesController {
   @ApiOperation({
     summary: 'Create a Razorpay order for the pending amount on an invoice',
   })
-  createPaymentOrder(@Param('id') id: string, @CurrentUser() user: JwtPayload) {
-    return this.feesService.createPaymentOrder(id, user.authId);
+  createPaymentOrder(
+    @Param() params: IdParamDto,
+    @CurrentUser() user: JwtPayload,
+  ) {
+    return this.feesService.createPaymentOrder(params.id, user.authId);
   }
 
   @UseGuards(JwtAuthGuard)

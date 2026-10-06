@@ -13,6 +13,7 @@ import { JwtAuthGuard } from '@/auth/guard/jwt-auth.guard';
 import { CurrentUser } from '@/auth/decorators/current-user.decorator';
 import type { JwtPayload } from '@/auth/types/jwt-payload.type';
 import { RegisterDeviceDto } from './dto/register-device.dto';
+import { IdParamDto } from '@/common/dto/id-param.dto';
 import { Throttle } from '@nestjs/throttler';
 
 @ApiTags('notification')
@@ -30,8 +31,8 @@ export class NotificationController {
 
   @Patch(':id/read')
   @Throttle({ default: { limit: 60, ttl: 60000 } })
-  markRead(@Param('id') id: string, @CurrentUser() user: JwtPayload) {
-    return this.notificationService.markAsRead(id, user.authId);
+  markRead(@Param() params: IdParamDto, @CurrentUser() user: JwtPayload) {
+    return this.notificationService.markAsRead(params.id, user.authId);
   }
 
   @Post('register-device')
