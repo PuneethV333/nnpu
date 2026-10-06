@@ -77,7 +77,9 @@ export class JwtAuthGuard implements CanActivate {
     let isBlacklisted: unknown;
 
     try {
-      isBlacklisted = await this.redis.get(`blacklist:${jti}`);
+      // getStrict, not get: `get` now swallows a Redis outage and returns null,
+      // which here would read as "not revoked" and fail OPEN.
+      isBlacklisted = await this.redis.getStrict(`blacklist:${jti}`);
     } catch (err) {
       // Failing closed here would log out the whole school on a Redis blip,
       // but failing open would honour revoked tokens, so neither is silent:

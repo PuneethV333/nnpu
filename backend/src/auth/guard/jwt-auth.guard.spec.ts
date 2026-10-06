@@ -20,7 +20,7 @@ const PAYLOAD = {
 describe('JwtAuthGuard', () => {
   let guard: JwtAuthGuard;
   let jwt: { verifyAsync: jest.Mock };
-  let redis: { get: jest.Mock };
+  let redis: { get: jest.Mock; getStrict: jest.Mock };
   let prisma: { auth: { findUnique: jest.Mock } };
 
   const ctx = (authorization?: string): ExecutionContext =>
@@ -34,7 +34,12 @@ describe('JwtAuthGuard', () => {
 
   beforeEach(async () => {
     jwt = { verifyAsync: jest.fn().mockResolvedValue(PAYLOAD) };
-    redis = { get: jest.fn().mockResolvedValue(null) };
+    redis = {
+      get: jest.fn().mockResolvedValue(null),
+      // The guard uses getStrict so a Redis outage stays distinguishable from
+      // "not revoked"; these tests must exercise that path.
+      getStrict: jest.fn().mockResolvedValue(null),
+    };
     prisma = {
       auth: {
         findUnique: jest.fn().mockResolvedValue({
@@ -87,7 +92,7 @@ describe('JwtAuthGuard', () => {
     });
 
     it('surfaces revocation with its own message, not the generic one', async () => {
-      redis.get.mockResolvedValue(true);
+      redis.getStrict.mockResolvedValue(true);
 
       // This used to be swallowed by the catch-all and reported as
       // "Invalid or expired token".
@@ -123,7 +128,7 @@ describe('JwtAuthGuard', () => {
     it('returns 503, not 401, when Redis is unreachable', async () => {
       // Regression: a Redis error hit the catch-all and became
       // "Invalid or expired token", logging out every user during an outage.
-      redis.get.mockRejectedValue(new Error('ECONNREFUSED'));
+      redis.getStrict.mockRejectedValue(new Error('ECONNREFUSED'));
 
       await expect(
         guard.canActivate(ctx('Bearer valid-token')),
@@ -131,7 +136,7 @@ describe('JwtAuthGuard', () => {
     });
 
     it('does not treat a Redis outage as a revoked token', async () => {
-      redis.get.mockRejectedValue(new Error('ECONNREFUSED'));
+      redis.getStrict.mockRejectedValue(new Error('ECONNREFUSED'));
 
       await expect(
         guard.canActivate(ctx('Bearer valid-token')),
