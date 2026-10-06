@@ -1,62 +1,71 @@
 import {
   Body,
   Controller,
-  Get,
-  Param,
   Post,
-  Query,
+  UploadedFile,
   UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
-import { EnrollmentService } from './enrollment.service';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { ApiBody, ApiConsumes, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
 import { JwtAuthGuard } from '@/auth/guard/jwt-auth.guard';
 import { RolesGuard } from '@/auth/guard/roles.guard';
 import { Roles } from '@/auth/decorators/roles.decorator';
-import { CreateDriveDto } from './dto/create-drive.dto';
-import { IdParamDto } from '@/common/dto/id-param.dto';
-import { SubmissionStatusQueryDto } from './dto/submission-status-query.dto';
-import { ApiOperation } from '@nestjs/swagger';
+import { EnrollmentService } from './enrollment.service';
+import { ImportStudentsDto } from './dto/import-students.dto';
+import { BadRequestException } from '@nestjs/common';
 
+/** Refuses oversized uploads before the body is buffered into memory. */
+const MAX_CSV_BYTES = 1024 * 1024;
+
+@ApiTags('enrollment')
+@Controller('enrollment')
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles('Admin')
-@Controller('enrollment')
 export class EnrollmentController {
   constructor(private readonly enrollmentService: EnrollmentService) {}
 
-  @Post('drive')
+  @Post('students/import')
+  @UseInterceptors(
+    FileInterceptor('file', { limits: { fileSize: MAX_CSV_BYTES } }),
+  )
+  @ApiConsumes('multipart/form-data')
   @ApiOperation({
-    summary: 'Create a new enrollment drive (generates a Google Form)',
+    summary:
+      'Import a CSV roster into one session (admin only). Creates a portal account per row and emails the login ID.',
   })
-  createDrive(@Body() dto: CreateDriveDto) {
-    return this.enrollmentService.createDrive(dto);
-  }
-
-  @Get('drive')
-  listDrives() {
-    return this.enrollmentService.listDrives();
-  }
-
-  @Get('drive/:id')
-  getDrive(@Param() params: IdParamDto) {
-    return this.enrollmentService.getDrive(params.id);
-  }
-
-  @Get('drive/:id/submissions')
-  listSubmissions(
-    @Param() params: IdParamDto,
-    @Query() query: SubmissionStatusQueryDto,
+  @ApiBody({
+    schema: {
+      type: 'object',
+      required: ['file', 'sectionId', 'year'],
+      properties: {
+        file: { type: 'string', format: 'binary' },
+        sectionId: { type: 'string', example: 'clx1234567890abcdefghijk' },
+        year: { type: 'integer', example: 2026 },
+      },
+    },
+  })
+  // Tight because one call can create an entire cohort of accounts. Sized for
+  // a handful of bulk uploads in a session, not a per-file loop.
+  @Throttle({ default: { limit: 10, ttl: 60000 } })
+  async importStudents(
+    @UploadedFile() file: Express.Multer.File | undefined,
+    @Body() dto: ImportStudentsDto,
   ) {
-    return this.enrollmentService.listSubmissions(params.id, query.status);
-  }
+    if (!file) {
+      throw new BadRequestException(
+        'No CSV file was uploaded (field name: file)',
+      );
+    }
 
-  @Post('submission/:id/promote')
-  @ApiOperation({ summary: 'Manually promote/resend one submission' })
-  resendOrPromote(@Param() params: IdParamDto) {
-    return this.enrollmentService.resendOrPromote(params.id);
-  }
+    if (!file.buffer?.length) {
+      throw new BadRequestException('The uploaded CSV file is empty');
+    }
 
-  @Post('drive/:id/promote-all')
-  @ApiOperation({ summary: 'Manually trigger promotion for an entire drive' })
-  triggerPromotion(@Param() params: IdParamDto) {
-    return this.enrollmentService.triggerPromotionForDrive(params.id);
+    return this.enrollmentService.importStudentsFromCsv(
+      dto,
+      file.buffer.toString('utf8'),
+    );
   }
 }

@@ -94,13 +94,8 @@ const Admin = () => {
               </View>
 
               <View style={styles.dashCard}>
-                <Text style={styles.dashCardTitle}>Pending Enrollments</Text>
-                <Text style={styles.dashCardValue}>{dashboard.pendingEnrollments}</Text>
-              </View>
-
-              <View style={styles.dashCard}>
-                <Text style={styles.dashCardTitle}>Open Enrollment Drives</Text>
-                <Text style={styles.dashCardValue}>{dashboard.openDrives}</Text>
+                <Text style={styles.dashCardTitle}>Teachers</Text>
+                <Text style={styles.dashCardValue}>{dashboard.totalTeachers}</Text>
               </View>
 
               <View style={styles.dashCard}>

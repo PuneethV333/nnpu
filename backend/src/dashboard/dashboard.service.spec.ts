@@ -21,8 +21,6 @@ describe('DashboardService', () => {
             academicCalendarDay: { findUnique: jest.fn(), findMany: jest.fn() },
             user: { count: jest.fn() },
             attendance: { count: jest.fn() },
-            enrollmentSubmission: { count: jest.fn() },
-            enrollmentDrive: { count: jest.fn() },
             invoice: { count: jest.fn(), aggregate: jest.fn() },
           },
         },
@@ -61,8 +59,6 @@ describe('DashboardService', () => {
   const primeAggregates = () => {
     (prisma.user.count as jest.Mock).mockResolvedValue(0);
     (prisma.attendance.count as jest.Mock).mockResolvedValue(0);
-    (prisma.enrollmentSubmission.count as jest.Mock).mockResolvedValue(0);
-    (prisma.enrollmentDrive.count as jest.Mock).mockResolvedValue(0);
     (prisma.invoice.count as jest.Mock).mockResolvedValue(0);
     (prisma.invoice.aggregate as jest.Mock).mockResolvedValue({
       _sum: { totalAmount: 0, paidAmount: 0 },
@@ -153,10 +149,14 @@ describe('DashboardService', () => {
       type: 'Working',
       label: null,
     });
-    (prisma.user.count as jest.Mock).mockResolvedValue(100);
+    // Students and teachers are both `user.count`, distinguished only by the
+    // `role` filter. Mocking by value alone would make both resolve to the same
+    // number and the teacher assertion below would pass for the wrong reason.
+    (prisma.user.count as jest.Mock).mockImplementation(
+      ({ where }: { where?: { role?: string } }) =>
+        Promise.resolve(where?.role === 'Teacher' ? 6 : 100),
+    );
     (prisma.attendance.count as jest.Mock).mockResolvedValue(80);
-    (prisma.enrollmentSubmission.count as jest.Mock).mockResolvedValue(5);
-    (prisma.enrollmentDrive.count as jest.Mock).mockResolvedValue(2);
     (prisma.invoice.count as jest.Mock).mockResolvedValue(3);
     (prisma.invoice.aggregate as jest.Mock).mockResolvedValue({
       _sum: { totalAmount: 10000, paidAmount: 2000 },
@@ -173,8 +173,7 @@ describe('DashboardService', () => {
       marked: 80,
       percentage: 80,
     });
-    expect(result.pendingEnrollments).toBe(5);
-    expect(result.openDrives).toBe(2);
+    expect(result.totalTeachers).toBe(6);
     expect(result.fees).toEqual({ pendingInvoices: 3, amountPending: 8000 });
     expect(result.upcomingEvents).toHaveLength(1);
     expect(result.upcomingEvents[0].type).toBe('Holiday');
@@ -189,8 +188,6 @@ describe('DashboardService', () => {
     });
     (prisma.user.count as jest.Mock).mockResolvedValue(0);
     (prisma.attendance.count as jest.Mock).mockResolvedValue(0);
-    (prisma.enrollmentSubmission.count as jest.Mock).mockResolvedValue(0);
-    (prisma.enrollmentDrive.count as jest.Mock).mockResolvedValue(0);
     (prisma.invoice.count as jest.Mock).mockResolvedValue(0);
     (prisma.invoice.aggregate as jest.Mock).mockResolvedValue({
       _sum: { totalAmount: null, paidAmount: null },

@@ -1,72 +1,31 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useAuth } from './useAuth';
-import {
-  createDrive,
-  listDrives,
-  getDrive,
-  listSubmissions,
-  promoteSubmission,
-  promoteAll,
-} from '../api/enrollment';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { importStudents } from '../api/enrollment';
+import type { ImportStudentsBody } from '../types/enrollment';
 
-export const useCreateDrive = () => {
+export interface ImportStudentsResult {
+  created: { name: string; email: string; authId: string }[];
+  skipped: { line: number; name: string; reason: string }[];
+  emailed: number;
+  emailFailed: number;
+}
+
+/**
+ * Uploads a roster CSV into one session.
+ *
+ * Admin-only on the server (`@Roles('Admin')`), and every `/enrollment/*` route
+ * already is, so there is no role gate to add here — unlike the old drive
+ * queries, which were gated on `role === 'Admin'` to avoid firing requests
+ * that could only ever 403.
+ */
+export const useImportStudents = () => {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationKey: ['enrollment', 'create-drive'],
-    mutationFn: createDrive,
+    mutationKey: ['enrollment', 'import-students'],
+    mutationFn: (body: ImportStudentsBody) => importStudents(body),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['enrollment', 'drives'] });
-    },
-  });
-};
-
-// Every /enrollment/* route on the controller is `@Roles('Admin')`, so gate
-// these on role as well as auth — otherwise a Student/Teacher session fires
-// requests that can only ever 403.
-export const useListDrives = () => {
-  const { isAuthenticated, role } = useAuth();
-  return useQuery({
-    queryKey: ['enrollment', 'drives'],
-    queryFn: listDrives,
-    enabled: isAuthenticated && role === 'Admin',
-  });
-};
-
-export const useGetDrive = (id: string) => {
-  const { isAuthenticated, role } = useAuth();
-  return useQuery({
-    queryKey: ['enrollment', 'drive', id],
-    queryFn: () => getDrive(id),
-    enabled: isAuthenticated && role === 'Admin' && !!id,
-  });
-};
-
-export const useListSubmissions = (driveId: string, status?: string) => {
-  const { isAuthenticated, role } = useAuth();
-  return useQuery({
-    queryKey: ['enrollment', 'submissions', driveId, status],
-    queryFn: () => listSubmissions(driveId, status),
-    enabled: isAuthenticated && role === 'Admin' && !!driveId,
-  });
-};
-
-export const usePromoteSubmission = () => {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationKey: ['enrollment', 'promote'],
-    mutationFn: promoteSubmission,
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['enrollment'] });
-    },
-  });
-};
-
-export const usePromoteAll = () => {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationKey: ['enrollment', 'promote-all'],
-    mutationFn: promoteAll,
-    onSuccess: () => {
+      // The import creates User rows, so both of these change.
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+      queryClient.invalidateQueries({ queryKey: ['sections'] });
       queryClient.invalidateQueries({ queryKey: ['enrollment'] });
     },
   });

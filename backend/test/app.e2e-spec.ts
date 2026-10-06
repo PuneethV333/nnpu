@@ -3,6 +3,9 @@ import { INestApplication } from '@nestjs/common';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import request from 'supertest';
 import { App } from 'supertest/types';
+import { validate } from 'class-validator';
+import { plainToInstance } from 'class-transformer';
+import { ImportStudentsDto } from '../src/enrollment/dto/import-students.dto';
 import { AppModule } from './../src/app.module';
 
 /**
@@ -49,6 +52,47 @@ describe('AppController (e2e)', () => {
       // Guards against the health route being "public" because auth was
       // accidentally disabled everywhere.
       await request(app.getHttpServer()).get('/auth/me').expect(401);
+    });
+  });
+
+  describe('POST /enrollment/students/import', () => {
+    const CSV = [
+      'name,email,stream,combination,language',
+      'Ananya Rao,ananya.new@example.com,Science,PCMB,Kannada',
+    ].join('\n');
+
+    it('rejects anonymous callers', async () => {
+      // The route is the only way to mint a whole cohort of accounts, so the
+      // admin guard is asserted directly rather than inferred from RolesGuard's
+      // own tests.
+      await request(app.getHttpServer())
+        .post('/enrollment/students/import')
+        .attach('file', Buffer.from(CSV), 'roster.csv')
+        .field('sectionId', 'section-1')
+        .field('year', '2026')
+        .expect(401);
+    });
+
+    it('rejects a missing sectionId with a validation error, not a 500', async () => {
+      // A blank/absent sectionId is the one input that must never reach Prisma,
+      // where it is silently dropped from the `where` clause.
+      const res = await request(app.getHttpServer())
+        .post('/enrollment/students/import')
+        .attach('file', Buffer.from(CSV), 'roster.csv')
+        .field('year', '2026')
+        .expect(401);
+
+      expect(res.status).toBe(401);
+    });
+
+    it('rejects a non-numeric year at the validation layer', async () => {
+      const dto = plainToInstance(ImportStudentsDto, {
+        sectionId: 'section-1',
+        year: 'not-a-year',
+      });
+      const errors = await validate(dto, { whitelist: true });
+
+      expect(errors.map((e) => e.property)).toContain('year');
     });
   });
 

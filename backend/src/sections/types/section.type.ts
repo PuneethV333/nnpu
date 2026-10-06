@@ -6,6 +6,7 @@ export const sectionSchema = z.object({
   session: z.string(),
   className: z.string(),
   academicYearLabel: z.string(),
+  academicYearStart: z.number(),
   isClassTeacher: z.boolean(),
 });
 

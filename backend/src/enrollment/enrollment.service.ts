@@ -1,581 +1,348 @@
 import {
+  BadRequestException,
   Injectable,
   NotFoundException,
-  BadRequestException,
-  ServiceUnavailableException,
 } from '@nestjs/common';
+import { hash } from 'bcrypt';
+import { Prisma, SecondLanguage, Stream } from '@/generated/prisma';
 import { PrismaService } from '@/prisma/prisma.service';
 import { LoggerService } from '@/logger/logger.service';
-import { GoogleFormsService } from '@/google/google-forms.service';
 import { MailService } from '@/mail/mail.service';
-import { CreateDriveDto } from './dto/create-drive.dto';
-import { hash } from 'bcrypt';
-import { randomBytes } from 'crypto';
 import {
-  EnrollmentSubmissionStatus,
-  Prisma,
-  Stream,
-  User,
-} from '@/generated/prisma';
-import type { forms_v1 } from 'googleapis';
-import { getDriveReturnType } from './types/enrollment.types';
-import { COMBO_CODE, LANG_CODE, STREAM_CODE } from '@/onboarding/helper/helper';
+  COMBO_CODE,
+  LANG_CODE,
+  STREAM_CODE,
+  extractPuYear,
+} from '@/onboarding/helper/helper';
 import {
+  SECTION_STREAM_PREFIX,
   authIdSessionSegment,
-  sectionName,
-  sectionSessionKey as buildSectionSessionKey,
 } from '@/common/utils/section-session.util';
+import { ImportStudentsDto } from './dto/import-students.dto';
+import {
+  parseStudentCsv,
+  type StudentCsvRow,
+  type StudentCsvRowError,
+} from './csv/parse-student-csv';
+
+/**
+ * The default password handed to every imported student.
+ *
+ * Requested, and shared across the whole cohort. Worth stating plainly: this
+ * is not a secret. Anyone who learns one student's authId can sign in as any
+ * other student in the same combination by guessing `nnpu123`. The credential
+ * email asks every recipient to change it, which is the only control here.
+ */
+const DEFAULT_PASSWORD = 'nnpu123';
+
+export interface ImportedStudent {
+  name: string;
+  email: string;
+  authId: string;
+}
+
+export interface ImportStudentsResult {
+  /** Rows that produced an account. */
+  created: ImportedStudent[];
+  /** Rows rejected before any write. */
+  skipped: StudentCsvRowError[];
+  /** How many of `created` actually received their email. */
+  emailed: number;
+  /** How many accounts exist but whose email did not send. */
+  emailFailed: number;
+}
 
 @Injectable()
 export class EnrollmentService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly logger: LoggerService,
-    private readonly formsService: GoogleFormsService,
     private readonly mail: MailService,
   ) {}
 
-  async createDrive(dto: CreateDriveDto) {
-    this.logger.log('[create-drive]');
-
-    const academicYear = await this.prisma.academicYear.findUnique({
-      where: { id: dto.academicYearId },
-    });
-
-    if (!academicYear) {
-      throw new NotFoundException('Academic year not found');
-    }
-
-    const classRecord = await this.prisma.class.findUnique({
-      where: { name: '1' },
-    });
-
-    if (!classRecord) {
-      throw new NotFoundException('Class "1" (1st PUC) not found');
-    }
-
-    const byStream = dto.sessions.reduce<Record<Stream, string[]>>(
-      (acc, entry) => {
-        acc[entry.stream].push(entry.name);
-        return acc;
-      },
-      {
-        Science: [],
-        Commerce: [],
-      },
-    );
-
-    const streamsToProcess = (['Science', 'Commerce'] as const).filter(
-      (stream) => byStream[stream].length > 0,
-    );
-
-    const results = await Promise.all(
-      streamsToProcess.map((stream) =>
-        this.createStreamDrive(
-          stream,
-          byStream[stream],
-          academicYear,
-          classRecord.id,
-          // The name, not a hardcoded "1". Enrollment is PU1-only today, but the
-          // function already takes a classId and so looks general; passing the
-          // name makes a class-2 section impossible to mislabel.
-          classRecord.name,
-          dto.closesAt,
-        ),
-      ),
-    );
-
-    return Object.fromEntries(
-      streamsToProcess.map((stream, index) => [
-        stream.toLowerCase(),
-        results[index],
-      ]),
-    );
-  }
-
-  async listDrives() {
-    return this.prisma.enrollmentDrive.findMany({
-      orderBy: { createdAt: 'desc' },
-    });
-  }
-
-  async getDrive(driveId: string): Promise<getDriveReturnType> {
-    const drive = await this.prisma.enrollmentDrive.findUnique({
-      where: { id: driveId },
-      include: {
-        submissions: { orderBy: { createdAt: 'desc' } },
-      },
-    });
-    if (!drive) throw new NotFoundException('Drive not found');
-
-    const result: getDriveReturnType = {
-      id: drive.id,
-      academicYearId: drive.academicYearId,
-      stream: drive.stream,
-      status: drive.status,
-      opensAt: drive.opensAt,
-      closesAt: drive.closesAt,
-      submissions: drive.submissions.map((submission) => ({
-        id: submission.id,
-        name: submission.name,
-        email: submission.email,
-        stream: submission.stream,
-        session: submission.session,
-        language: submission.language,
-        submittedAt: submission.submittedAt,
-        status: submission.status,
-      })),
-    };
-
-    return result;
-  }
-
-  async listSubmissions(driveId: string, status?: EnrollmentSubmissionStatus) {
-    return this.prisma.enrollmentSubmission.findMany({
-      where: { driveId, ...(status ? { status } : {}) },
-      orderBy: { createdAt: 'asc' },
-    });
-  }
-
-  async promoteOne(submissionId: string) {
-    // findUniqueOrThrow would surface a bad id in the URL as a 500. This is a
-    // client mistake, so it is a 404.
-    const submission = await this.prisma.enrollmentSubmission.findUnique({
-      where: { id: submissionId },
-    });
-
-    if (!submission) {
-      throw new NotFoundException('Submission not found');
-    }
-
-    const claim = await this.prisma.enrollmentSubmission.updateMany({
-      where: { id: submissionId, status: { not: 'Promoted' } },
-      data: { status: 'Promoted' },
-    });
-
-    if (claim.count === 0) {
-      throw new BadRequestException(
-        'This submission has already been promoted',
-      );
-    }
-
-    // Assigned inside the try, consumed after it.
-    let created: { newUser: User; authId: string; tempPassword: string };
-
-    try {
-      const drive = await this.prisma.enrollmentDrive.findUniqueOrThrow({
-        where: { id: submission.driveId },
-      });
-
-      const academicYear = await this.prisma.academicYear.findUniqueOrThrow({
-        where: { id: drive.academicYearId },
-      });
-
-      const classRecord = await this.prisma.class.findUniqueOrThrow({
-        where: { name: '1' },
-      });
-
-      const sectionSessionKey = buildSectionSessionKey(
-        submission.stream,
-        submission.session,
-      );
-
-      const section = await this.prisma.section.findUnique({
-        where: {
-          classId_session_academicYearId: {
-            classId: classRecord.id,
-            session: sectionSessionKey,
-            academicYearId: drive.academicYearId,
-          },
-        },
-      });
-
-      if (!section) {
-        throw new BadRequestException(
-          `No matching section for ${submission.stream} session ${submission.session} in this academic year`,
-        );
-      }
-
-      if (!submission.combinationId) {
-        throw new BadRequestException(
-          'Submission is missing a combination — cannot generate authId',
-        );
-      }
-      const combination = await this.prisma.combination.findUniqueOrThrow({
-        where: { id: submission.combinationId },
-      });
-
-      if (!submission.language) {
-        throw new BadRequestException(
-          'Submission is missing a second language — cannot generate authId',
-        );
-      }
-
-      const tempPassword = randomBytes(4).toString('hex');
-      const hashedPassword = await hash(tempPassword, 10);
-
-      const user = await this.prisma.$transaction(async (tx) => {
-        // authId generation (including the idSequence increment) happens
-        // INSIDE this transaction — if user/auth creation fails below, the
-        // whole transaction (including the sequence bump) rolls back
-        // together, so no serial number is ever silently burned.
-        const authId = await this.generateAuthId(tx, {
-          puYear: '1', // enrollment is always 1st PUC freshers
-          stream: submission.stream,
-          comboIdCode: combination.idCode,
-          joinYear: academicYear.startDate.getFullYear(),
-          language: submission.language as 'Kannada' | 'Hindi' | 'Sanskrit',
-          session: submission.session, // plain display name ("A"), not sectionSessionKey ("SCI-A")
-        });
-
-        const newUser = await tx.user.create({
-          data: {
-            role: 'Student',
-            sectionId: section.id,
-            combinationId: submission.combinationId,
-            language: submission.language,
-            details: {
-              create: {
-                name: submission.name,
-                email: submission.email,
-                profilePic: '',
-              },
-            },
-            auth: {
-              create: { authId, password: hashedPassword },
-            },
-          },
-        });
-
-        await tx.enrollmentSubmission.update({
-          where: { id: submissionId },
-          data: { promotedUserId: newUser.id },
-        });
-
-        return { newUser, authId, tempPassword };
-      });
-
-      created = user;
-    } catch (err) {
-      // Only a failure of the *creation transaction* makes this submission
-      // retryable. It resets status to Pending so it can be picked up again.
-      //
-      // It used to wrap the email send in the same try, which meant a mail
-      // provider hiccup reset the status while the User and Auth rows stayed
-      // committed. Every retry then died on P2002 (PersonalDetails.email is
-      // unique), so the student existed with credentials nobody had received
-      // and could not be re-promoted.
-      await this.prisma.enrollmentSubmission.update({
-        where: { id: submissionId },
-        data: { status: 'Pending' },
-      });
-      throw err;
-    }
-
-    // The account exists from here on, so this must stay outside the catch.
-    await this.sendCredentials(
-      submission,
-      created.authId,
-      created.tempPassword,
-    );
-
-    return created.newUser;
-  }
-
   /**
-   * Delivers login credentials for an account that already exists.
+   * Imports a CSV roster into one section.
    *
-   * A failure here is a delivery failure, not a creation failure: the
-   * submission stays Promoted and the operator retries via
-   * `resendOrPromote`. Signalling 503 rather than a generic 500 makes that
-   * distinction visible to the client.
-   */
-  private async sendCredentials(
-    submission: { name: string; email: string },
-    authId: string,
-    tempPassword: string,
-  ): Promise<void> {
-    try {
-      await this.mail.send({
-        to: submission.email,
-        subject: 'Your School Portal Login',
-        body: `Hi ${submission.name},\n\nYour login details:\nAuth ID: ${authId}\nTemporary Password: ${tempPassword}\n\nPlease log in and change your password.`,
-      });
-    } catch (err) {
-      this.logger.error(
-        `[enrollment] account created for ${submission.email} but the credentials email failed: ${String(err)}`,
-      );
-      throw new ServiceUnavailableException(
-        'Account was created but the credentials email could not be sent. Use resend to deliver them.',
-      );
-    }
-  }
-
-  /**
-   * Re-issues credentials for an already-promoted submission.
+   * The section is the unit of truth: it supplies the class (and so the PU year
+   * digit in the authId), the stream (and so the section's `SCI-`/`COM-`
+   * prefix), and the academic year (and so the join-year digits). A row cannot
+   * choose any of those, which is deliberate — a student row that named its own
+   * class or year would let one bad file scatter a cohort across sections.
    *
-   * Resets the temporary password rather than reusing it, and bumps
-   * `tokenVersion` so any session established with the old password stops
-   * validating. Note the old password is only recoverable from the earlier
-   * email, so a fresh one is generated instead.
+   * All-or-nothing: any valid row that fails to write aborts the whole import
+   * and restores every row already written. A half-imported section is worse
+   * than a failed one, because the operator has no way to tell which students
+   * exist and which do not, and re-running would collide on
+   * `PersonalDetails.email` for the ones that landed.
    */
-  async resendCredentials(submissionId: string) {
-    const submission = await this.prisma.enrollmentSubmission.findUnique({
-      where: { id: submissionId },
-    });
+  async importStudentsFromCsv(
+    dto: ImportStudentsDto,
+    fileContent: string,
+  ): Promise<ImportStudentsResult> {
+    const section = await this.resolveTargetSection(dto);
 
-    if (!submission) {
-      throw new NotFoundException('Submission not found');
-    }
+    const { rows, errors } = parseStudentCsv(fileContent);
 
-    if (submission.status !== 'Promoted' || !submission.promotedUserId) {
+    if (rows.length === 0) {
       throw new BadRequestException(
-        'Only a promoted submission has credentials to resend',
+        `No usable rows in the CSV. ${errors.length} row(s) rejected: ${describeErrors(errors)}`,
       );
     }
 
-    const auth = await this.prisma.auth.findFirst({
-      where: { userId: submission.promotedUserId },
+    const sectionStream = this.sectionStream(section.session);
+
+    // Combination is per-stream in the schema (`@@unique([stream, idCode])`).
+    //
+    // The lookup is scoped to the *section's* stream, so a row claiming the
+    // other stream resolves its combination against the wrong table — a
+    // Commerce row in a `SCI-A` section would look up PCMB (a Science combo),
+    // find it, and be written as a Science student in the Science section. The
+    // row's own stream column is therefore checked against the section before
+    // anything else, so the operator is told which row went to the wrong
+    // session instead of finding out after the import.
+    const combinations = await this.prisma.combination.findMany({
+      where: { stream: sectionStream },
     });
 
-    if (!auth) {
-      throw new NotFoundException(
-        'No auth record found for the promoted student',
-      );
-    }
+    const combinationByCode = new Map(
+      combinations.map((c) => [c.idCode.toUpperCase(), c]),
+    );
 
-    const tempPassword = randomBytes(4).toString('hex');
+    // One bcrypt hash reused for every student. Hashing the same password once
+    // per row would cost a full bcrypt round-trip per student on a CPU already
+    // chosen for being small.
+    const hashedPassword = await hash(DEFAULT_PASSWORD, 10);
+    const puYear = extractPuYear(section.class.name);
+    const joinYear = section.academicYear.startDate.getFullYear();
+    const sessionCode = authIdSessionSegment(section.session);
 
-    // Bumping `tokenVersion` only invalidates *access* tokens: jwt-auth.guard
-    // compares the embedded version against the current one. `refresh()` never
-    // compares it — it re-reads the current value and re-embeds it — so without
-    // this deleteMany an old refresh token would still mint a fresh valid pair
-    // after the password was reset. `changePassword` revokes for the same
-    // reason. Wrapped in a transaction so a failure between the two writes
-    // cannot leave a new password with the old sessions still live.
-    await this.prisma.$transaction(async (tx) => {
-      await tx.auth.update({
-        where: { id: auth.id },
-        data: {
-          password: await hash(tempPassword, 10),
-          tokenVersion: { increment: 1 },
-        },
-      });
+    const importable: Array<{
+      row: StudentCsvRow;
+      combinationId: string;
+    }> = [];
+    const skipped: StudentCsvRowError[] = [...errors];
 
-      await tx.refreshToken.deleteMany({ where: { authId: auth.authId } });
-    });
-
-    await this.sendCredentials(submission, auth.authId, tempPassword);
-
-    return { resent: true, authId: auth.authId };
-  }
-
-  async resendOrPromote(submissionId: string) {
-    const submission = await this.prisma.enrollmentSubmission.findUnique({
-      where: { id: submissionId },
-    });
-
-    if (!submission) {
-      throw new NotFoundException('Submission not found');
-    }
-
-    // Already promoted means the account exists — promoting again would fail on
-    // the unique email. This method previously delegated straight to
-    // promoteOne(), so "resend" could never actually resend.
-    if (submission.status === 'Promoted' && submission.promotedUserId) {
-      return this.resendCredentials(submissionId);
-    }
-
-    return this.promoteOne(submissionId);
-  }
-
-  async triggerPromotionForDrive(driveId: string) {
-    const pending = await this.prisma.enrollmentSubmission.findMany({
-      where: { driveId, status: 'Pending' },
-    });
-
-    let promoted = 0;
-    let failed = 0;
-    const errors: { submissionId: string; error: string }[] = [];
-
-    for (const submission of pending) {
-      try {
-        await this.promoteOne(submission.id);
-        promoted++;
-      } catch (err) {
-        failed++;
-        errors.push({ submissionId: submission.id, error: String(err) });
-      }
-    }
-
-    await this.prisma.enrollmentDrive.update({
-      where: { id: driveId },
-      data: { status: 'Processed' },
-    });
-
-    return { promoted, failed, errors };
-  }
-
-  private async createStreamDrive(
-    stream: 'Science' | 'Commerce',
-    sessions: string[],
-    academicYear: { id: string; label: string },
-    classId: string,
-    className: string,
-    closesAt: string,
-  ) {
-    const sectionResults: { session: string; created: boolean }[] = [];
-
-    for (const displayName of sessions) {
-      const sectionSessionKey = buildSectionSessionKey(stream, displayName);
-
-      const existing = await this.prisma.section.findUnique({
-        where: {
-          classId_session_academicYearId: {
-            classId,
-            session: sectionSessionKey,
-            academicYearId: academicYear.id,
-          },
-        },
-      });
-
-      if (existing) {
-        sectionResults.push({ session: displayName, created: false });
+    for (const row of rows) {
+      if (row.stream !== sectionStream) {
+        skipped.push({
+          line: row.line,
+          name: row.name,
+          reason: `stream is ${row.stream} but the target section is ${sectionStream}. Upload this row to the matching session.`,
+        });
         continue;
       }
 
-      await this.prisma.section.create({
-        data: {
-          name: sectionName(className, sectionSessionKey),
-          classId,
-          session: sectionSessionKey,
-          academicYearId: academicYear.id,
-        },
-      });
-      sectionResults.push({ session: displayName, created: true });
+      const combination = combinationByCode.get(row.combinationCode);
+      if (!combination) {
+        skipped.push({
+          line: row.line,
+          name: row.name,
+          reason:
+            row.combinationCode in COMBO_CODE
+              ? `combination "${row.combinationCode}" belongs to the other stream, not ${row.stream}`
+              : `combination "${row.combinationCode}" does not exist for ${row.stream}`,
+        });
+        continue;
+      }
+      importable.push({ row, combinationId: combination.id });
     }
 
-    const combinations = await this.prisma.combination.findMany({
-      where: { stream },
-    });
+    if (importable.length === 0) {
+      throw new BadRequestException(
+        `Every row in the CSV was rejected. ${describeErrors(skipped)}`,
+      );
+    }
 
-    const form = await this.formsService.createForm(
-      `${stream} Enrollment - ${academicYear.label}`,
+    // Guard against a re-upload of the same file: `PersonalDetails.email` is
+    // unique, so without this the whole import aborts on a P2002 that names
+    // only one of the offending rows.
+    const emails = importable.map((i) => i.row.email);
+    const alreadyExists = await this.prisma.personalDetails.findMany({
+      where: { email: { in: emails } },
+      select: { email: true },
+    });
+    if (alreadyExists.length > 0) {
+      const found = alreadyExists.map((e) => e.email).join(', ');
+      throw new BadRequestException(
+        `These emails already have a portal account: ${found}. Remove them from the CSV.`,
+      );
+    }
+
+    // Fixed for every row in this import: they are all properties of the
+    // section, not of the student. Passed as a flat object because `writeStudents`
+    // should not have to know that.
+    const created = await this.writeStudents(
+      importable,
+      section.id,
+      { puYear, joinYear, sessionCode },
+      hashedPassword,
     );
 
-    const requests: forms_v1.Schema$Request[] = [
-      this.textQuestion('Full Name'),
-      this.textQuestion('Email Address'),
-      this.choiceQuestion('Session', sessions),
-      this.choiceQuestion(
-        'Combination',
-        combinations.map((c) => c.name),
-      ),
-      this.choiceQuestion('Second Language', ['Kannada', 'Hindi', 'Sanskrit']),
-    ];
+    // Accounts exist from here on. A mail failure must NOT undo them, or the
+    // operator has no way to recover the credentials — so it is reported in the
+    // result rather than thrown.
+    const mailResult = await this.sendCredentialEmails(created);
 
-    const batchResult = await this.formsService.addQuestions(
-      form.formId!,
-      requests,
+    this.logger.log(
+      `[import-students] section=${section.id} created=${created.length} emailed=${mailResult.sent} emailFailed=${mailResult.failed} skipped=${skipped.length}`,
     );
-    const itemIds = this.extractItemIds(batchResult, [
-      'name',
-      'email',
-      'session',
-      'combination',
-      'language',
-    ]);
-
-    const drive = await this.prisma.enrollmentDrive.create({
-      data: {
-        academicYearId: academicYear.id,
-        stream,
-        formId: form.formId!,
-        opensAt: new Date(),
-        closesAt: new Date(closesAt),
-        status: 'Open',
-        questionMap: itemIds,
-      },
-    });
 
     return {
-      drive,
-      sectionsCreated: sectionResults,
-      responderUri: form.responderUri,
+      created,
+      skipped,
+      emailed: mailResult.sent,
+      emailFailed: mailResult.failed,
     };
   }
 
-  private textQuestion(title: string): forms_v1.Schema$Request {
-    return {
-      createItem: {
-        item: {
-          title,
-          questionItem: { question: { required: true, textQuestion: {} } },
-        },
-        location: { index: 0 },
-      },
-    };
+  /**
+   * Resolves the target section and checks it against the `year` the admin
+   * supplied.
+   *
+   * `Section` is unique on [classId, session, academicYearId], so the same
+   * session name recurs every year and the id alone is not enough for a human
+   * to be sure which one they picked. The `year` is therefore treated as an
+   * assertion to be checked, not as a filter: it can only ever agree or
+   * disagree, and a disagreement stops the import.
+   */
+  private async resolveTargetSection(dto: ImportStudentsDto) {
+    const section = await this.prisma.section.findUnique({
+      where: { id: dto.sectionId },
+      include: { class: true, academicYear: true },
+    });
+
+    if (!section) {
+      throw new NotFoundException(
+        `Section ${dto.sectionId} not found. Create the session before importing students into it.`,
+      );
+    }
+
+    const sectionYear = section.academicYear.startDate.getFullYear();
+    if (sectionYear !== dto.year) {
+      throw new BadRequestException(
+        `Year mismatch: that section belongs to academic year ${section.academicYear.label} (starting ${sectionYear}), but ${dto.year} was supplied.`,
+      );
+    }
+
+    return section;
   }
 
-  private choiceQuestion(
-    title: string,
-    options: string[],
-  ): forms_v1.Schema$Request {
-    return {
-      createItem: {
-        item: {
-          title,
-          questionItem: {
-            question: {
-              required: true,
-              choiceQuestion: {
-                type: 'DROP_DOWN',
-                options: options.map((value) => ({ value })),
+  /** The `Stream` a stored session key belongs to: "COM-B" -> "Commerce". */
+  private sectionStream(sessionKey: string): Stream {
+    const prefix = sessionKey.split('-')[0]?.toUpperCase();
+    const match = (
+      Object.entries(SECTION_STREAM_PREFIX) as [Stream, string][]
+    ).find(([, value]) => value === prefix);
+
+    if (!match) {
+      throw new BadRequestException(
+        `Section session "${sessionKey}" is not stream-prefixed, so its stream cannot be determined. Expected a value like SCI-A or COM-B.`,
+      );
+    }
+
+    return match[0];
+  }
+
+  private async writeStudents(
+    importable: { row: StudentCsvRow; combinationId: string }[],
+    sectionId: string,
+    ctx: { puYear: string; joinYear: number; sessionCode: string },
+    hashedPassword: string,
+  ): Promise<ImportedStudent[]> {
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        const created: ImportedStudent[] = [];
+
+        for (const entry of importable) {
+          const { row } = entry;
+
+          // authId generation (including the sequence bump) happens inside the
+          // transaction, so a later row's failure rolls back the sequence
+          // increments too. No serial number is ever silently burned.
+          const authId = await this.generateAuthId(tx, {
+            puYear: ctx.puYear,
+            stream: row.stream,
+            comboIdCode: row.combinationCode,
+            joinYear: ctx.joinYear,
+            language: row.language,
+            sessionCode: ctx.sessionCode,
+          });
+
+          await tx.user.create({
+            data: {
+              role: 'Student',
+              sectionId,
+              combinationId: entry.combinationId,
+              language: row.language,
+              details: {
+                create: {
+                  name: row.name,
+                  email: row.email,
+                  profilePic: '',
+                },
+              },
+              auth: {
+                create: { authId, password: hashedPassword },
               },
             },
-          },
-        },
-        location: { index: 0 },
-      },
-    };
+          });
+
+          created.push({ name: row.name, email: row.email, authId });
+        }
+
+        return created;
+      });
+    } catch (err) {
+      this.logger.error(
+        `[import-students] import aborted, no students were created: ${String(err)}`,
+      );
+      throw new BadRequestException(
+        `Import failed and nothing was saved: ${errorMessage(err)}. Fix the file and upload it again.`,
+      );
+    }
   }
 
-  private extractItemIds(
-    batchResult: { data: forms_v1.Schema$BatchUpdateFormResponse },
-    order: string[],
-  ): Record<string, string> {
-    const replies = batchResult.data.replies ?? [];
-    const map: Record<string, string> = {};
+  private async sendCredentialEmails(
+    students: ImportedStudent[],
+  ): Promise<{ sent: number; failed: number }> {
+    const inputs = students.map((student) => ({
+      to: student.email,
+      subject: 'Your NNPU portal login details',
+      body: [
+        `Hi ${student.name},`,
+        '',
+        'Welcome to NNPU. Your student portal account is now active.',
+        '',
+        `Login ID: ${student.authId}`,
+        `Password: ${DEFAULT_PASSWORD}`,
+        '',
+        'Please change your password after your first login and do not share these details with anyone.',
+        '',
+        '— NNPU',
+      ].join('\n'),
+    }));
 
-    replies.forEach((reply, idx) => {
-      const itemId = reply.createItem?.itemId;
-      if (itemId && order[idx]) {
-        map[order[idx]] = itemId;
-      }
-    });
-
-    return map;
+    // sendBulk already swallows per-recipient failures and delays between sends
+    // to stay under SMTP rate limits, which is exactly the behaviour needed
+    // when a single request fans out to an entire cohort.
+    return this.mail.sendBulk(inputs);
   }
 
   private async generateAuthId(
     tx: Prisma.TransactionClient,
     params: {
       puYear: string;
-      stream: 'Science' | 'Commerce';
+      stream: Stream;
       comboIdCode: string;
       joinYear: number;
-      language: 'Kannada' | 'Hindi' | 'Sanskrit';
-      session: string;
+      language: SecondLanguage;
+      sessionCode: string;
     },
   ): Promise<string> {
     const streamCode = STREAM_CODE[params.stream];
     const comboCode = COMBO_CODE[params.comboIdCode];
     const joinYear2 = params.joinYear.toString().slice(-2);
     const langCode = LANG_CODE[params.language];
-    // Same helper OnboardingService uses, so both id-building paths agree on the
-    // segment's width. Previously this trusted a caller-supplied value while the
-    // other path derived it from Section.session.
-    const sessionCode = authIdSessionSegment(params.session);
 
     if (!comboCode) {
       throw new BadRequestException(
@@ -583,7 +350,7 @@ export class EnrollmentService {
       );
     }
 
-    const bucketKey = `nnpu-${params.puYear}-${streamCode}-${comboCode}-${joinYear2}-${langCode}-${sessionCode}`;
+    const bucketKey = `nnpu-${params.puYear}-${streamCode}-${comboCode}-${joinYear2}-${langCode}-${params.sessionCode}`;
 
     const seq = await tx.idSequence.upsert({
       where: { id: bucketKey },
@@ -593,6 +360,15 @@ export class EnrollmentService {
 
     const serial = String(seq.lastValue).padStart(3, '0');
 
-    return `nnpu${params.puYear}${streamCode}${comboCode}${joinYear2}${langCode}${sessionCode}${serial}`;
+    return `nnpu${params.puYear}${streamCode}${comboCode}${joinYear2}${langCode}${params.sessionCode}${serial}`;
   }
 }
+
+const describeErrors = (errors: StudentCsvRowError[]): string =>
+  errors
+    .slice(0, 10)
+    .map((e) => `line ${e.line} (${e.name}): ${e.reason}`)
+    .join('; ') + (errors.length > 10 ? ` (+${errors.length - 10} more)` : '');
+
+const errorMessage = (err: unknown): string =>
+  err instanceof Error ? err.message : String(err);

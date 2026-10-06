@@ -12,8 +12,7 @@ export const adminDashboardSchema = z.object({
     marked: z.number(),
     percentage: z.number(),
   }),
-  pendingEnrollments: z.number(),
-  openDrives: z.number(),
+  totalTeachers: z.number(),
   fees: z.object({
     pendingInvoices: z.number(),
     amountPending: z.number(),

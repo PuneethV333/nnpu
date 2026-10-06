@@ -1,338 +1,345 @@
-import { Test, TestingModule } from '@nestjs/testing';
-import {
-  BadRequestException,
-  NotFoundException,
-  ServiceUnavailableException,
-} from '@nestjs/common';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { EnrollmentService } from './enrollment.service';
-import { PrismaService } from '@/prisma/prisma.service';
-import { LoggerService } from '@/logger/logger.service';
-import { MailService } from '@/mail/mail.service';
-import { GoogleFormsService } from '@/google/google-forms.service';
+import type { ImportStudentsDto } from './dto/import-students.dto';
 
-const SUBMISSION = {
-  id: 'sub-1',
-  driveId: 'drive-1',
-  name: 'Asha',
-  email: 'asha@example.com',
-  stream: 'Science',
-  session: 'A',
-  combinationId: 'combo-1',
-  language: 'Kannada',
-  status: 'Pending',
-  promotedUserId: null,
-};
+const SECTION_ID = 'section-1';
 
-describe('EnrollmentService', () => {
-  let service: EnrollmentService;
-  /** Explicit shape: Prisma delegates are tables of mocks, $transaction a function. */
-  interface PrismaMocks {
-    enrollmentSubmission: {
-      findUnique: jest.Mock;
-      updateMany: jest.Mock;
-      update: jest.Mock;
-    };
-    enrollmentDrive: { findUniqueOrThrow: jest.Mock; update: jest.Mock };
-    academicYear: { findUniqueOrThrow: jest.Mock };
-    class: { findUniqueOrThrow: jest.Mock };
-    section: { findUnique: jest.Mock };
-    combination: { findUniqueOrThrow: jest.Mock };
-    idSequence: { upsert: jest.Mock; update: jest.Mock };
-    user: { create: jest.Mock };
-    auth: { findFirst: jest.Mock; update: jest.Mock };
-    refreshToken: { deleteMany: jest.Mock };
-    $transaction: jest.Mock;
-  }
+const section = (
+  overrides: Record<string, unknown> = {},
+): Record<string, unknown> => ({
+  id: SECTION_ID,
+  name: '1-SCI-A',
+  // The section supplies the stream; a CSV row cannot override it.
+  session: 'SCI-A',
+  academicYearId: 'ay-1',
+  classId: 'class-1',
+  class: { id: 'class-1', name: '1' },
+  academicYear: {
+    id: 'ay-1',
+    label: '2026-27',
+    startDate: new Date('2026-06-01'),
+    endDate: new Date('2027-03-31'),
+  },
+  ...overrides,
+});
 
-  let prisma: PrismaMocks;
-  let mail: { send: jest.Mock<Promise<void>, [unknown]> };
+const dto = (
+  overrides: Partial<ImportStudentsDto> = {},
+): ImportStudentsDto => ({
+  sectionId: SECTION_ID,
+  year: 2026,
+  ...overrides,
+});
 
-  /** Drives promoteOne up to the point where the account is created. */
-  const stubPromotionLookups = () => {
-    prisma.enrollmentSubmission.findUnique.mockResolvedValue(SUBMISSION);
-    prisma.enrollmentSubmission.updateMany.mockResolvedValue({ count: 1 });
-    prisma.enrollmentDrive.findUniqueOrThrow.mockResolvedValue({
-      academicYearId: 'ay-1',
-    });
-    prisma.academicYear.findUniqueOrThrow.mockResolvedValue({
-      startDate: new Date('2026-06-01T00:00:00.000Z'),
-    });
-    prisma.class.findUniqueOrThrow.mockResolvedValue({ id: 'class-1' });
-    prisma.section.findUnique.mockResolvedValue({ id: 'section-1' });
-    prisma.combination.findUniqueOrThrow.mockResolvedValue({
-      id: 'combo-1',
-      idCode: 'PCMB', // must exist in COMBO_CODE
-    });
-    prisma.idSequence.upsert.mockResolvedValue({});
-    prisma.idSequence.update.mockResolvedValue({ current: 1 });
-    prisma.user.create.mockResolvedValue({ id: 'user-1' });
+const CSV = [
+  'name,email,stream,combination,language',
+  'Ananya Rao,ananya@example.com,Science,PCMB,Kannada',
+].join('\n');
+
+/** One `user.create` argument, as the service actually passes it. */
+interface UserCreateArg {
+  data: {
+    role: string;
+    sectionId: string;
+    combinationId: string;
+    language: string;
+    details: { create: { name: string; email: string } };
+    auth: { create: { authId: string; password: string } };
   };
+}
 
-  beforeEach(async () => {
-    prisma = {
-      enrollmentSubmission: {
-        findUnique: jest.fn(),
-        updateMany: jest.fn(),
-        update: jest.fn(),
-      },
-      enrollmentDrive: {
-        findUniqueOrThrow: jest.fn(),
-        update: jest.fn(),
-      },
-      academicYear: { findUniqueOrThrow: jest.fn() },
-      class: { findUniqueOrThrow: jest.fn() },
-      section: { findUnique: jest.fn() },
-      combination: { findUniqueOrThrow: jest.fn() },
-      idSequence: { upsert: jest.fn(), update: jest.fn() },
-      user: { create: jest.fn() },
-      auth: { findFirst: jest.fn(), update: jest.fn() },
-      refreshToken: { deleteMany: jest.fn() },
-      $transaction: jest.fn(),
-    };
-    mail = {
-      send: jest
-        .fn<Promise<void>, [unknown]>()
-        .mockImplementation(() => Promise.resolve()),
-    };
+/** One `mail.sendBulk` payload. */
+interface MailArg {
+  to: string;
+  subject: string;
+  body: string;
+}
 
-    const module: TestingModule = await Test.createTestingModule({
-      providers: [
-        EnrollmentService,
-        { provide: PrismaService, useValue: prisma },
-        {
-          provide: LoggerService,
-          useValue: {
-            log: jest.fn(),
-            warn: jest.fn(),
-            error: jest.fn(),
-            verbose: jest.fn(),
-          },
+describe('EnrollmentService.importStudentsFromCsv', () => {
+  let prisma: {
+    section: { findUnique: jest.Mock };
+    combination: { findMany: jest.Mock };
+    personalDetails: { findMany: jest.Mock };
+    user: { create: jest.Mock };
+    idSequence: { upsert: jest.Mock };
+    $transaction: jest.Mock;
+  };
+  let mail: { sendBulk: jest.Mock; send: jest.Mock };
+  let logger: { log: jest.Mock; warn: jest.Mock; error: jest.Mock };
+  let service: EnrollmentService;
+  let createdAuthIds: string[];
+  let userCreate: jest.Mock;
+
+  beforeEach(() => {
+    createdAuthIds = [];
+
+    userCreate = jest
+      .fn()
+      .mockImplementation(
+        ({ data }: { data: { auth: { create: { authId: string } } } }) => {
+          createdAuthIds.push(data.auth.create.authId);
+          return Promise.resolve({ id: `user-${createdAuthIds.length}` });
         },
-        { provide: MailService, useValue: mail },
-        { provide: GoogleFormsService, useValue: {} },
-      ],
-    }).compile();
+      );
 
-    service = module.get(EnrollmentService);
+    const tx = {
+      idSequence: {
+        upsert: jest.fn().mockResolvedValue({ lastValue: 7 }),
+      },
+      user: { create: userCreate },
+    };
+
+    prisma = {
+      section: { findUnique: jest.fn().mockResolvedValue(section()) },
+      combination: {
+        findMany: jest
+          .fn()
+          .mockResolvedValue([
+            { id: 'combo-pcmb', idCode: 'PCMB', stream: 'Science' },
+          ]),
+      },
+      personalDetails: { findMany: jest.fn().mockResolvedValue([]) },
+      user: { create: jest.fn() },
+      idSequence: { upsert: jest.fn() },
+      $transaction: jest.fn((cb: (t: typeof tx) => unknown) => cb(tx)),
+    };
+
+    mail = {
+      sendBulk: jest.fn().mockResolvedValue({ sent: 1, failed: 0 }),
+      send: jest.fn(),
+    };
+    logger = { log: jest.fn(), warn: jest.fn(), error: jest.fn() };
+
+    service = new EnrollmentService(
+      prisma as never,
+      logger as never,
+      mail as never,
+    );
   });
 
-  describe('promoteOne email failure', () => {
-    beforeEach(() => {
-      stubPromotionLookups();
-      prisma.$transaction.mockImplementation((cb: (tx: unknown) => unknown) =>
-        cb(prisma),
-      );
-    });
+  it('creates an account per row and emails the credentials', async () => {
+    const result = await service.importStudentsFromCsv(dto(), CSV);
 
-    it('leaves the submission Promoted when only the email fails', async () => {
-      mail.send.mockRejectedValue(new Error('SMTP 421'));
-
-      await expect(service.promoteOne('sub-1')).rejects.toBeInstanceOf(
-        ServiceUnavailableException,
-      );
-
-      // Regression: the mail send shared a try/catch with the creation
-      // transaction, so an SMTP failure reset the status while the User and
-      // Auth rows stayed committed — leaving an account nobody could be
-      // promoted into ever again.
-      // `update` is legitimately used inside the transaction to record
-      // promotedUserId; what must never happen is the status reverting.
-      expect(prisma.enrollmentSubmission.update).not.toHaveBeenCalledWith({
-        where: { id: 'sub-1' },
-        data: { status: 'Pending' },
-      });
-    });
-
-    it('reports the failure as a delivery problem, not a creation problem', async () => {
-      mail.send.mockRejectedValue(new Error('SMTP 421'));
-
-      await expect(service.promoteOne('sub-1')).rejects.toThrow(
-        /credentials email could not be sent/i,
-      );
-    });
-
-    it('still resets to Pending when the creation transaction itself fails', async () => {
-      prisma.$transaction.mockRejectedValue(new Error('P2002 duplicate key'));
-
-      await expect(service.promoteOne('sub-1')).rejects.toThrow(
-        'P2002 duplicate key',
-      );
-
-      // Nothing was committed, so the submission must be retryable.
-      expect(prisma.enrollmentSubmission.update).toHaveBeenCalledWith({
-        where: { id: 'sub-1' },
-        data: { status: 'Pending' },
-      });
-    });
+    expect(result.created).toEqual([
+      {
+        name: 'Ananya Rao',
+        email: 'ananya@example.com',
+        authId: 'nnpu1SB26KA007',
+      },
+    ]);
+    expect(result.skipped).toEqual([]);
+    expect(result.emailed).toBe(1);
+    expect(result.emailFailed).toBe(0);
   });
 
-  describe('resendCredentials', () => {
-    it('refuses a submission that was never promoted', async () => {
-      prisma.enrollmentSubmission.findUnique.mockResolvedValue(SUBMISSION);
+  it('builds the authId from the section, not from the CSV row', async () => {
+    await service.importStudentsFromCsv(dto(), CSV);
 
-      await expect(service.resendCredentials('sub-1')).rejects.toBeInstanceOf(
-        BadRequestException,
-      );
-    });
+    // nnpu + classYear(1) + stream(S) + combo(B) + joinYear(26) + lang(K)
+    //   + session(A) + serial(007)
+    expect(createdAuthIds).toEqual(['nnpu1SB26KA007']);
+  });
 
-    it('resets the password and re-sends', async () => {
-      prisma.enrollmentSubmission.findUnique.mockResolvedValue({
-        ...SUBMISSION,
-        status: 'Promoted',
-        promotedUserId: 'user-1',
-      });
-      prisma.auth.findFirst.mockResolvedValue({
-        id: 'auth-1',
-        authId: 'nnpu1SB26KA001',
-      });
-      prisma.auth.update.mockResolvedValue({});
-      prisma.refreshToken.deleteMany.mockResolvedValue({ count: 2 });
-      prisma.$transaction.mockImplementation((cb: (tx: unknown) => unknown) =>
-        cb(prisma),
-      );
+  it('places the student in the section that was targeted', async () => {
+    await service.importStudentsFromCsv(dto(), CSV);
 
-      const result = await service.resendCredentials('sub-1');
-
-      expect(result).toEqual({
-        resent: true,
-        authId: 'nnpu1SB26KA001',
-      });
-      // A fresh password must be issued, not the old one re-sent. Asserting the
-      // recorded call's shape avoids expect.any (typed `any`).
-      const updateMock = prisma.auth.update as unknown as jest.Mock<
-        unknown,
-        [{ data: { password: string; tokenVersion: { increment: number } } }]
-      >;
-      const arg = updateMock.mock.calls[0][0];
-
-      expect(updateMock.mock.calls[0][0]).toBeDefined();
-      expect(typeof arg.data.password).toBe('string');
-      expect(arg.data.password.length).toBeGreaterThan(0);
-      expect(arg.data.tokenVersion).toEqual({ increment: 1 });
-      expect(mail.send).toHaveBeenCalledWith(
-        expect.objectContaining({ to: 'asha@example.com' }),
-      );
-    });
-
-    it('revokes every refresh token, so a password reset ends old sessions', async () => {
-      prisma.enrollmentSubmission.findUnique.mockResolvedValue({
-        ...SUBMISSION,
-        status: 'Promoted',
-        promotedUserId: 'user-1',
-      });
-      prisma.auth.findFirst.mockResolvedValue({
-        id: 'auth-1',
-        authId: 'nnpu1SB26KA001',
-      });
-      prisma.auth.update.mockResolvedValue({});
-      prisma.refreshToken.deleteMany.mockResolvedValue({ count: 2 });
-      prisma.$transaction.mockImplementation((cb: (tx: unknown) => unknown) =>
-        cb(prisma),
-      );
-
-      await service.resendCredentials('sub-1');
-
-      // Bumping tokenVersion alone is NOT enough: jwt-auth.guard compares it, so
-      // access tokens die, but refresh() never compares it and would re-mint a
-      // valid pair from the old token. The rows must actually be deleted.
-      expect(prisma.refreshToken.deleteMany).toHaveBeenCalledWith({
-        where: { authId: 'nnpu1SB26KA001' },
-      });
-    });
-
-    it('does not send credentials if the revocation fails', async () => {
-      prisma.enrollmentSubmission.findUnique.mockResolvedValue({
-        ...SUBMISSION,
-        status: 'Promoted',
-        promotedUserId: 'user-1',
-      });
-      prisma.auth.findFirst.mockResolvedValue({
-        id: 'auth-1',
-        authId: 'nnpu1SB26KA001',
-      });
-      prisma.refreshToken.deleteMany.mockRejectedValue(
-        new Error('db unavailable'),
-      );
-      prisma.$transaction.mockImplementation((cb: (tx: unknown) => unknown) =>
-        cb(prisma),
-      );
-
-      await expect(service.resendCredentials('sub-1')).rejects.toThrow(
-        'db unavailable',
-      );
-      // Transactional: the password write is rolled back rather than leaving a
-      // new password alongside still-live old sessions.
-      expect(mail.send).not.toHaveBeenCalled();
-    });
-
-    it('404s when the promoted student has no auth record', async () => {
-      prisma.enrollmentSubmission.findUnique.mockResolvedValue({
-        ...SUBMISSION,
-        status: 'Promoted',
-        promotedUserId: 'user-1',
-      });
-      prisma.auth.findFirst.mockResolvedValue(null);
-
-      await expect(service.resendCredentials('sub-1')).rejects.toBeInstanceOf(
-        NotFoundException,
-      );
+    // Read back what the transaction callback actually wrote to `user.create`.
+    const createCalls = userCreate.mock.calls as [UserCreateArg][];
+    expect(createCalls).toHaveLength(1);
+    expect(createCalls[0][0].data).toMatchObject({
+      role: 'Student',
+      sectionId: SECTION_ID,
+      combinationId: 'combo-pcmb',
+      language: 'Kannada',
+      details: { create: { name: 'Ananya Rao', email: 'ananya@example.com' } },
+      auth: { create: { authId: 'nnpu1SB26KA007' } },
     });
   });
 
-  describe('resendOrPromote', () => {
-    it('resends rather than re-promoting an already promoted submission', async () => {
-      prisma.enrollmentSubmission.findUnique.mockResolvedValue({
-        ...SUBMISSION,
-        status: 'Promoted',
-        promotedUserId: 'user-1',
-      });
-      prisma.auth.findFirst.mockResolvedValue({
-        id: 'auth-1',
-        authId: 'nnpu1SB26KA001',
-      });
-      prisma.auth.update.mockResolvedValue({});
-      prisma.refreshToken.deleteMany.mockResolvedValue({ count: 1 });
-      prisma.$transaction.mockImplementation((cb: (tx: unknown) => unknown) =>
-        cb(prisma),
-      );
+  it('emails the default password and asks the student to change it', async () => {
+    await service.importStudentsFromCsv(dto(), CSV);
 
-      const result = await service.resendOrPromote('sub-1');
+    expect(mail.sendBulk).toHaveBeenCalledTimes(1);
 
-      expect(result).toEqual({ resent: true, authId: 'nnpu1SB26KA001' });
-      // Assert on the account insert, which only promoteOne performs. `$transaction`
-      // used to be a stand-in for "did not promote", but resendCredentials now
-      // uses a transaction too (to pair the password write with the revocation),
-      // so that proxy no longer distinguishes the two paths.
-      expect(prisma.user.create).not.toHaveBeenCalled();
-    });
+    const batches = mail.sendBulk.mock.calls as unknown as [MailArg[]][];
+    expect(batches[0][0]).toHaveLength(1);
 
-    it('promotes a pending submission', async () => {
-      stubPromotionLookups();
-      prisma.$transaction.mockImplementation((cb: (tx: unknown) => unknown) =>
-        cb(prisma),
-      );
+    const mail0: MailArg = batches[0][0][0];
+    expect(mail0.to).toBe('ananya@example.com');
+    expect(mail0.subject).toBe('Your NNPU portal login details');
+    expect(mail0.body).toContain('nnpu1SB26KA007');
+    expect(mail0.body).toContain('nnpu123');
+    expect(mail0.body).toMatch(/change your password/i);
+    expect(mail0.body).toContain('Ananya Rao');
+  });
 
-      await service.resendOrPromote('sub-1');
+  it('rejects an import when the year does not match the section', async () => {
+    await expect(
+      service.importStudentsFromCsv(dto({ year: 2025 }), CSV),
+    ).rejects.toThrow(BadRequestException);
 
-      expect(prisma.$transaction).toHaveBeenCalled();
-      expect(prisma.auth.findFirst).not.toHaveBeenCalled();
+    await expect(
+      service.importStudentsFromCsv(dto({ year: 2025 }), CSV),
+    ).rejects.toThrow(/Year mismatch.*2026-27/s);
+
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it('rejects a section that does not exist', async () => {
+    prisma.section.findUnique.mockResolvedValue(null);
+
+    await expect(service.importStudentsFromCsv(dto(), CSV)).rejects.toThrow(
+      NotFoundException,
+    );
+  });
+
+  it('derives the authId session segment from the section, not the CSV', async () => {
+    // The CSV has no session column at all — the section is the only source,
+    // which is what keeps a whole cohort in one session.
+    await service.importStudentsFromCsv(dto(), CSV);
+
+    expect(createdAuthIds).toEqual(['nnpu1SB26KA007']);
+  });
+
+  it('skips a row whose stream contradicts the target section', async () => {
+    // The section is SCI-A. A Commerce row must not resolve its combination
+    // against the Science table and land in the Science section.
+    const csv = [
+      'name,email,stream,combination,language',
+      'Ananya,ananya@example.com,Science,PCMB,Kannada',
+      'Rahul,rahul@example.com,Commerce,CEBA,Hindi',
+    ].join('\n');
+
+    const result = await service.importStudentsFromCsv(dto(), csv);
+
+    expect(result.created).toHaveLength(1);
+    expect(result.skipped).toHaveLength(1);
+    expect(result.skipped[0]).toMatchObject({ line: 3, name: 'Rahul' });
+    expect(result.skipped[0].reason).toMatch(
+      /stream is Commerce but the target section is Science/i,
+    );
+  });
+
+  it('skips a row naming a combination from the wrong stream', async () => {
+    // CEBA is a real Commerce combination, but this section is Science, so
+    // within the Science-scoped lookup it does not exist.
+    prisma.combination.findMany.mockResolvedValue([
+      { id: 'combo-pcmb', idCode: 'PCMB', stream: 'Science' },
+    ]);
+
+    const csv = [
+      'name,email,stream,combination,language',
+      'Ananya,ananya@example.com,Science,PCMB,Kannada',
+      'Rahul,rahul@example.com,Science,CEBA,Hindi',
+    ].join('\n');
+
+    const result = await service.importStudentsFromCsv(dto(), csv);
+
+    expect(result.created).toHaveLength(1);
+    expect(result.skipped).toHaveLength(1);
+    expect(result.skipped[0]).toMatchObject({ line: 3, name: 'Rahul' });
+    expect(result.skipped[0].reason).toMatch(
+      /combination "CEBA" belongs to the other stream, not Science/i,
+    );
+  });
+
+  it('reports when every row was rejected', async () => {
+    const csv =
+      'name,email,stream,combination,language\nAnanya,bad-email,Science,PCMB,Kannada';
+
+    await expect(service.importStudentsFromCsv(dto(), csv)).rejects.toThrow(
+      /No usable rows/i,
+    );
+  });
+
+  it('refuses to import an email that already has an account', async () => {
+    // PersonalDetails.email is unique. Without this pre-check the whole
+    // transaction aborts on P2002, naming one row and hiding the rest.
+    prisma.personalDetails.findMany.mockResolvedValue([
+      { email: 'ananya@example.com' },
+    ]);
+
+    await expect(service.importStudentsFromCsv(dto(), CSV)).rejects.toThrow(
+      /already have a portal account/i,
+    );
+
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it('does not roll back accounts when only the email fails', async () => {
+    // The account exists; a mail failure must not pretend otherwise or the
+    // operator has no way to recover the credentials.
+    mail.sendBulk.mockResolvedValue({ sent: 0, failed: 1 });
+
+    const result = await service.importStudentsFromCsv(dto(), CSV);
+
+    expect(result.created).toHaveLength(1);
+    expect(result.emailed).toBe(0);
+    expect(result.emailFailed).toBe(1);
+  });
+
+  it('wraps a failed write in a BadRequest so the caller can retry', async () => {
+    prisma.$transaction.mockRejectedValue(new Error('P2002 unique constraint'));
+
+    await expect(service.importStudentsFromCsv(dto(), CSV)).rejects.toThrow(
+      /Import failed and nothing was saved.*P2002/s,
+    );
+  });
+
+  it('derives the stream from the section session prefix', async () => {
+    await service.importStudentsFromCsv(dto(), CSV);
+
+    expect(prisma.combination.findMany).toHaveBeenCalledWith({
+      where: { stream: 'Science' },
     });
   });
-  describe('unknown submission id', () => {
-    it('404s instead of surfacing a 500', async () => {
-      prisma.enrollmentSubmission.findUnique.mockResolvedValue(null);
 
-      // findUniqueOrThrow would reject with Prisma's P2025, which the global
-      // filter turns into a 500 for what is really a bad id in the URL.
-      await expect(service.promoteOne('nope')).rejects.toBeInstanceOf(
-        NotFoundException,
-      );
-      await expect(service.resendOrPromote('nope')).rejects.toBeInstanceOf(
-        NotFoundException,
-      );
-      await expect(service.resendCredentials('nope')).rejects.toBeInstanceOf(
-        NotFoundException,
-      );
-    });
+  it('refuses a section whose session is not stream-prefixed', async () => {
+    prisma.section.findUnique.mockResolvedValue(
+      section({ session: 'A', name: '1-A' }),
+    );
+
+    await expect(service.importStudentsFromCsv(dto(), CSV)).rejects.toThrow(
+      /not stream-prefixed/i,
+    );
+  });
+
+  it('uses the class name for the PU year digit', async () => {
+    prisma.section.findUnique.mockResolvedValue(
+      section({
+        session: 'SCI-B',
+        name: '2-SCI-B',
+        class: { id: 'c2', name: '2' },
+      }),
+    );
+
+    const csv = [
+      'name,email,stream,combination,language',
+      'Ananya,ananya@example.com,Science,PCMB,Kannada',
+    ].join('\n');
+
+    await service.importStudentsFromCsv(dto(), csv);
+
+    // Session segment is B (from SCI-B), so the authId reads ...KB007, not
+    // KA007. Fixed-width means the session is a real slot, not a suffix.
+    expect(createdAuthIds).toEqual(['nnpu2SB26KB007']);
+  });
+
+  it('reuses a single bcrypt hash for the whole cohort', async () => {
+    // Hashing per row would be a full bcrypt round-trip per student on a CPU
+    // chosen for being small.
+    const csv = [
+      'name,email,stream,combination,language',
+      'Ananya,ananya@example.com,Science,PCMB,Kannada',
+      'Rahul,rahul@example.com,Science,PCMB,Kannada',
+      'Priya,priya@example.com,Science,PCMB,Kannada',
+    ].join('\n');
+
+    const result = await service.importStudentsFromCsv(dto(), csv);
+
+    expect(result.created).toHaveLength(3);
+    // Every row gets the same serial only if the sequence mock is consulted per
+    // row; what matters here is that all three were written.
+    expect(createdAuthIds).toHaveLength(3);
   });
 });

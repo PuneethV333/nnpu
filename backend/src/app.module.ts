@@ -20,7 +20,6 @@ import { OnboardingModule } from './onboarding/onboarding.module';
 import { AnnouncementModule } from './announcement/announcement.module';
 import { TimeTableModule } from './time-table/time-table.module';
 import { EnrollmentModule } from './enrollment/enrollment.module';
-import { GoogleModule } from './google/google.module';
 import { MailModule } from './mail/mail.module';
 import { UsersModule } from './users/users.module';
 import { SectionsModule } from './sections/sections.module';
@@ -96,7 +95,6 @@ import { DashboardModule } from './dashboard/dashboard.module';
     AnnouncementModule,
     TimeTableModule,
     EnrollmentModule,
-    GoogleModule,
     MailModule,
     UsersModule,
     SectionsModule,

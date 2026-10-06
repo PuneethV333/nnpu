@@ -1,57 +1,36 @@
-import {
-  createDriveResponseSchema,
-  enrollmentDriveArraySchema,
-  getDriveResponseSchema,
-  enrollmentSubmissionArraySchema,
-  promoteAllResponseSchema,
-  promoteSubmissionResponseSchema,
-  type CreateDrive,
-  type CreateDriveResponse,
-  type EnrollmentDrive,
-  type GetDriveResponse,
-  type EnrollmentSubmission,
-  type PromoteAllResponse,
-  type PromoteSubmissionResponse,
-} from '@/src/types/enrollment';
 import { api } from './client';
+import {
+  importStudentsResponseSchema,
+  type ImportStudentsBody,
+  type ImportStudentsResponse,
+} from '@/src/types/enrollment';
 
-export const createDrive = async (
-  body: CreateDrive,
-): Promise<CreateDriveResponse> => {
-  const res = await api.post('/enrollment/drive', body);
-  return createDriveResponseSchema.parse(res.data);
-};
+/**
+ * Uploads a roster CSV as multipart/form-data.
+ *
+ * React Native's `FormData` accepts this `{ uri, name, type }` shape for a file
+ * and streams it from disk — it does NOT accept a Blob or a base64 string, so
+ * reading the file into memory here would be the wrong shape anyway.
+ *
+ * `Content-Type` is deliberately left unset. Setting it to
+ * `multipart/form-data` without the boundary is a classic way to get a server
+ * that silently sees zero fields; axios/React Native add the boundary when the
+ * header is absent.
+ */
+export const importStudents = async (
+  body: ImportStudentsBody,
+): Promise<ImportStudentsResponse> => {
+  const form = new FormData();
 
-export const listDrives = async (): Promise<EnrollmentDrive[]> => {
-  const res = await api.get('/enrollment/drive');
-  return enrollmentDriveArraySchema.parse(res.data);
-};
+  form.append('sectionId', body.sectionId);
+  form.append('year', String(body.year));
+  form.append('file', {
+    uri: body.file.uri,
+    name: body.file.name,
+    type: body.file.type || 'text/csv',
+  } as unknown as Blob);
 
-export const getDrive = async (id: string): Promise<GetDriveResponse> => {
-  const res = await api.get(`/enrollment/drive/${id}`);
-  return getDriveResponseSchema.parse(res.data);
-};
+  const res = await api.post('/enrollment/students/import', form);
 
-export const listSubmissions = async (
-  driveId: string,
-  status?: string,
-): Promise<EnrollmentSubmission[]> => {
-  const res = await api.get(`/enrollment/drive/${driveId}/submissions`, {
-    params: status ? { status } : {},
-  });
-  return enrollmentSubmissionArraySchema.parse(res.data);
-};
-
-export const promoteSubmission = async (
-  id: string,
-): Promise<PromoteSubmissionResponse> => {
-  const res = await api.post(`/enrollment/submission/${id}/promote`);
-  return promoteSubmissionResponseSchema.parse(res.data);
-};
-
-export const promoteAll = async (
-  driveId: string,
-): Promise<PromoteAllResponse> => {
-  const res = await api.post(`/enrollment/drive/${driveId}/promote-all`);
-  return promoteAllResponseSchema.parse(res.data);
+  return importStudentsResponseSchema.parse(res.data);
 };

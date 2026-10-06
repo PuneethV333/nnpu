@@ -8,8 +8,8 @@ import { MySubjectsQueryDto } from '@/marks/dto/my-subjects-query.dto';
 import { ReportParamsDto } from '@/marks/dto/report-params.dto';
 import { IdParamDto } from './id-param.dto';
 import { StudentIdParamDto } from './student-id-param.dto';
-import { SubmissionStatusQueryDto } from '@/enrollment/dto/submission-status-query.dto';
 import { MyMarksQueryDto } from '@/marks/dto/my-marks-query.dto';
+import { ImportStudentsDto } from '@/enrollment/dto/import-students.dto';
 import {
   MarkAttendanceDto,
   MARKABLE_ATTENDANCE_STATUSES,
@@ -204,26 +204,6 @@ describe('query DTO validation', () => {
       ).toContain('studentId');
     });
 
-    it('SubmissionStatusQueryDto accepts every real status', async () => {
-      for (const status of ['Pending', 'Promoted', 'Rejected']) {
-        expect(await errorsFor(SubmissionStatusQueryDto, { status })).toEqual(
-          [],
-        );
-      }
-    });
-
-    it('SubmissionStatusQueryDto rejects an invented status', async () => {
-      // Replaces an inline Object.values check in the controller, which was
-      // correct but undocumented in the OpenAPI spec.
-      expect(
-        await errorsFor(SubmissionStatusQueryDto, { status: 'Deleted' }),
-      ).toContain('status');
-    });
-
-    it('SubmissionStatusQueryDto allows omitting status entirely', async () => {
-      expect(await errorsFor(SubmissionStatusQueryDto, {})).toEqual([]);
-    });
-
     it('MyMarksQueryDto allows omitting subjectId', async () => {
       expect(await errorsFor(MyMarksQueryDto, {})).toEqual([]);
     });
@@ -233,6 +213,62 @@ describe('query DTO validation', () => {
       expect(await errorsFor(MyMarksQueryDto, { subjectId: '  ' })).toContain(
         'subjectId',
       );
+    });
+
+    it('ImportStudentsDto accepts a sectionId and a 4-digit year', async () => {
+      expect(
+        await errorsFor(ImportStudentsDto, {
+          sectionId: 'clx1234567890abcdefghijk',
+          year: 2026,
+        }),
+      ).toEqual([]);
+    });
+
+    it('ImportStudentsDto coerces a string year, since multipart fields are strings', async () => {
+      // Every multipart value arrives as a string. Without @Type(() => Number)
+      // "2026" would fail @IsInt and the endpoint would be unusable from any
+      // real HTTP client.
+      const dto = plainToInstance(ImportStudentsDto, {
+        sectionId: 'clx1234567890abcdefghijk',
+        year: '2026',
+      });
+      const errors = await validate(dto, { whitelist: true });
+
+      expect(errors).toEqual([]);
+      expect(dto.year).toBe(2026);
+    });
+
+    it('ImportStudentsDto rejects a non-numeric year', async () => {
+      expect(
+        await errorsFor(ImportStudentsDto, {
+          sectionId: 'clx1234567890abcdefghijk',
+          year: 'twenty-six',
+        }),
+      ).toContain('year');
+    });
+
+    it('ImportStudentsDto rejects an implausible year', async () => {
+      expect(
+        await errorsFor(ImportStudentsDto, {
+          sectionId: 'clx1234567890abcdefghijk',
+          year: 42,
+        }),
+      ).toContain('year');
+    });
+
+    it('ImportStudentsDto rejects a missing sectionId', async () => {
+      expect(await errorsFor(ImportStudentsDto, { year: 2026 })).toContain(
+        'sectionId',
+      );
+    });
+
+    it('ImportStudentsDto rejects a blank sectionId', async () => {
+      // The blank case matters more here than elsewhere: sectionId is the sole
+      // scope of the import, so a blank value must never reach Prisma, where it
+      // would be dropped from the `where` clause.
+      expect(
+        await errorsFor(ImportStudentsDto, { sectionId: '   ', year: 2026 }),
+      ).toContain('sectionId');
     });
   });
 });

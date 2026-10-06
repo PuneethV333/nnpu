@@ -18,8 +18,8 @@ export interface AdminDashboard {
     marked: number;
     percentage: number;
   };
-  pendingEnrollments: number;
-  openDrives: number;
+  /** Live count of active Teachers. Replaces the old enrollment-drive stats. */
+  totalTeachers: number;
   fees: {
     pendingInvoices: number;
     amountPending: number;

@@ -2,15 +2,14 @@
 import { Module } from '@nestjs/common';
 import { EnrollmentService } from './enrollment.service';
 import { EnrollmentController } from './enrollment.controller';
-import { GoogleModule } from '@/google/google.module';
 import { MailModule } from '@/mail/mail.module';
-import { EnrollmentCloseCron } from './cron/enrollment-close.cron';
-import { EnrollmentPromoteCron } from './cron/enrollment-promote.cron';
 import { AuthModule } from '@/auth/auth.module';
 
 @Module({
-  imports: [GoogleModule, MailModule, AuthModule],
+  // MailModule is required for the credential emails; AuthModule for the
+  // JwtAuthGuard/RolesGuard the controller relies on.
+  imports: [MailModule, AuthModule],
   controllers: [EnrollmentController],
-  providers: [EnrollmentService, EnrollmentCloseCron, EnrollmentPromoteCron],
+  providers: [EnrollmentService],
 })
 export class EnrollmentModule {}

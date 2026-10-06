@@ -34,8 +34,7 @@ export class DashboardService {
       calendarDay,
       totalStudents,
       markedToday,
-      pendingEnrollments,
-      openDrives,
+      totalTeachers,
       pendingInvoiceCount,
       feeAggregate,
       upcomingEvents,
@@ -49,12 +48,12 @@ export class DashboardService {
       this.prisma.attendance.count({
         where: { date: today, status: { not: 'NotMarked' } },
       }),
-      this.prisma.enrollmentSubmission.count({
-        where: { status: 'Pending' },
-      }),
-      this.prisma.enrollmentDrive.count({
-        where: { status: 'Open' },
-      }),
+      // Counted live rather than read off a stat table, so it cannot drift.
+      // Replaces the old `pendingEnrollments` / `openDrives` pair, which both
+      // counted rows in the Google Forms drive tables — with CSV imports there
+      // is no equivalent "work waiting" state, because an import either lands
+      // whole or not at all.
+      this.prisma.user.count({ where: { role: 'Teacher', isActive: true } }),
       this.prisma.invoice.count({
         where: { status: { not: 'Paid' } },
       }),
@@ -89,8 +88,7 @@ export class DashboardService {
         marked: markedToday,
         percentage,
       },
-      pendingEnrollments,
-      openDrives,
+      totalTeachers,
       fees: {
         pendingInvoices: pendingInvoiceCount,
         amountPending,

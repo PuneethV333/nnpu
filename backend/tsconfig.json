@@ -24,7 +24,10 @@
     "noImplicitAny": false,
     "strictBindCallApply": false,
     "noFallthroughCasesInSwitch": false,
-    "types": ["jest", "node"],
+    // `multer` is needed for the `Express.Multer.File` type on the CSV upload.
+    // It is a transitive dep of @nestjs/platform-express, so listing it here is
+    // a type-only reference and installs nothing.
+    "types": ["jest", "node", "multer"],
     "isolatedModules": true
   },
   // Only `src` belongs here. Adding a file outside it (e.g. `prisma.config.ts`,

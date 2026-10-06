@@ -8,12 +8,12 @@ import {
   Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Feather } from '@expo/vector-icons';
 import { useAuth } from '@/src/hooks/useAuth';
 import { useGetAdminDashboard } from '@/src/hooks/useDashboard';
 import { useGetAllSections } from '@/src/hooks/useSections';
-import { useListDrives, useListSubmissions, usePromoteAll } from '@/src/hooks/useEnrollment';
-import { formatDate, formatMoney } from '@/src/libs/money';
+import { useImportStudents } from '@/src/hooks/useEnrollment';
+import * as DocumentPicker from 'expo-document-picker';
+import { formatMoney } from '@/src/libs/money';
 import { StatCard } from '@/components/profile-page/StatCard';
 import { DAY_CHIP_COLOR } from '@/constants/dayTypeColor';
 import { EmptyState, ErrorState } from '@/components/ui/Feedback';
@@ -22,18 +22,6 @@ import {
   SkeletonList,
 } from '@/components/ui/skeletons';
 import { useTabBarClearance } from '@/src/hooks/useTabBarClearance';
-
-const DRIVE_TONE: Record<string, { bg: string; text: string }> = {
-  Open: { bg: '#DCFCE7', text: '#16A34A' },
-  Closed: { bg: '#FEF3C7', text: '#D97706' },
-  Processed: { bg: '#F3F4F6', text: '#6B7280' },
-};
-
-const SUBMISSION_TONE: Record<string, { bg: string; text: string }> = {
-  Pending: { bg: '#FEF3C7', text: '#D97706' },
-  Promoted: { bg: '#DCFCE7', text: '#16A34A' },
-  Rejected: { bg: '#FEE2E2', text: '#DC2626' },
-};
 
 const Metric = ({
   label,
@@ -58,24 +46,15 @@ const School = () => {
   const { user } = useAuth();
   const { data: dashboard, isLoading, isError, refetch } = useGetAdminDashboard();
   const { data: sections, isLoading: sectionsLoading } = useGetAllSections();
-  const { data: drives, isLoading: drivesLoading } = useListDrives();
-  const { mutate: promoteAll, isPending: promoting } = usePromoteAll();
-  const [pickedDriveId, setPickedDriveId] = useState('');
+  const { mutate: importStudents, isPending: importing } = useImportStudents();
+  const [pickedSectionId, setPickedSectionId] = useState('');
 
-  // Submissions are per-drive, so a drive has to be chosen. Derived rather
-  // than stored+synced with an effect: an explicit pick wins, otherwise fall
-  // back to the first open drive, then the first drive of any status.
-  const activeDrive = useMemo(() => {
-    if (!drives || drives.length === 0) return null;
-    return (
-      drives.find((d) => d.id === pickedDriveId) ??
-      drives.find((d) => d.status === 'Open') ??
-      drives[0]
-    );
-  }, [drives, pickedDriveId]);
-
-  const { data: submissions, isLoading: submissionsLoading } =
-    useListSubmissions(activeDrive?.id ?? '');
+  // The import is scoped to one section, so a section has to be picked before a
+  // file can be chosen. Derived rather than stored+synced with an effect.
+  const pickedSection = useMemo(
+    () => (sections ?? []).find((s) => s.id === pickedSectionId) ?? null,
+    [sections, pickedSectionId],
+  );
 
   const school = user?.school ?? null;
   // Derived once so the render below never needs a `!` assertion.
@@ -91,24 +70,56 @@ const School = () => {
     );
   }, [sections]);
 
-  const pendingCount = useMemo(
-    () => (submissions ?? []).filter((s) => s.status === 'Pending').length,
-    [submissions],
-  );
+  const handlePickCsv = async () => {
+    if (!pickedSection) return;
 
-  const handlePromoteAll = () => {
-    if (!activeDrive) return;
-    Alert.alert(
-      'Promote all submissions',
-      `Every pending submission in the ${activeDrive.stream} drive will be promoted to real student accounts.`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Promote all',
-          style: 'destructive',
-          onPress: () => promoteAll(activeDrive.id),
+    const picked = await DocumentPicker.getDocumentAsync({
+      type: ['text/csv', 'text/comma-separated-values', 'application/vnd.ms-excel', '*/*'],
+      copyToCacheDirectory: true,
+    });
+    if (picked.canceled) return;
+
+    const asset = picked.assets?.[0];
+    if (!asset) return;
+
+    importStudents(
+      {
+        sectionId: pickedSection.id,
+        // Derived from the selected section rather than asked for again: the
+        // server checks it against the section's academic year, so passing
+        // anything the admin typed could only ever disagree.
+        year: pickedSection.academicYearStart,
+        file: {
+          uri: asset.uri,
+          name: asset.name ?? 'students.csv',
+          type: asset.mimeType ?? 'text/csv',
         },
-      ],
+      },
+      {
+        onSuccess: (result) => {
+          setPickedSectionId('');
+          const skippedNote =
+            result.skipped.length > 0
+              ? `\n\n${result.skipped.length} row(s) were skipped:\n${result.skipped
+                  .slice(0, 5)
+                  .map((s) => `line ${s.line} (${s.name}): ${s.reason}`)
+                  .join('\n')}`
+              : '';
+
+          const mailNote =
+            result.emailFailed > 0
+              ? `\n\n${result.emailFailed} email(s) failed to send. Those accounts exist but the student has not been told their login ID — send it to them manually.`
+              : '';
+
+          Alert.alert(
+            'Import complete',
+            `${result.created.length} student(s) created and emailed.${skippedNote}${mailNote}`,
+          );
+        },
+        onError: (err: any) => {
+          Alert.alert('Import failed', err?.response?.data?.message ?? String(err));
+        },
+      },
     );
   };
 
@@ -169,11 +180,9 @@ const School = () => {
                 }`}
               />
               <Metric
-                label="Pending enrollments"
-                value={String(dashboard?.pendingEnrollments ?? 0)}
-                sub={`${dashboard?.openDrives ?? 0} open drive${
-                  (dashboard?.openDrives ?? 0) === 1 ? '' : 's'
-                }`}
+                label="Teachers"
+                value={String(dashboard?.totalTeachers ?? 0)}
+                sub="active teacher accounts"
               />
             </View>
 
@@ -218,163 +227,89 @@ const School = () => {
 
             <View className="px-4 mt-5 mb-2">
               <Text className="text-base font-semibold text-gray-900">
-                Enrollment
+                Adding students
               </Text>
             </View>
 
-            {drivesLoading ? (
-              <View className="mx-4 mt-2">
-                <SkeletonList count={2} />
-              </View>
-            ) : !drives || drives.length === 0 ? (
-              <View className="mx-4">
-                <EmptyState
-                  icon="clipboard"
-                  title="No enrollment drives yet"
-                  subtitle="Create a drive to start collecting applications."
-                />
-              </View>
-            ) : (
-              <>
-                <View className="mx-4 bg-white rounded-2xl border border-gray-100 overflow-hidden">
-                  {drives.map((drive, idx) => {
-                    const tone = DRIVE_TONE[drive.status] ?? DRIVE_TONE.Closed;
-                    return (
-                      <View
-                        key={drive.id}
-                        className={`px-4 py-3 ${
-                          idx !== drives.length - 1
-                            ? 'border-b border-gray-100'
-                            : ''
-                        }`}
-                      >
-                        <View className="flex-row items-center justify-between">
-                          <Text className="text-[15px] font-medium text-gray-900">
-                            {drive.stream} drive
-                          </Text>
-                          <View
-                            className="rounded-full px-2 py-0.5"
-                            style={{ backgroundColor: tone.bg }}
-                          >
-                            <Text
-                              className="text-[11px] font-bold"
-                              style={{ color: tone.text }}
-                            >
-                              {drive.status.toUpperCase()}
-                            </Text>
-                          </View>
-                        </View>
-                        <Text className="text-xs text-gray-400 mt-1">
-                          Closes {formatDate(drive.closesAt)}
-                        </Text>
-                      </View>
-                    );
-                  })}
-                </View>
+            <View className="mx-4 bg-white rounded-2xl border border-gray-100 p-4">
+              <Text className="text-sm text-gray-600">
+                Students are added by uploading a CSV into one session. Create
+                the session first, then pick it below.
+              </Text>
 
-                <ScrollView
-                  horizontal
-                  showsHorizontalScrollIndicator={false}
-                  contentContainerStyle={{ paddingHorizontal: 16, gap: 8, paddingVertical: 10 }}
-                >
-                  {(drives ?? []).map((d) => {
-                    const active = d.id === activeDrive?.id;
-                    const tone = DRIVE_TONE[d.status] ?? DRIVE_TONE.Closed;
-                    return (
-                      <Pressable
-                        key={d.id}
-                        onPress={() => setPickedDriveId(d.id)}
-                        className="px-3 py-2 rounded-full border"
-                        style={{
-                          backgroundColor: active ? tone.text : '#FFFFFF',
-                          borderColor: active ? tone.text : '#E5E7EB',
-                        }}
-                      >
-                        <Text
-                          className="text-sm font-medium"
-                          style={{ color: active ? '#FFFFFF' : '#374151' }}
+              <View className="mt-3 rounded-xl border border-dashed border-gray-300 p-4">
+                <Text className="text-xs font-semibold text-gray-400 tracking-wide mb-1">
+                  CSV COLUMNS
+                </Text>
+                <Text className="text-xs text-gray-600">
+                  name,email,stream,combination,language
+                </Text>
+                <Text className="text-xs text-gray-400 leading-5 mt-2">
+                  Every new student gets the password nnpu123 and an email with
+                  their login ID, asking them to change it.
+                </Text>
+              </View>
+
+              {sectionsLoading || !sections || sections.length === 0 ? null : (
+                <View className="mt-4">
+                  <Text className="text-xs font-semibold text-gray-400 tracking-wide mb-2">
+                    SESSION
+                  </Text>
+                  <View className="flex-row flex-wrap gap-2">
+                    {sections.map((section) => {
+                      const active = section.id === pickedSectionId;
+                      return (
+                        <Pressable
+                          key={section.id}
+                          onPress={() => setPickedSectionId(section.id)}
+                          className="px-3 py-2 rounded-full border"
+                          style={{
+                            backgroundColor: active ? '#4F46E5' : '#FFFFFF',
+                            borderColor: active ? '#4F46E5' : '#E5E7EB',
+                          }}
                         >
-                          {d.stream} · {d.status}
-                        </Text>
-                      </Pressable>
-                    );
-                  })}
-                </ScrollView>
-
-                {activeDrive ? (
-                  <View className="mx-4 mt-1 bg-white rounded-2xl border border-gray-100 p-4">
-                    <View className="flex-row items-center justify-between">
-                      <Text className="text-xs font-semibold text-gray-400 tracking-wide">
-                        {activeDrive.stream.toUpperCase()} SUBMISSIONS
-                      </Text>
-                      <Text className="text-lg font-bold text-gray-900">
-                        {submissionsLoading ? '--' : (submissions?.length ?? 0)}
-                      </Text>
-                    </View>
-                    <Text className="text-xs text-gray-400 mt-1">
-                      {pendingCount} pending promotion
-                    </Text>
-
-                    <Pressable
-                      onPress={handlePromoteAll}
-                      disabled={promoting}
-                      className={`mt-3 bg-indigo-600 rounded-xl py-3 items-center flex-row justify-center gap-2 ${
-                        promoting ? 'opacity-40' : ''
-                      }`}
-                    >
-                      {promoting ? (
-                        <ActivityIndicator color="#FFFFFF" />
-                      ) : (
-                        <>
-                          <Feather name="check-circle" size={16} color="#FFFFFF" />
-                          <Text className="text-white font-bold text-sm">
-                            Promote all pending
-                          </Text>
-                        </>
-                      )}
-                    </Pressable>
-
-                    <View className="mt-4 pt-3 border-t border-gray-100">
-                      {submissionsLoading ? (
-                        <SkeletonList count={3} lastWidth="60%" />
-                      ) : !submissions || submissions.length === 0 ? (
-                        <Text className="text-sm text-gray-400 text-center py-4">
-                          No submissions in this drive yet.
-                        </Text>
-                      ) : (
-                        submissions.map((sub) => (
-                          <View
-                            key={sub.id}
-                            className="flex-row items-center justify-between py-2 border-b border-gray-50 last:border-b-0"
+                          <Text
+                            className="text-sm font-medium"
+                            style={{ color: active ? '#FFFFFF' : '#374151' }}
                           >
-                            <View className="flex-1 mr-2">
-                              <Text className="text-sm font-medium text-gray-900" numberOfLines={1}>
-                                {sub.name}
-                              </Text>
-                              <Text className="text-[11px] text-gray-400" numberOfLines={1}>
-                                {sub.stream} · {sub.session}
-                                {sub.language ? ` · ${sub.language}` : ''}
-                              </Text>
-                            </View>
-                            <View
-                              className="rounded-full px-2 py-0.5"
-                              style={{ backgroundColor: SUBMISSION_TONE[sub.status].bg }}
-                            >
-                              <Text
-                                className="text-[10px] font-bold"
-                                style={{ color: SUBMISSION_TONE[sub.status].text }}
-                              >
-                                {sub.status.toUpperCase()}
-                              </Text>
-                            </View>
-                          </View>
-                        ))
-                      )}
-                    </View>
+                            {section.name}
+                          </Text>
+                        </Pressable>
+                      );
+                    })}
                   </View>
-                ) : null}
-              </>
-            )}
+                </View>
+              )}
+
+              {pickedSection ? (
+                <Text className="text-xs text-gray-500 mt-4">
+                  Uploading into{' '}
+                  <Text className="font-semibold text-gray-900">
+                    {pickedSection.name}
+                  </Text>
+                  .
+                </Text>
+              ) : null}
+
+              <Pressable
+                onPress={handlePickCsv}
+                disabled={!pickedSection || importing}
+                className={`mt-4 rounded-xl py-3 items-center ${
+                  !pickedSection || importing ? 'opacity-40' : ''
+                }`}
+                style={{ backgroundColor: '#4F46E5' }}
+              >
+                {importing ? (
+                  <ActivityIndicator color="#FFFFFF" />
+                ) : (
+                  <Text className="text-sm font-semibold text-white">
+                    {pickedSection
+                      ? 'Choose CSV and upload'
+                      : 'Pick a session first'}
+                  </Text>
+                )}
+              </Pressable>
+            </View>
 
             {events.length > 0 && (
               <>

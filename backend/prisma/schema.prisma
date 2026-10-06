@@ -69,7 +69,7 @@ model User {
   classTeacherOf     Section?         @relation("ClassTeacherOf")
   /// Relation field only — not a column, so this rename needs no migration.
   /// Nothing outside the generated client referenced the typo'd name.
-  notifications   Notification[]
+  notifications      Notification[]
   deviceTokens       DeviceToken[]
   studentMarks       Mark[]           @relation("StudentMarks")
   enteredMarks       Mark[]           @relation("MarksEnteredBy")
@@ -97,9 +97,9 @@ model Auth {
 }
 
 model PersonalDetails {
-  id         String @id @default(cuid())
-  user       User   @relation(fields: [userId], references: [id])
-  userId     String @unique
+  id         String  @id @default(cuid())
+  user       User    @relation(fields: [userId], references: [id])
+  userId     String  @unique
   name       String
   profilePic String
   // Nullable because onboarding creates staff/students without an email and used
@@ -134,11 +134,10 @@ model AcademicYear {
   endDate   DateTime  @db.Date
   sections  Section[]
 
-  createdAt        DateTime          @default(now())
-  updatedAt        DateTime          @updatedAt
-  feeStructures    FeeStructure[]
-  reportCards      ReportCard[]
-  enrollmentDrives EnrollmentDrive[]
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  feeStructures FeeStructure[]
+  reportCards   ReportCard[]
 }
 
 model Class {
@@ -558,65 +557,4 @@ model Announcement {
 
   @@index([schoolId, createdAt])
   @@index([sectionId, createdAt])
-}
-
-enum EnrollmentDriveStatus {
-  Open
-  Closed
-  Processed
-}
-
-enum EnrollmentSubmissionStatus {
-  Pending
-  Promoted
-  Rejected
-}
-
-model EnrollmentDrive {
-  id             String       @id @default(cuid())
-  academicYear   AcademicYear @relation(fields: [academicYearId], references: [id])
-  academicYearId String
-
-  stream Stream
-
-  formId      String
-  questionMap Json
-
-  opensAt  DateTime
-  closesAt DateTime
-
-  status EnrollmentDriveStatus @default(Open)
-
-  submissions EnrollmentSubmission[]
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@index([academicYearId])
-}
-
-model EnrollmentSubmission {
-  id      String          @id @default(cuid())
-  drive   EnrollmentDrive @relation(fields: [driveId], references: [id])
-  driveId String
-
-  name  String
-  email String
-
-  stream        Stream
-  session       String
-  combinationId String?
-  language      SecondLanguage?
-
-  submittedAt DateTime
-
-  status EnrollmentSubmissionStatus @default(Pending)
-
-  promotedUserId String? @unique
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@index([driveId, status])
-  @@index([email])
 }
