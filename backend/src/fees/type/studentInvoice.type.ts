@@ -8,13 +8,19 @@ export const paymentMethodEnum = z.enum([
   'BANK_TRANSFER',
 ]);
 
-export const paymentStatusEnum = z.enum(['Pending', 'Success', 'Failed']);
+export const paymentStatusEnum = z.enum([
+  'Pending',
+  'Success',
+  'Failed',
+  'RefundRequired',
+]);
 
 export const invoiceStatusEnum = z.enum(['Pending', 'Partial', 'Paid']);
 
 export const paymentSchema = z.object({
   id: z.string(),
   amount: z.number(),
+  refundAmount: z.number(),
   method: paymentMethodEnum,
   status: paymentStatusEnum,
   reference: z.string().nullable(),

@@ -1,7 +1,12 @@
 import { z } from 'zod';
 
 export const invoiceStatusEnum = z.enum(['Pending', 'Partial', 'Paid']);
-export const paymentStatusEnum = z.enum(['Pending', 'Success', 'Failed']);
+export const paymentStatusEnum = z.enum([
+  'Pending',
+  'Success',
+  'Failed',
+  'RefundRequired',
+]);
 export const paymentMethodEnum = z.enum(['RAZORPAY', 'CASH', 'UPI', 'CHEQUE', 'BANK_TRANSFER']);
 
 export const feeStructureSchema = z.object({
@@ -22,6 +27,7 @@ export const paymentSchema = z.object({
   invoiceId: z.string(),
   studentId: z.string(),
   amount: z.number(),
+  refundAmount: z.number(),
   method: paymentMethodEnum,
   status: paymentStatusEnum,
   reference: z.string().nullable(),
@@ -84,6 +90,7 @@ export const generateInvoicesResultSchema = z.object({
 export const payment_Schema = z.object({
   id: z.string(),
   amount: z.number(),
+  refundAmount: z.number(),
   method: paymentMethodEnum,
   status: paymentStatusEnum,
   reference: z.string().nullable(),
