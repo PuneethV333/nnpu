@@ -1,7 +1,7 @@
 import { LoggerService } from '@/logger/logger.service';
 import { Injectable, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { createHmac } from 'crypto';
+import { createHmac, timingSafeEqual } from 'crypto';
 import Razorpay from 'razorpay';
 
 @Injectable()
@@ -29,19 +29,29 @@ export class RazorpayService implements OnModuleInit {
     });
   }
 
+  async fetchPayment(paymentId: string) {
+    return this.razorpay.payments.fetch(paymentId);
+  }
+
   verifyPaymentSignature(
     razorpayOrderId: string,
     razorpayPaymentId: string,
     razorpaySignature: string,
   ): boolean {
-    const body = `${razorpayOrderId}|${razorpayPaymentId}`;
-    const expectedSignature = createHmac(
-      'sha256',
-      this.config.get<string>('RAZORPAY_KEY_SECRET')!,
-    )
-      .update(body)
-      .digest('hex');
+    const secret = this.config.get<string>('RAZORPAY_KEY_SECRET');
+    if (!secret || !/^[a-f0-9]{64}$/i.test(razorpaySignature)) {
+      return false;
+    }
 
-    return expectedSignature === razorpaySignature;
+    const body = `${razorpayOrderId}|${razorpayPaymentId}`;
+    const expectedSignature = createHmac('sha256', secret)
+      .update(body)
+      .digest();
+    const providedSignature = Buffer.from(razorpaySignature, 'hex');
+
+    return (
+      expectedSignature.length === providedSignature.length &&
+      timingSafeEqual(expectedSignature, providedSignature)
+    );
   }
 }

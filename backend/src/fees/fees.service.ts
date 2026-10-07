@@ -16,7 +16,7 @@ import { RazorpayService } from './razorpay.service';
 import { Role } from '@/generated/prisma';
 import { ConfigService } from '@nestjs/config';
 import { HandleRazorpayWebhookDto } from './dto/handle-razorpay-webhook.dto';
-import { createHmac } from 'crypto';
+import { createHmac, timingSafeEqual } from 'crypto';
 import { StudentInvoice, StudentInvoices } from './type/studentInvoice.type';
 import { RazorpayWebhookEvent } from './type/razorpay-webhook.type';
 import { assertSectionAccess } from '@/common/utils/section-students.util';
@@ -244,6 +244,7 @@ export class FeesService {
       payments: invoice.payments.map((payment) => ({
         id: payment.id,
         amount: payment.amount,
+        refundAmount: payment.refundAmount,
         method: payment.method,
         status: payment.status,
         reference: payment.reference,
@@ -286,6 +287,13 @@ export class FeesService {
 
   async createPaymentOrder(invoiceId: string, authId: string) {
     const { userId, role } = await this.resolveUser(authId);
+    const razorpayKey = this.config.get<string>('RAZORPAY_KEY_ID');
+
+    if (!razorpayKey) {
+      throw new ServiceUnavailableException(
+        'Razorpay is not configured on this server',
+      );
+    }
 
     const invoice = await this.prisma.invoice.findUnique({
       where: { id: invoiceId },
@@ -301,69 +309,217 @@ export class FeesService {
       throw new ForbiddenException('Cannot pay for another student');
     }
 
-    const pendingAmount = invoice.totalAmount - invoice.paidAmount;
-    if (pendingAmount <= 0) {
-      throw new BadRequestException('Invoice is already fully paid');
+    type OrderPlan =
+      | { kind: 'reuse'; orderId: string; amount: number }
+      | { kind: 'create'; paymentId: string; amount: number };
+
+    let orderPlan: OrderPlan;
+    try {
+      orderPlan = await this.prisma.$transaction(async (tx) => {
+        const invoiceRows = await tx.$queryRaw<
+          Array<{
+            id: string;
+            studentId: string;
+            totalAmount: number;
+            paidAmount: number;
+          }>
+        >`
+          SELECT "id", "studentId", "totalAmount", "paidAmount"
+          FROM "Invoice"
+          WHERE "id" = ${invoiceId}
+          FOR UPDATE
+        `;
+        const currentInvoice = invoiceRows[0];
+
+        if (!currentInvoice) {
+          throw new NotFoundException('invoice not found');
+        }
+
+        if (currentInvoice.studentId !== userId && role !== 'Admin') {
+          throw new ForbiddenException('Cannot pay for another student');
+        }
+
+        const pendingAmount =
+          currentInvoice.totalAmount - currentInvoice.paidAmount;
+        if (pendingAmount <= 0) {
+          throw new BadRequestException('Invoice is already fully paid');
+        }
+
+        const openPayment = await tx.payment.findFirst({
+          where: { invoiceId, status: 'Pending' },
+          orderBy: { createdAt: 'desc' },
+        });
+
+        if (openPayment) {
+          if (openPayment.amount !== pendingAmount) {
+            throw new ConflictException(
+              'An open payment order has a different balance. Contact an administrator before retrying.',
+            );
+          }
+
+          if (
+            openPayment.method !== 'RAZORPAY' ||
+            !openPayment.razorpayOrderId
+          ) {
+            throw new ConflictException(
+              'A payment order is being prepared. Retry shortly, or contact an administrator if it remains unavailable.',
+            );
+          }
+
+          this.logger.log(
+            `[payment-order] reusing open order ${openPayment.razorpayOrderId} for invoice ${invoiceId}`,
+          );
+          return {
+            kind: 'reuse',
+            orderId: openPayment.razorpayOrderId,
+            amount: openPayment.amount,
+          } as const;
+        }
+
+        // Older deployments marked payment attempts Failed and then issued a
+        // second order. Those Razorpay orders are still retryable, so revive the
+        // latest matching order instead of creating another payable order.
+        const retryablePayment = await tx.payment.findFirst({
+          where: {
+            invoiceId,
+            method: 'RAZORPAY',
+            status: 'Failed',
+            razorpayOrderId: { not: null },
+          },
+          orderBy: { createdAt: 'desc' },
+        });
+
+        if (retryablePayment) {
+          if (retryablePayment.amount !== pendingAmount) {
+            throw new ConflictException(
+              'A previous Razorpay order is still open for a different balance. Contact an administrator before retrying.',
+            );
+          }
+
+          const reactivated = await tx.payment.updateMany({
+            where: { id: retryablePayment.id, status: 'Failed' },
+            data: { status: 'Pending' },
+          });
+
+          if (reactivated.count === 1) {
+            return {
+              kind: 'reuse',
+              orderId: retryablePayment.razorpayOrderId as string,
+              amount: retryablePayment.amount,
+            } as const;
+          }
+
+          const concurrentlyOpenedPayment = await tx.payment.findFirst({
+            where: { invoiceId, status: 'Pending' },
+            orderBy: { createdAt: 'desc' },
+          });
+
+          if (
+            concurrentlyOpenedPayment?.method === 'RAZORPAY' &&
+            concurrentlyOpenedPayment.razorpayOrderId &&
+            concurrentlyOpenedPayment.amount === pendingAmount
+          ) {
+            return {
+              kind: 'reuse',
+              orderId: concurrentlyOpenedPayment.razorpayOrderId,
+              amount: concurrentlyOpenedPayment.amount,
+            } as const;
+          }
+
+          throw new ConflictException(
+            'A payment order is being prepared. Retry shortly.',
+          );
+        }
+
+        // Reserve the invoice's unique Pending slot before contacting Razorpay.
+        // The invoice row lock serializes concurrent requests, preventing two
+        // provider orders from being minted by simultaneous button clicks.
+        const reservation = await tx.payment.create({
+          data: {
+            invoiceId,
+            method: 'RAZORPAY',
+            studentId: currentInvoice.studentId,
+            amount: pendingAmount,
+            status: 'Pending',
+          },
+        });
+
+        return {
+          kind: 'create',
+          paymentId: reservation.id,
+          amount: pendingAmount,
+        } as const;
+      });
+    } catch (error) {
+      if ((error as { code?: string })?.code === 'P2002') {
+        throw new ConflictException(
+          'Another payment order is being created for this invoice. Retry shortly.',
+        );
+      }
+      throw error;
     }
 
-    // Reuse the open order instead of minting a second one. Previously every
-    // call created a fresh Razorpay order for the full outstanding amount, so a
-    // double tap (or a retry after a dropped response) left two live orders for
-    // one invoice. Both could then be paid, which drove paidAmount past
-    // totalAmount and marked a "Paid" invoice with a negative balance.
-    const openPayment = await this.prisma.payment.findFirst({
-      where: { invoiceId, status: 'Pending' },
-      orderBy: { createdAt: 'desc' },
-    });
-
-    if (openPayment?.razorpayOrderId && openPayment.amount === pendingAmount) {
-      // Same invoice, same outstanding balance: the existing order is still
-      // valid, so hand it back rather than failing a legitimate retry.
-      this.logger.log(
-        `[payment-order] reusing open order ${openPayment.razorpayOrderId} for invoice ${invoiceId}`,
-      );
+    if (orderPlan.kind === 'reuse') {
       return {
-        orderId: openPayment.razorpayOrderId,
-        amount: openPayment.amount,
+        orderId: orderPlan.orderId,
+        amount: orderPlan.amount,
         currency: 'INR',
-        key: this.config.get<string>('RAZORPAY_KEY_ID'),
+        key: razorpayKey,
       };
     }
 
-    // An open order for a different amount is stale — the balance moved after it
-    // was created, so it can no longer be settled correctly. Retire it first,
-    // which also frees the one-pending-per-invoice slot.
-    if (openPayment) {
-      await this.prisma.payment.update({
-        where: { id: openPayment.id },
-        data: { status: 'Failed' },
-      });
-      this.logger.warn(
-        `[payment-order] retired stale order ${openPayment.razorpayOrderId ?? openPayment.id} for invoice ${invoiceId}`,
+    let order: Awaited<ReturnType<RazorpayService['createOrder']>>;
+    try {
+      order = await this.razorpay.createOrder(
+        orderPlan.amount,
+        `inv_${invoiceId}`,
+      );
+    } catch (error) {
+      const statusCode = (error as { statusCode?: number })?.statusCode;
+      if (
+        typeof statusCode === 'number' &&
+        statusCode >= 400 &&
+        statusCode < 500
+      ) {
+        await this.prisma.payment.updateMany({
+          where: {
+            id: orderPlan.paymentId,
+            status: 'Pending',
+            razorpayOrderId: null,
+          },
+          data: { status: 'Failed' },
+        });
+      } else {
+        this.logger.error(
+          `[payment-order] Razorpay order creation outcome is uncertain for invoice ${invoiceId}; keeping the reservation open`,
+        );
+      }
+      throw error;
+    }
+
+    const linkedOrder = await this.prisma.payment.updateMany({
+      where: {
+        id: orderPlan.paymentId,
+        status: 'Pending',
+        razorpayOrderId: null,
+      },
+      data: { razorpayOrderId: order.id },
+    });
+
+    if (linkedOrder.count !== 1) {
+      this.logger.error(
+        `[payment-order] created Razorpay order ${order.id} but could not link it to invoice ${invoiceId}`,
+      );
+      throw new ServiceUnavailableException(
+        'The payment order could not be saved. Contact an administrator before retrying.',
       );
     }
 
-    const order = await this.razorpay.createOrder(
-      pendingAmount,
-      `inv_${invoiceId}`,
-    );
-
-    await this.prisma.payment.create({
-      data: {
-        invoiceId,
-        method: 'RAZORPAY',
-        studentId: invoice.studentId,
-        amount: pendingAmount,
-        razorpayOrderId: order.id,
-        status: 'Pending',
-      },
-    });
-
     return {
       orderId: order.id,
-      amount: pendingAmount,
+      amount: orderPlan.amount,
       currency: 'INR',
-      key: this.config.get<string>('RAZORPAY_KEY_ID'),
+      key: razorpayKey,
     };
   }
 
@@ -381,66 +537,146 @@ export class FeesService {
       throw new BadRequestException('Invalid signature');
     }
 
-    const result = await this.confirmPayment(razorpay_order_id, {
-      razorpayPaymentId: razorpay_payment_id,
-      razorpaySignature: razorpay_signature,
-    });
+    const providerPayment =
+      await this.razorpay.fetchPayment(razorpay_payment_id);
+    const capturedAmount = Number(providerPayment.amount);
+
+    if (
+      providerPayment.order_id !== razorpay_order_id ||
+      providerPayment.currency !== 'INR' ||
+      !Number.isSafeInteger(capturedAmount) ||
+      capturedAmount <= 0
+    ) {
+      throw new BadRequestException(
+        'Razorpay payment details do not match the payment order',
+      );
+    }
+
+    if (providerPayment.status !== 'captured' || !providerPayment.captured) {
+      throw new ConflictException('Razorpay payment has not been captured yet');
+    }
+
+    const result = await this.confirmPayment(
+      razorpay_order_id,
+      {
+        razorpayPaymentId: razorpay_payment_id,
+        razorpaySignature: razorpay_signature,
+      },
+      capturedAmount,
+    );
 
     if (result.alreadyProcessed) {
       this.logger.log(
         `Payment ${razorpay_payment_id} already processed — skipping`,
       );
-      return { alreadyProcessed: true };
+      return {
+        alreadyProcessed: true,
+        refundRequired: result.refundAmount > 0,
+        refundAmount: result.refundAmount,
+      };
+    }
+
+    if (result.refundAmount > 0) {
+      this.logger.warn(
+        `[payment] captured payment ${razorpay_payment_id} exceeds invoice ${result.invoiceId} balance by ${result.refundAmount} paise; refund required`,
+      );
+      return {
+        alreadyProcessed: false,
+        refundRequired: true,
+        refundAmount: result.refundAmount,
+      };
     }
 
     this.logger.log(
       `Payment successful: ${razorpay_payment_id} for invoice ${result.invoiceId}`,
     );
-    return { alreadyProcessed: false };
+    return {
+      alreadyProcessed: false,
+      refundRequired: false,
+      refundAmount: 0,
+    };
   }
 
   /**
-   * Claims a provider order and updates its invoice in one transaction. This
-   * prevents a process failure after marking a payment successful but before
-   * recording the corresponding invoice balance.
+   * Locks the invoice before claiming the captured payment so different orders
+   * for the same invoice settle serially. Any amount above the remaining balance
+   * is recorded as requiring a refund rather than over-crediting the invoice.
    */
   private async confirmPayment(
     razorpayOrderId: string,
     providerFields: { razorpayPaymentId: string; razorpaySignature?: string },
-  ): Promise<{ alreadyProcessed: boolean; invoiceId: string }> {
+    capturedAmount: number,
+  ): Promise<{
+    alreadyProcessed: boolean;
+    invoiceId: string;
+    refundAmount: number;
+  }> {
     return this.prisma.$transaction(async (tx) => {
       const payment = await tx.payment.findUnique({
         where: { razorpayOrderId },
       });
       if (!payment) throw new NotFoundException('Payment record not found');
+      if (payment.method !== 'RAZORPAY') {
+        throw new ConflictException('Payment order is not a Razorpay payment');
+      }
+
+      const invoiceRows = await tx.$queryRaw<
+        Array<{ id: string; totalAmount: number; paidAmount: number }>
+      >`
+        SELECT "id", "totalAmount", "paidAmount"
+        FROM "Invoice"
+        WHERE "id" = ${payment.invoiceId}
+        FOR UPDATE
+      `;
+      const invoice = invoiceRows[0];
+      if (!invoice) throw new NotFoundException('Invoice not found');
+
+      if (payment.status === 'Success' || payment.status === 'RefundRequired') {
+        return {
+          alreadyProcessed: true,
+          invoiceId: payment.invoiceId,
+          refundAmount: payment.refundAmount,
+        };
+      }
 
       const claim = await tx.payment.updateMany({
-        where: { id: payment.id, status: { not: 'Success' } },
+        where: { id: payment.id, status: { in: ['Pending', 'Failed'] } },
         data: {
           ...providerFields,
+          amount: capturedAmount,
+          refundAmount: 0,
           status: 'Success',
           paidAt: new Date(),
         },
       });
 
       if (claim.count === 0) {
-        return { alreadyProcessed: true, invoiceId: payment.invoiceId };
+        const currentPayment = await tx.payment.findUnique({
+          where: { id: payment.id },
+          select: { refundAmount: true },
+        });
+        return {
+          alreadyProcessed: true,
+          invoiceId: payment.invoiceId,
+          refundAmount: currentPayment?.refundAmount ?? 0,
+        };
       }
 
-      // Applied as a single statement on purpose. The previous version read
-      // paidAmount, computed the new total in JS, then wrote it back — so two
-      // concurrent payments both read the same starting balance, both derived
-      // "Partial", and the last writer won with a status that no longer matched
-      // the balance. Deriving `status` from the post-update value in the same
-      // statement makes it correct regardless of interleaving, and leaves
-      // `paidAmount` monotonic without a read-modify-write race.
+      const amountToApply = Math.min(
+        capturedAmount,
+        Math.max(invoice.totalAmount - invoice.paidAmount, 0),
+      );
+      const refundAmount = capturedAmount - amountToApply;
+
       const updated = await tx.$executeRaw`
         UPDATE "Invoice"
-        SET "paidAmount" = "paidAmount" + ${payment.amount},
+        SET "paidAmount" = LEAST("totalAmount", "paidAmount" + ${amountToApply}),
             "status" = CASE
-              WHEN "paidAmount" + ${payment.amount} >= "totalAmount"
+              WHEN LEAST("totalAmount", "paidAmount" + ${amountToApply}) >= "totalAmount"
               THEN 'Paid'::"InvoiceStatus"
-              ELSE 'Partial'::"InvoiceStatus"
+              WHEN "paidAmount" + ${amountToApply} > 0
+              THEN 'Partial'::"InvoiceStatus"
+              ELSE 'Pending'::"InvoiceStatus"
             END,
             "updatedAt" = NOW()
         WHERE "id" = ${payment.invoiceId}
@@ -450,7 +686,18 @@ export class FeesService {
         throw new NotFoundException('Invoice not found');
       }
 
-      return { alreadyProcessed: false, invoiceId: payment.invoiceId };
+      if (refundAmount > 0) {
+        await tx.payment.update({
+          where: { id: payment.id },
+          data: { status: 'RefundRequired', refundAmount },
+        });
+      }
+
+      return {
+        alreadyProcessed: false,
+        invoiceId: payment.invoiceId,
+        refundAmount,
+      };
     });
   }
 
@@ -473,31 +720,32 @@ export class FeesService {
 
     const expectedSignature = createHmac('sha256', webhookSecret)
       .update(rawBody)
-      .digest('hex');
+      .digest();
+    const providedSignature =
+      typeof signature === 'string' && /^[a-f0-9]{64}$/i.test(signature)
+        ? Buffer.from(signature, 'hex')
+        : Buffer.alloc(0);
 
-    if (expectedSignature !== signature) {
+    if (
+      expectedSignature.length !== providedSignature.length ||
+      !timingSafeEqual(expectedSignature, providedSignature)
+    ) {
       this.logger.error('[razorpay-webhook] invalid signature');
       throw new BadRequestException('Invalid webhook signature');
     }
 
     const event = JSON.parse(rawBody.toString('utf8')) as RazorpayWebhookEvent;
 
-    // A failed payment leaves an order nobody will ever settle. Marking it
-    // Failed is what frees the one-pending-per-invoice slot so the student can
-    // retry; otherwise the stale order is reused forever.
+    // A failed event describes one payment attempt, not the order. Razorpay
+    // keeps the order available for another attempt, so leave its local slot
+    // Pending and reuse that same order on retry.
     if (event.event === 'payment.failed') {
       const failedOrderId = event.payload?.payment?.entity?.order_id;
-
       if (failedOrderId) {
-        await this.prisma.payment.updateMany({
-          where: { razorpayOrderId: failedOrderId, status: 'Pending' },
-          data: { status: 'Failed' },
-        });
         this.logger.warn(
-          `[razorpay-webhook] payment failed for order ${failedOrderId}`,
+          `[razorpay-webhook] payment attempt failed for order ${failedOrderId}; keeping the order open for retry`,
         );
       }
-
       return { received: true };
     }
 
@@ -509,19 +757,33 @@ export class FeesService {
     const paymentEntity = event.payload?.payment?.entity;
     const orderId = paymentEntity?.order_id;
     const paymentId = paymentEntity?.id;
+    const capturedAmount = paymentEntity?.amount;
 
-    if (!orderId || !paymentId) {
+    if (
+      !orderId ||
+      !paymentId ||
+      typeof capturedAmount !== 'number' ||
+      !Number.isSafeInteger(capturedAmount) ||
+      capturedAmount <= 0 ||
+      paymentEntity?.currency !== 'INR'
+    ) {
       this.logger.error(
-        '[razorpay-webhook] malformed payload, missing order_id/payment_id',
+        '[razorpay-webhook] malformed captured payment payload',
       );
-      return { received: true };
+      throw new BadRequestException('Malformed Razorpay payment event');
     }
 
-    let result: { alreadyProcessed: boolean; invoiceId: string };
+    let result: {
+      alreadyProcessed: boolean;
+      invoiceId: string;
+      refundAmount: number;
+    };
     try {
-      result = await this.confirmPayment(orderId, {
-        razorpayPaymentId: paymentId,
-      });
+      result = await this.confirmPayment(
+        orderId,
+        { razorpayPaymentId: paymentId },
+        capturedAmount,
+      );
     } catch (error) {
       if (error instanceof NotFoundException) {
         this.logger.error(
@@ -535,6 +797,13 @@ export class FeesService {
     if (result.alreadyProcessed) {
       this.logger.log(
         `[razorpay-webhook] payment ${paymentId} already processed — skipping`,
+      );
+      return { received: true };
+    }
+
+    if (result.refundAmount > 0) {
+      this.logger.error(
+        `[razorpay-webhook] captured payment ${paymentId} exceeds invoice ${result.invoiceId} balance by ${result.refundAmount} paise; refund required`,
       );
       return { received: true };
     }

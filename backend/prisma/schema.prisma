@@ -426,6 +426,7 @@ enum PaymentStatus {
   Pending
   Success
   Failed
+  RefundRequired
 }
 
 model FeeStructure {
@@ -486,7 +487,8 @@ model Payment {
   studentId String
   student   User   @relation(fields: [studentId], references: [id])
 
-  amount Int
+  amount       Int
+  refundAmount Int            @default(0)
 
   method PaymentMethod
   status PaymentStatus @default(Pending)

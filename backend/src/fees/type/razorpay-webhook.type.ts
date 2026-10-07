@@ -13,6 +13,8 @@ export interface RazorpayWebhookEvent {
       entity?: {
         id?: string;
         order_id?: string;
+        amount?: number;
+        currency?: string;
       };
     };
   };
