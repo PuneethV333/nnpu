@@ -6,6 +6,7 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { UsersService } from './users.service';
+import type { PassOutStudentsDto } from './dto';
 import { PrismaService } from '@/prisma/prisma.service';
 import { RedisService } from '@/redis/redis.service';
 import { MailService } from '@/mail/mail.service';
@@ -14,18 +15,29 @@ import { LoggerService } from '@/logger/logger.service';
 describe('UsersService', () => {
   let service: UsersService;
   let prisma: {
-    user: { findUnique: jest.Mock; update: jest.Mock; count: jest.Mock };
-    auth: { update: jest.Mock };
+    user: {
+      findUnique: jest.Mock;
+      findMany: jest.Mock;
+      update: jest.Mock;
+      count: jest.Mock;
+    };
+    auth: { update: jest.Mock; updateMany: jest.Mock };
     refreshToken: { deleteMany: jest.Mock };
-    section: { findUnique: jest.Mock };
+    section: { findUnique: jest.Mock; findMany: jest.Mock };
     $transaction: jest.Mock;
   };
-  let redis: { delPattern: jest.Mock };
+  let redis: { delPattern: jest.Mock; delMany: jest.Mock };
   let mail: { send: jest.Mock };
+  let logger: {
+    log: jest.Mock;
+    warn: jest.Mock;
+    error: jest.Mock;
+    verbose: jest.Mock;
+  };
 
   const tx = {
-    user: { update: jest.fn() },
-    auth: { update: jest.fn() },
+    user: { update: jest.fn(), updateMany: jest.fn() },
+    auth: { update: jest.fn(), updateMany: jest.fn() },
     refreshToken: { deleteMany: jest.fn() },
   };
 
@@ -42,24 +54,36 @@ describe('UsersService', () => {
   beforeEach(async () => {
     jest.clearAllMocks();
 
+    logger = {
+      log: jest.fn(),
+      warn: jest.fn(),
+      error: jest.fn(),
+      verbose: jest.fn(),
+    };
+
     tx.user.update.mockResolvedValue({});
     tx.auth.update.mockResolvedValue({});
+    tx.auth.updateMany.mockResolvedValue({ count: 1 });
     tx.refreshToken.deleteMany.mockResolvedValue({ count: 2 });
 
     prisma = {
       user: {
         findUnique: jest.fn(),
+        findMany: jest.fn().mockResolvedValue([]),
         update: jest.fn().mockResolvedValue({}),
         count: jest.fn().mockResolvedValue(0),
       },
-      auth: { update: jest.fn() },
+      auth: { update: jest.fn(), updateMany: jest.fn() },
       refreshToken: { deleteMany: jest.fn() },
-      section: { findUnique: jest.fn() },
+      section: { findUnique: jest.fn(), findMany: jest.fn() },
       $transaction: jest
         .fn()
         .mockImplementation((cb: (t: unknown) => unknown) => cb(tx)),
     };
-    redis = { delPattern: jest.fn().mockResolvedValue(1) };
+    redis = {
+      delPattern: jest.fn().mockResolvedValue(1),
+      delMany: jest.fn().mockResolvedValue(1),
+    };
     mail = { send: jest.fn().mockResolvedValue(undefined) };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -70,12 +94,7 @@ describe('UsersService', () => {
         { provide: MailService, useValue: mail },
         {
           provide: LoggerService,
-          useValue: {
-            log: jest.fn(),
-            warn: jest.fn(),
-            error: jest.fn(),
-            verbose: jest.fn(),
-          },
+          useValue: logger,
         },
       ],
     }).compile();
@@ -101,12 +120,14 @@ describe('UsersService', () => {
       });
       // jwt-auth.guard enforces isActive, but a live access token outlives the
       // flag until it expires, and refresh() would happily mint a new pair.
-      expect(tx.auth.update).toHaveBeenCalledWith({
-        where: { authId: 'nnpu1SB26KA001' },
+      // `updateMany` rather than `update`: the revocation helper is shared with
+      // the bulk pass-out, which revokes for a whole cohort in one statement.
+      expect(tx.auth.updateMany).toHaveBeenCalledWith({
+        where: { authId: { in: ['nnpu1SB26KA001'] } },
         data: { tokenVersion: { increment: 1 } },
       });
       expect(tx.refreshToken.deleteMany).toHaveBeenCalledWith({
-        where: { authId: 'nnpu1SB26KA001' },
+        where: { authId: { in: ['nnpu1SB26KA001'] } },
       });
       expect(redis.delPattern).toHaveBeenCalledWith('me:nnpu1SB26KA001');
     });
@@ -164,7 +185,7 @@ describe('UsersService', () => {
         where: { id: 'student-1' },
         data: { isActive: true },
       });
-      expect(tx.auth.update).not.toHaveBeenCalled();
+      expect(tx.auth.updateMany).not.toHaveBeenCalled();
       expect(tx.refreshToken.deleteMany).not.toHaveBeenCalled();
     });
 
@@ -255,6 +276,240 @@ describe('UsersService', () => {
     });
   });
 
+  describe('passOutStudents', () => {
+    const SEC_A = 'section-a';
+    const SEC_B = 'section-b';
+
+    const section = (
+      id: string,
+      name: string,
+      classTeacherId: string | null = null,
+    ) => ({
+      id,
+      name,
+      classTeacherId,
+    });
+
+    const bulkStudent = (
+      id: string,
+      sectionId: string,
+      authId: string,
+      over: Record<string, unknown> = {},
+    ) => ({
+      id,
+      isActive: true,
+      sectionId,
+      auth: { authId },
+      details: { name: `Student ${id}` },
+      ...over,
+    });
+
+    const dto = (
+      sectionIds: string[],
+      over: Record<string, unknown> = {},
+    ): PassOutStudentsDto => ({
+      sections: sectionIds.map((sectionId) => ({ sectionId })),
+      ...over,
+    });
+
+    beforeEach(() => {
+      // Mirrors `where: { id: { in: sectionIds } }`: only ever returns rows the
+      // caller asked for.
+      prisma.section.findMany = jest
+        .fn()
+        .mockImplementation(({ where }: { where: { id: { in: string[] } } }) =>
+          Promise.resolve(
+            [section(SEC_A, '2-SCI-A'), section(SEC_B, '2-COM-B')].filter((s) =>
+              where.id.in.includes(s.id),
+            ),
+          ),
+        );
+      prisma.user.findMany = jest.fn().mockResolvedValue([]);
+      // Realistic: Postgres reports how many rows it actually touched, which
+      // is the count the service returns.
+      tx.user.updateMany = jest
+        .fn()
+        .mockImplementation(({ where }: { where: { id: { in: string[] } } }) =>
+          Promise.resolve({ count: where.id.in.length }),
+        );
+      redis.delMany = jest.fn().mockResolvedValue(2);
+    });
+
+    it('deactivates every active student and revokes their sessions', async () => {
+      prisma.user.findMany.mockResolvedValue([
+        bulkStudent('s1', SEC_A, 'nnpu1SB26KA001'),
+        bulkStudent('s2', SEC_A, 'nnpu1SB26KA002'),
+      ]);
+
+      const result = await service.passOutStudents(dto([SEC_A]));
+
+      expect(result.deactivated).toBe(2);
+      expect(result.sections).toEqual([
+        { sectionId: SEC_A, sectionName: '2-SCI-A', passedOut: 2 },
+      ]);
+
+      expect(tx.user.updateMany).toHaveBeenCalledWith({
+        where: { id: { in: ['s1', 's2'] }, isActive: true },
+        data: { isActive: false },
+      });
+      // Without this, a "deactivated" cohort keeps logging in on live refresh
+      // tokens and the whole operation is a no-op in practice.
+      expect(tx.auth.updateMany).toHaveBeenCalledWith({
+        where: { authId: { in: ['nnpu1SB26KA001', 'nnpu1SB26KA002'] } },
+        data: { tokenVersion: { increment: 1 } },
+      });
+      expect(tx.refreshToken.deleteMany).toHaveBeenCalledWith({
+        where: { authId: { in: ['nnpu1SB26KA001', 'nnpu1SB26KA002'] } },
+      });
+      expect(redis.delMany).toHaveBeenCalledWith([
+        'me:nnpu1SB26KA001',
+        'me:nnpu1SB26KA002',
+      ]);
+    });
+
+    it('writes nothing on a dry run', async () => {
+      prisma.user.findMany.mockResolvedValue([
+        bulkStudent('s1', SEC_A, 'nnpu1SB26KA001'),
+      ]);
+
+      const result = await service.passOutStudents(
+        dto([SEC_A], { dryRun: true }),
+      );
+
+      expect(result).toMatchObject({ dryRun: true, deactivated: 0 });
+      expect(result.sections[0]).toMatchObject({ passedOut: 1 });
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+      expect(tx.user.updateMany).not.toHaveBeenCalled();
+      expect(redis.delMany).not.toHaveBeenCalled();
+    });
+
+    it('passes out several sections in one call', async () => {
+      prisma.user.findMany.mockResolvedValue([
+        bulkStudent('s1', SEC_A, 'a1'),
+        bulkStudent('s2', SEC_A, 'a2'),
+        bulkStudent('s3', SEC_B, 'b1'),
+      ]);
+
+      const result = await service.passOutStudents(dto([SEC_A, SEC_B]));
+
+      expect(result.deactivated).toBe(3);
+      expect(result.sections).toEqual([
+        { sectionId: SEC_A, sectionName: '2-SCI-A', passedOut: 2 },
+        { sectionId: SEC_B, sectionName: '2-COM-B', passedOut: 1 },
+      ]);
+    });
+
+    it('counts already-inactive students instead of touching them', async () => {
+      prisma.user.findMany.mockResolvedValue([
+        bulkStudent('s1', SEC_A, 'a1'),
+        bulkStudent('s2', SEC_A, 'a2', { isActive: false }),
+      ]);
+
+      const result = await service.passOutStudents(dto([SEC_A]));
+
+      expect(result.alreadyInactive).toBe(1);
+      expect(result.deactivated).toBe(1);
+      const calls = (
+        tx.user.updateMany as unknown as { mock: { calls: unknown[] } }
+      ).mock.calls as [{ where: { id: { in: string[] } } }][];
+      expect(calls[0][0].where.id.in).toEqual(['s1']);
+    });
+
+    it('re-scopes the write to isActive: true so a concurrent reactivation survives', async () => {
+      prisma.user.findMany.mockResolvedValue([
+        bulkStudent('s1', SEC_A, 'a1'),
+        bulkStudent('s2', SEC_A, 'a2'),
+      ]);
+
+      await service.passOutStudents(dto([SEC_A]));
+
+      const calls = (
+        tx.user.updateMany as unknown as { mock: { calls: unknown[] } }
+      ).mock.calls as [{ where: { isActive: boolean } }][];
+      expect(calls[0][0].where.isActive).toBe(true);
+    });
+
+    it('leaves the class teacher alone and says why', async () => {
+      prisma.section.findMany.mockResolvedValue([
+        section(SEC_A, '2-SCI-A', 'teacher-1'),
+      ]);
+      prisma.user.findMany
+        .mockResolvedValueOnce([bulkStudent('s1', SEC_A, 'a1')])
+        .mockResolvedValueOnce([
+          { id: 'teacher-1', role: 'Teacher', details: { name: 'Asha' } },
+        ]);
+
+      const result = await service.passOutStudents(dto([SEC_A]));
+
+      expect(result.deactivated).toBe(1);
+      expect(result.classTeachersUntouched).toEqual([
+        {
+          name: 'Asha',
+          reason: 'is the Teacher class teacher, so their account is untouched',
+        },
+      ]);
+      // The teacher is not in the update set.
+      const calls = (
+        tx.user.updateMany as unknown as { mock: { calls: unknown[] } }
+      ).mock.calls as [{ where: { id: { in: string[] } } }][];
+      expect(calls[0][0].where.id.in).toEqual(['s1']);
+    });
+
+    it('only selects students, never staff who happen to share the id list', async () => {
+      await service.passOutStudents(dto([SEC_A]));
+
+      const findCalls = prisma.user.findMany.mock.calls as unknown as [
+        { where: { role?: string } },
+      ][];
+      expect(findCalls[0][0].where.role).toBe('Student');
+    });
+
+    it('does nothing at all when every student is already inactive', async () => {
+      prisma.user.findMany.mockResolvedValue([
+        bulkStudent('s1', SEC_A, 'a1', { isActive: false }),
+      ]);
+
+      const result = await service.passOutStudents(dto([SEC_A]));
+
+      expect(result).toMatchObject({ deactivated: 0, alreadyInactive: 1 });
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+    });
+
+    it('reports which section ids do not exist', async () => {
+      await expect(
+        service.passOutStudents(dto([SEC_A, 'ghost-1'])),
+      ).rejects.toThrow(NotFoundException);
+      await expect(
+        service.passOutStudents(dto([SEC_A, 'ghost-1'])),
+      ).rejects.toThrow(/ghost-1/);
+    });
+
+    it('logs the reason so "why did these accounts go inactive" is answerable', async () => {
+      prisma.user.findMany.mockResolvedValue([bulkStudent('s1', SEC_A, 'a1')]);
+
+      await service.passOutStudents(
+        dto([SEC_A], { reason: 'Completed 2nd PUC' }),
+      );
+
+      expect(logger.log).toHaveBeenCalledWith(
+        expect.stringContaining('Completed 2nd PUC'),
+      );
+    });
+
+    it('tolerates a student with no auth row', async () => {
+      prisma.user.findMany.mockResolvedValue([
+        bulkStudent('s1', SEC_A, 'a1'),
+        bulkStudent('s2', SEC_A, '', { auth: null }),
+      ]);
+
+      const result = await service.passOutStudents(dto([SEC_A]));
+
+      // The account is still deactivated; there are just no sessions to revoke.
+      expect(result.deactivated).toBe(2);
+      expect(redis.delMany).toHaveBeenCalledWith(['me:a1']);
+    });
+  });
+
   describe('resetPassword', () => {
     it('emails a temp password and revokes sessions', async () => {
       prisma.user.findUnique.mockResolvedValue(student());
@@ -264,6 +519,9 @@ describe('UsersService', () => {
       expect(mail.send).toHaveBeenCalledWith(
         expect.objectContaining({ to: 'asha@example.com' }),
       );
+      // resetPassword sets the password and bumps tokenVersion in one
+      // `auth.update`, so it does not go through the shared revocation helper
+      // (which `setActive` and the bulk pass-out use).
       const authUpdateMock = tx.auth.update as unknown as jest.Mock<
         unknown,
         [{ where: unknown; data: Record<string, unknown> }]
@@ -282,8 +540,8 @@ describe('UsersService', () => {
 
     it('sends the mail before committing the password change', async () => {
       // Order is the whole point, so it is asserted directly. Asserting only
-      // "auth.update not called on failure" is not enough: a write-before-email
-      // implementation using prisma.auth.update instead of the transaction would
+      // "auth update not called on failure" is not enough: a write-before-email
+      // implementation using prisma.auth instead of the transaction would
       // slip past that.
       const order: string[] = [];
       prisma.user.findUnique.mockResolvedValue(student());

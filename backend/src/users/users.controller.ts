@@ -7,13 +7,31 @@ import { Roles } from '@/auth/decorators/roles.decorator';
 import { CurrentUser } from '@/auth/decorators/current-user.decorator';
 import type { JwtPayload } from '@/auth/types/jwt-payload.type';
 import { UsersService } from './users.service';
-import { TransferStudentDto, UserIdParamDto } from './dto';
+import { PassOutStudentsDto, TransferStudentDto, UserIdParamDto } from './dto';
 
 @ApiTags('users')
 @ApiBearerAuth()
 @Controller('users')
 export class UsersController {
   constructor(private readonly usersService: UsersService) {}
+
+  /**
+   * Declared before the `:userId/*` routes, though it would not collide with
+   * them: those all have a second path segment (`/users/:userId/deactivate`),
+   * so `/users/pass-out` cannot match one. Declared first so the literal path
+   * reads before the parameterised ones.
+   */
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('Admin')
+  @Post('pass-out')
+  @Throttle({ default: { limit: 10, ttl: 60000 } })
+  @ApiOperation({
+    summary:
+      'Deactivate every active student in the given sections and revoke their sessions (admin only). Scoped to students, so a class teacher in a passing-out cohort is reported and left alone.',
+  })
+  passOutStudents(@Body() dto: PassOutStudentsDto) {
+    return this.usersService.passOutStudents(dto);
+  }
 
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('Admin')

@@ -11,7 +11,8 @@ import {
 } from '@nestjs/common';
 import { randomBytes } from 'crypto';
 import { hash } from 'bcrypt';
-import type { TransferStudentDto } from './dto';
+import type { Prisma } from '@/generated/prisma';
+import type { PassOutStudentsDto, TransferStudentDto } from './dto';
 
 /**
  * Ongoing user lifecycle: deactivation, reactivation, section transfer and
@@ -104,6 +105,11 @@ export class UsersService {
     }
 
     if (user.auth) {
+      // Captured before the closure: TypeScript does not carry the `user.auth`
+      // narrowing into a callback, which is why the original code reached for
+      // `user.auth!` inside the transaction.
+      const { authId } = user.auth;
+
       await this.prisma.$transaction(async (tx) => {
         await tx.user.update({
           where: { id: userId },
@@ -111,19 +117,7 @@ export class UsersService {
         });
 
         if (!active) {
-          // Kill live sessions immediately rather than letting them run out:
-          // `jwt-auth.guard` already enforces `isActive`, but outstanding access
-          // tokens carry their own expiry, and any refresh token could mint a
-          // fresh pair. Bumping tokenVersion covers access tokens; deleting the
-          // rows covers refresh.
-          await tx.auth.update({
-            where: { authId: user.auth!.authId },
-            data: { tokenVersion: { increment: 1 } },
-          });
-
-          await tx.refreshToken.deleteMany({
-            where: { authId: user.auth!.authId },
-          });
+          await this.revokeSessions(tx, [authId]);
         }
       });
     } else {
@@ -138,6 +132,166 @@ export class UsersService {
     }
 
     return { userId, isActive: active, unchanged: false };
+  }
+
+  /**
+   * Kills live sessions for a set of authIds.
+   *
+   * Shared with the bulk pass-out so the two paths cannot drift: a bulk
+   * deactivation that skipped this would leave every one of those students
+   * holding a valid refresh token and a live access token, which is precisely
+   * the outcome "deactivated" is supposed to prevent.
+   *
+   * `jwt-auth.guard` already enforces `isActive`, but outstanding access tokens
+   * carry their own expiry, and any refresh token could mint a fresh pair.
+   * Bumping tokenVersion covers access tokens; deleting the rows covers
+   * refresh.
+   */
+  private async revokeSessions(
+    tx: Prisma.TransactionClient,
+    authIds: string[],
+  ): Promise<void> {
+    if (authIds.length === 0) return;
+
+    await tx.auth.updateMany({
+      where: { authId: { in: authIds } },
+      data: { tokenVersion: { increment: 1 } },
+    });
+
+    await tx.refreshToken.deleteMany({
+      where: { authId: { in: authIds } },
+    });
+  }
+
+  /**
+   * Deactivates every active student in the named sections ("pass out").
+   *
+   * Scoped to `role: 'Student'` deliberately. A section id can also be a
+   * teacher's `classTeacherId`, and a class teacher passing out is not what
+   * anyone means by passing out a cohort — so a teacher in the section is
+   * reported as skipped rather than deactivated.
+   *
+   * `isActive` is all that is written. The student keeps their `sectionId`, and
+   * therefore their attendance and marks history, which is the record of the
+   * year they sat. Every roster query already filters `isActive: true`, so they
+   * disappear from attendance and marks lists without any of that needing to be
+   * detached here.
+   *
+   * Sessions are revoked through the same `revokeSessions` the single-user
+   * deactivate uses. Without it a "deactivated" cohort would keep logging in on
+   * live refresh tokens, which would make the whole operation a no-op in
+   * practice.
+   */
+  async passOutStudents(dto: PassOutStudentsDto) {
+    const sectionIds = dto.sections.map((s) => s.sectionId);
+
+    this.logger.log(
+      `[users-pass-out] sections=${sectionIds.length} dryRun=${dto.dryRun === true} reason="${dto.reason ?? ''}"`,
+    );
+
+    const found = await this.prisma.section.findMany({
+      where: { id: { in: sectionIds } },
+      select: { id: true, name: true, classTeacherId: true },
+    });
+
+    // Keyed on what is missing rather than on a length mismatch: passing the
+    // same section twice would make the counts differ with nothing missing.
+    const foundIds = new Set(found.map((s) => s.id));
+    const missing = sectionIds.filter((id) => !foundIds.has(id));
+    if (missing.length > 0) {
+      throw new NotFoundException(
+        `Section(s) not found: ${missing.join(', ')}`,
+      );
+    }
+
+    const students = await this.prisma.user.findMany({
+      where: { sectionId: { in: sectionIds }, role: 'Student' },
+      select: {
+        id: true,
+        isActive: true,
+        sectionId: true,
+        auth: { select: { authId: true } },
+        details: { select: { name: true } },
+      },
+    });
+
+    // A class teacher attached to a passed-out section is left alone. Read off
+    // `Section.classTeacherId`, since that is where the scalar lives — on User
+    // the same link is the `classTeacherOf` relation, not a queryable field.
+    const teacherIds = found
+      .map((s) => s.classTeacherId)
+      .filter((id): id is string => typeof id === 'string');
+
+    const classTeachers = teacherIds.length
+      ? await this.prisma.user.findMany({
+          where: { id: { in: teacherIds }, isActive: true },
+          select: { id: true, role: true, details: { select: { name: true } } },
+        })
+      : [];
+
+    const active = students.filter((s) => s.isActive);
+    const alreadyInactive = students.length - active.length;
+
+    const result = {
+      dryRun: dto.dryRun === true,
+      deactivated: 0,
+      alreadyInactive,
+      sections: found.map((section) => {
+        const inSection = students.filter((s) => s.sectionId === section.id);
+        return {
+          sectionId: section.id,
+          sectionName: section.name,
+          passedOut: inSection.filter((s) => s.isActive).length,
+        };
+      }),
+      // Reported, not deactivacted: a teacher in a passing-out cohort is not
+      // part of it, and deactivating them would take a member of staff off the
+      // portal on a student operation.
+      classTeachersUntouched: classTeachers.map((u) => ({
+        name: u.details?.name ?? u.id,
+        reason: `is the ${u.role} class teacher, so their account is untouched`,
+      })),
+    };
+
+    if (dto.dryRun) {
+      this.logger.log(
+        `[users-pass-out] dry run: ${active.length} student(s) would be deactivated`,
+      );
+      return { ...result, deactivated: 0 };
+    }
+
+    if (active.length === 0) {
+      return { ...result, deactivated: 0 };
+    }
+
+    const ids = active.map((s) => s.id);
+    const authIds = active
+      .map((s) => s.auth?.authId)
+      .filter((a): a is string => typeof a === 'string');
+
+    const deactivated = await this.prisma.$transaction(async (tx) => {
+      // `isActive: true` in the where clause as well as in the id list, so a
+      // student reactivated by another admin mid-run is not re-deactivated.
+      const { count } = await tx.user.updateMany({
+        where: { id: { in: ids }, isActive: true },
+        data: { isActive: false },
+      });
+
+      await this.revokeSessions(tx, authIds);
+
+      return count;
+    });
+
+    // One round trip for the whole cohort. `invalidate` would loop
+    // `delPattern`, and each of those runs a full keyspace SCAN — 125 students
+    // would mean 125 scans. `delMany` DELs exact keys in a single command.
+    await this.redis.delMany(authIds.map((authId) => `me:${authId}`));
+
+    this.logger.log(
+      `[users-pass-out] deactivated ${deactivated} student(s)${dto.reason ? ` (reason: ${dto.reason})` : ''}`,
+    );
+
+    return { ...result, deactivated };
   }
 
   async transferStudent(studentId: string, dto: TransferStudentDto) {

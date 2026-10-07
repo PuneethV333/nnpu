@@ -308,6 +308,31 @@ Body: `sections[]`, optional `targetAcademicYearId`, optional `dryRun`.
   `2-SCI-A` legitimately exists in both, so any UI listing sections must show
   the academic year alongside the name or the two are indistinguishable.
 
+## Bulk pass-out (deactivate a cohort)
+
+`POST /users/pass-out` — admin only, `@Throttle({ limit: 10 })`. Body:
+`sections[]` (many at once), optional `reason`, optional `dryRun`.
+
+- **Scoped to `role: 'Student'`.** A section id is also a valid value for
+  `Section.classTeacherId`, so a teacher attached to a passing-out cohort is
+  reported under `classTeachersUntouched` and left alone. Deactivating a member
+  of staff during a student operation is not what anyone means.
+- Only `isActive` is written. `sectionId` is deliberately kept, so attendance
+  and marks history survives as the record of the year they sat. Every roster
+  query already filters `isActive: true`, so they vanish from attendance and
+  marks lists without any of that needing detaching.
+- Session revocation goes through the **same** `revokeSessions()` helper as the
+  single-user `deactivate`. If the bulk path skipped it, a "deactivated" cohort
+  would keep logging in on live refresh tokens and the operation would be a
+  no-op in practice. (`resetPassword` does *not* use that helper — it sets the
+  password and bumps `tokenVersion` in one `auth.update`.)
+- The `updateMany` `where` re-states `isActive: true` so a student reactivated
+  by another admin mid-run is not re-deactivated.
+- Cache invalidation uses `RedisService.delMany`, not `invalidate()`. `delPattern`
+  runs a full keyspace SCAN per call, so looping it would scan 125 times.
+- `reason` is logged, not stored. `User` has no column for it and inventing one
+  for a value nothing reads would be a schema change for nothing.
+
 ### Resolved — do not re-flag these
 
 These were open at one point and are now fixed. They are listed because each

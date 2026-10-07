@@ -121,6 +121,35 @@ export class RedisService implements OnModuleDestroy {
     return this.safe('del', async () => (await this.redis.del(key)) > 0, false);
   }
 
+  /**
+   * Deletes many exact keys in one round trip.
+   *
+   * For bulk invalidation where the caller already knows the full key set.
+   * Looping `del` would work but costs a round trip per key, and looping
+   * `delPattern` is far worse — that runs a SCAN over the whole keyspace each
+   * time, so invalidating 125 profiles that way scans the keyspace 125 times.
+   * DEL with many keys is O(N) total and one round trip.
+   *
+   * Chunked so a very large set cannot produce a single oversized command.
+   */
+  async delMany(keys: string[]): Promise<number> {
+    if (keys.length === 0) return 0;
+
+    let deleted = 0;
+    const CHUNK = 500;
+
+    for (let i = 0; i < keys.length; i += CHUNK) {
+      const chunk = keys.slice(i, i + CHUNK);
+      deleted += await this.safe(
+        'delMany',
+        async () => this.redis.del(...chunk),
+        0,
+      );
+    }
+
+    return deleted;
+  }
+
   async delPattern(pattern: string): Promise<number> {
     return this.safe('delPattern', () => this.scanAndDelete(pattern), 0);
   }
