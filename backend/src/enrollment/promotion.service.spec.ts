@@ -55,6 +55,7 @@ describe('PromotionService.promoteTo2ndPuc', () => {
   let sectionCreate: jest.Mock;
   let service: PromotionService;
   let logger: { log: jest.Mock; warn: jest.Mock; error: jest.Mock };
+  let redis: { delPattern: jest.Mock };
 
   beforeEach(() => {
     updateMany = jest.fn().mockResolvedValue({ count: 2 });
@@ -117,7 +118,12 @@ describe('PromotionService.promoteTo2ndPuc', () => {
     };
 
     logger = { log: jest.fn(), warn: jest.fn(), error: jest.fn() };
-    service = new PromotionService(prisma as never, logger as never);
+    redis = { delPattern: jest.fn().mockResolvedValue(0) };
+    service = new PromotionService(
+      prisma as never,
+      logger as never,
+      redis as never,
+    );
   });
 
   it('moves students into the same session key in class 2', async () => {
@@ -217,6 +223,7 @@ describe('PromotionService.promoteTo2ndPuc', () => {
     expect(prisma.$transaction).not.toHaveBeenCalled();
     expect(sectionCreate).not.toHaveBeenCalled();
     expect(updateMany).not.toHaveBeenCalled();
+    expect(redis.delPattern).not.toHaveBeenCalled();
   });
 
   it('does not create the academic year on a dry run', async () => {
@@ -373,6 +380,15 @@ describe('PromotionService.promoteTo2ndPuc', () => {
     await expect(service.promoteTo2ndPuc(dto([SCI_A]))).rejects.toThrow(
       BadRequestException,
     );
+  });
+
+  it('clears the cached attendance roster of the source sections', async () => {
+    // Students just left their 1st-PUC sections, so the cached roster there
+    // still lists them — a teacher could mark attendance for a cohort that is
+    // now in 2nd PUC.
+    await service.promoteTo2ndPuc(dto([SCI_A]));
+
+    expect(redis.delPattern).toHaveBeenCalledWith('attendance:*');
   });
 
   it('never touches Auth, so a promoted student keeps their login id', async () => {

@@ -63,6 +63,28 @@ import { DashboardModule } from './dashboard/dashboard.module';
         SMTP_USER: Joi.string().optional(),
         SMTP_PASS: Joi.string().optional(),
         SMTP_FROM: Joi.string().optional(),
+        // Validated, not just accepted. `Intl.DateTimeFormat` throws a
+        // `RangeError` on an unknown zone at the *first call that needs a date*,
+        // so a typo here (it was `Asia/Banglore`) turned every date-dependent
+        // endpoint into a runtime 500 — dashboard, attendance roster, calendar,
+        // crons — while the app booted and looked perfectly healthy. Failing at
+        // boot is the only place this is cheap to notice.
+        SCHOOL_TIMEZONE: Joi.string().custom((value: string, helpers) => {
+          try {
+            new Intl.DateTimeFormat('en-CA', { timeZone: value }).format(
+              new Date(0),
+            );
+            return value;
+          } catch {
+            // `helpers.message`, not `helpers.error`: the latter takes a code
+            // from Joi's own message catalogue and substituted the generic
+            // `"value" contains an invalid value`, which tells the operator
+            // nothing about what to type instead.
+            return helpers.message({
+              custom: `"${value}" is not a valid IANA time zone. Pick one from Intl.supportedValuesOf('timeZone') — for NNPU that is "Asia/Kolkata".`,
+            });
+          }
+        }, 'iana-timezone'),
       }),
     }),
     ThrottlerModule.forRoot([

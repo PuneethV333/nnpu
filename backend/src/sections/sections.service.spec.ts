@@ -23,7 +23,7 @@ describe('SectionsService assignments', () => {
     sectionSubject: { findMany: jest.Mock; upsert: jest.Mock };
     $transaction: jest.Mock;
   };
-  let redis: { delPattern: jest.Mock };
+  let redis: { delPattern: jest.Mock; del: jest.Mock };
 
   beforeEach(async () => {
     prisma = {
@@ -37,7 +37,10 @@ describe('SectionsService assignments', () => {
           Promise.all(ops as Promise<unknown>[]),
         ),
     };
-    redis = { delPattern: jest.fn().mockResolvedValue(1) };
+    redis = {
+      delPattern: jest.fn().mockResolvedValue(1),
+      del: jest.fn().mockResolvedValue(true),
+    };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -82,6 +85,12 @@ describe('SectionsService assignments', () => {
         id: 'section-1',
         classTeacherId: 'teacher-1',
       });
+
+      // `sections:all` carries `isClassTeacher`, derived from the very field
+      // this call writes, so it has to go too — otherwise the admin's section
+      // list still says the save did not work for the TTL.
+      expect(redis.delPattern).toHaveBeenCalledWith('sections:teacher:*');
+      expect(redis.del).toHaveBeenCalledWith('sections:all');
 
       expect(prisma.section.update).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -260,6 +269,7 @@ describe('SectionsService assignments', () => {
 
       // teacher-old no longer holds sub-1 and must not keep seeing the section.
       expect(redis.delPattern).toHaveBeenCalledWith('sections:teacher:*');
+      expect(redis.del).toHaveBeenCalledWith('sections:all');
     });
 
     it('allows unassigning a subject with teacherId null', async () => {

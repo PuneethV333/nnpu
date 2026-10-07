@@ -65,6 +65,7 @@ describe('EnrollmentService.importStudentsFromCsv', () => {
     $transaction: jest.Mock;
   };
   let mail: { sendBulk: jest.Mock; send: jest.Mock };
+  let redis: { delPattern: jest.Mock; delMany: jest.Mock };
   let logger: { log: jest.Mock; warn: jest.Mock; error: jest.Mock };
   let service: EnrollmentService;
   let createdAuthIds: string[];
@@ -110,10 +111,15 @@ describe('EnrollmentService.importStudentsFromCsv', () => {
     };
     logger = { log: jest.fn(), warn: jest.fn(), error: jest.fn() };
 
+    redis = {
+      delPattern: jest.fn().mockResolvedValue(0),
+      delMany: jest.fn().mockResolvedValue(0),
+    };
     service = new EnrollmentService(
       prisma as never,
       logger as never,
       mail as never,
+      redis as never,
     );
   });
 
@@ -154,6 +160,15 @@ describe('EnrollmentService.importStudentsFromCsv', () => {
       details: { create: { name: 'Ananya Rao', email: 'ananya@example.com' } },
       auth: { create: { authId: 'nnpu1SB26KA007' } },
     });
+  });
+
+  it('clears the cached attendance roster for the target section', async () => {
+    // Students were just added to a section whose cached roster is built from
+    // its students. Left alone, a teacher who marked attendance before the
+    // import would not see the new students until the TTL expired.
+    await service.importStudentsFromCsv(dto(), CSV);
+
+    expect(redis.delPattern).toHaveBeenCalledWith('attendance:*');
   });
 
   it('emails the default password and asks the student to change it', async () => {

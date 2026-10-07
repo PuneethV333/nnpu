@@ -4,12 +4,10 @@ import { DashboardService } from './dashboard.service';
 import { PrismaService } from '@/prisma/prisma.service';
 import { LoggerService } from '@/logger/logger.service';
 import { toDayKey, zonedToday } from '@/common/utils/date.util';
-import { RedisService } from '@/redis/redis.service';
 
 describe('DashboardService', () => {
   let service: DashboardService;
   let prisma: jest.Mocked<PrismaService>;
-  let redis: jest.Mocked<RedisService>;
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
@@ -33,19 +31,11 @@ describe('DashboardService', () => {
             verbose: jest.fn(),
           },
         },
-        {
-          provide: RedisService,
-          useValue: {
-            get: jest.fn(),
-            set: jest.fn(),
-          },
-        },
       ],
     }).compile();
 
     service = module.get(DashboardService);
     prisma = module.get(PrismaService);
-    redis = module.get(RedisService);
   });
 
   afterEach(() => {
@@ -70,19 +60,35 @@ describe('DashboardService', () => {
     expect(service).toBeDefined();
   });
 
-  it('returns the cached dashboard without touching Prisma', async () => {
-    const cached = {
-      today: { date: '2026-07-31', type: 'Working', label: null },
-    } as never;
-    (redis.get as jest.Mock).mockResolvedValue(cached);
-    (prisma.academicCalendarDay.findUnique as jest.Mock).mockRejectedValue(
-      new Error('should not touch prisma'),
-    );
+  /**
+   * The regression this guards: the result used to be cached for 300s under
+   * `dashboard:admin:<day>` and NOTHING invalidated it. Every field is an
+   * aggregate over a table written elsewhere — pass-out, CSV import, activate/
+   * deactivate, transfer, attendance marking, Razorpay payments, calendar
+   * overrides, fee-structure edits — so an admin could pass out 250 students
+   * and still read the old total for five minutes, with nothing visibly wrong.
+   *
+   * Asserted as "always recomputes", because the service no longer injects
+   * RedisService: re-adding a cache would fail this spec's DI graph.
+   */
+  it('always recomputes rather than serving a cached aggregate', async () => {
+    primeAggregates();
+    (prisma.user.count as jest.Mock).mockResolvedValue(7);
+    (prisma.academicCalendarDay.findUnique as jest.Mock).mockResolvedValue({
+      date: zonedToday(),
+      type: 'Working',
+      label: null,
+    });
 
-    const result = await service.getAdminDashboard();
+    const first = await service.getAdminDashboard();
 
-    expect(result).toBe(cached);
-    expect(prisma.academicCalendarDay.findUnique).not.toHaveBeenCalled();
+    // Whatever the underlying counts become, the next read reflects it.
+    (prisma.user.count as jest.Mock).mockResolvedValue(250);
+    const second = await service.getAdminDashboard();
+
+    expect(first.attendanceToday.totalStudents).toBe(7);
+    expect(second.attendanceToday.totalStudents).toBe(250);
+    expect(prisma.academicCalendarDay.findUnique).toHaveBeenCalledTimes(2);
   });
 
   /**
@@ -92,7 +98,6 @@ describe('DashboardService', () => {
    * previous day.
    */
   it('queries the school day, not the UTC day, during the IST midnight window', async () => {
-    (redis.get as jest.Mock).mockResolvedValue(null);
     primeAggregates();
     (prisma.academicCalendarDay.findUnique as jest.Mock).mockResolvedValue({
       date: zonedToday(),
@@ -124,8 +129,11 @@ describe('DashboardService', () => {
     }
   });
 
-  it('includes the school day in the cache key so the rollover is immediate', async () => {
-    (redis.get as jest.Mock).mockResolvedValue(null);
+  it('always reflects the current school day, so there is no rollover window', async () => {
+    // This used to be a cache-key assertion: the day was part of the key so the
+    // 300s TTL could not serve yesterday's figures for five minutes past local
+    // midnight. With no cache the window is gone entirely, which is the
+    // stronger version of the same guarantee.
     primeAggregates();
     (prisma.academicCalendarDay.findUnique as jest.Mock).mockResolvedValue({
       date: zonedToday(),
@@ -133,17 +141,12 @@ describe('DashboardService', () => {
       label: null,
     });
 
-    await service.getAdminDashboard();
+    const result = await service.getAdminDashboard();
 
-    // Otherwise the 300s TTL serves the previous day's figures for up to five
-    // minutes after local midnight.
-    expect(redis.get).toHaveBeenCalledWith(
-      expect.stringContaining(`dashboard:admin:${toDayKey(zonedToday())}`),
-    );
+    expect(result.today.date).toBe(toDayKey(zonedToday()));
   });
 
   it('aggregates and returns the admin dashboard', async () => {
-    (redis.get as jest.Mock).mockResolvedValue(null);
     (prisma.academicCalendarDay.findUnique as jest.Mock).mockResolvedValue({
       date: new Date(),
       type: 'Working',
@@ -180,7 +183,6 @@ describe('DashboardService', () => {
   });
 
   it('returns zero attendance percentage when no active students', async () => {
-    (redis.get as jest.Mock).mockResolvedValue(null);
     (prisma.academicCalendarDay.findUnique as jest.Mock).mockResolvedValue({
       date: new Date(),
       type: 'Working',

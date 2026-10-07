@@ -141,28 +141,36 @@ export class SectionsService {
   }
 
   /**
-   * Drops the cached "my sections" for a teacher.
+   * Drops every cache an assignment change can affect.
    *
-   * `getMySections` caches for 300s keyed by user id, so an assignment change
-   * would otherwise leave a teacher unable to see a section they were just
-   * given — or still able to see one they were just removed from. The previous
-   * holder is invalidated too, otherwise their list keeps a section they no
-   * longer staff.
+   * Two keys, not one. `getMySections` caches per teacher for 300s, so an
+   * assignment change would otherwise leave a teacher unable to see a section
+   * they were just given — or still able to see one they were just removed
+   * from. The previous holder is invalidated too, otherwise their list keeps a
+   * section they no longer staff.
+   *
+   * `sections:all` is the one that was missed. `getAllSections` returns the
+   * same rows but includes `isClassTeacher`, derived from `classTeacherId` —
+   * exactly the field `setClassTeacher` writes. So an admin assigning a class
+   * teacher saw the change fail to appear in the section list for five minutes,
+   * which reads as "the save did not work" and invites a second identical save.
    */
   private async invalidateTeacherSectionCache(
     ...teacherIds: (string | null | undefined)[]
   ): Promise<void> {
     const ids = teacherIds.filter((id): id is string => typeof id === 'string');
 
-    if (ids.length === 0) return;
-
     try {
       await this.redis.delPattern('sections:teacher:*');
+      // `sections:all` carries `isClassTeacher`, so it goes stale on the very
+      // write this method is called from.
+      await this.redis.del('sections:all');
+
       this.logger.log(
-        `[sections-assign] invalidated my-sections cache for ${ids.join(', ')}`,
+        `[sections-assign] invalidated section caches for ${ids.join(', ') || 'n/a'}`,
       );
     } catch (err) {
-      // A stale teacher list is a UX annoyance, not a correctness problem, and
+      // A stale section list is a UX annoyance, not a correctness problem, and
       // it expires within the TTL. Failing the write would be worse.
       this.logger.warn(
         `[sections-assign] cache invalidation failed: ${String(err)}`,

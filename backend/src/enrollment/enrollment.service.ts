@@ -8,6 +8,7 @@ import { Prisma, SecondLanguage, Stream } from '@/generated/prisma';
 import { PrismaService } from '@/prisma/prisma.service';
 import { LoggerService } from '@/logger/logger.service';
 import { MailService } from '@/mail/mail.service';
+import { RedisService } from '@/redis/redis.service';
 import {
   COMBO_CODE,
   LANG_CODE,
@@ -18,6 +19,7 @@ import {
   SECTION_STREAM_PREFIX,
   authIdSessionSegment,
 } from '@/common/utils/section-session.util';
+import { ATTENDANCE_CACHE_PREFIX } from '@/common/utils/cache-keys';
 import { ImportStudentsDto } from './dto/import-students.dto';
 import {
   parseStudentCsv,
@@ -58,6 +60,7 @@ export class EnrollmentService {
     private readonly prisma: PrismaService,
     private readonly logger: LoggerService,
     private readonly mail: MailService,
+    private readonly redis: RedisService,
   ) {}
 
   /**
@@ -177,6 +180,12 @@ export class EnrollmentService {
       { puYear, joinYear, sessionCode },
       hashedPassword,
     );
+
+    // Students were just added to a section, and the cached attendance roster
+    // for that section is built from its students. Left alone, a teacher who
+    // marked attendance before the import would not see the new students until
+    // the TTL expired.
+    await this.redis.delPattern(ATTENDANCE_CACHE_PREFIX);
 
     // Accounts exist from here on. A mail failure must NOT undo them, or the
     // operator has no way to recover the credentials — so it is reported in the

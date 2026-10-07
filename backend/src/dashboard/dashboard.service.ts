@@ -1,6 +1,5 @@
 import { LoggerService } from '@/logger/logger.service';
 import { PrismaService } from '@/prisma/prisma.service';
-import { RedisService } from '@/redis/redis.service';
 import { Injectable } from '@nestjs/common';
 import { AdminDashboard } from './types/dashboard.type';
 import { toDayKey, zonedToday } from '@/common/utils/date.util';
@@ -9,7 +8,6 @@ import { toDayKey, zonedToday } from '@/common/utils/date.util';
 export class DashboardService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly redis: RedisService,
     private readonly logger: LoggerService,
   ) {}
 
@@ -23,13 +21,34 @@ export class DashboardService {
     // yesterday's attendance, calendar day and upcoming events.
     const today = zonedToday();
 
-    // The day is part of the key so the rollover is immediate. Without it the
-    // 300s TTL would keep serving the previous school day's figures for up to
-    // five minutes after local midnight.
-    const cacheKey = `dashboard:admin:${toDayKey(today)}`;
-    const cached = await this.redis.get<AdminDashboard>(cacheKey);
-    if (cached) return cached;
-
+    // DELIBERATELY UNCACHED.
+    //
+    // This used to be cached for 300s under `dashboard:admin:<day>`, and
+    // nothing ever invalidated it. Every number below is an aggregate over a
+    // table that something else writes:
+    //
+    //   totalStudents    <- CSV import, pass-out, activate/deactivate, transfer
+    //   markedToday      <- marking attendance (which clears `attendance:*`
+    //                       but never this key)
+    //   totalTeachers    <- onboarding staff creation
+    //   pendingInvoices  <- Razorpay webhook / payment
+    //   amountPending    <- the same
+    //   today / events   <- calendar day overrides
+    //
+    // That is roughly ten write paths, so patching each one is a fix that
+    // silently regresses the next time a new one is added — which is exactly
+    // how this bug existed: someone forgot, and nobody noticed because stale
+    // admin totals look like plausible numbers.
+    //
+    // The cost of not caching is seven indexed aggregate queries on a screen
+    // an admin loads a few times a day. Paying that to be able to trust the
+    // numbers is the right trade for this project: it is single-instance and
+    // low-traffic (see the hosting constraint in AGENTS.md), and the whole
+    // value of a dashboard is that it is current.
+    //
+    // `dashboard.service.spec.ts` asserts this stays true — if you want to
+    // reintroduce a cache, it needs a version-stamped key that every writer
+    // above bumps, not a TTL.
     const [
       calendarDay,
       totalStudents,
@@ -99,8 +118,6 @@ export class DashboardService {
         label: d.label,
       })),
     };
-
-    await this.redis.set<AdminDashboard>(cacheKey, dashboard, 300);
 
     return dashboard;
   }

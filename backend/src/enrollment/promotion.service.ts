@@ -6,7 +6,9 @@ import {
 import { Prisma, Section } from '@/generated/prisma';
 import { PrismaService } from '@/prisma/prisma.service';
 import { LoggerService } from '@/logger/logger.service';
+import { RedisService } from '@/redis/redis.service';
 import { sectionName } from '@/common/utils/section-session.util';
+import { ATTENDANCE_CACHE_PREFIX } from '@/common/utils/cache-keys';
 import type { PromoteTo2ndPucDto } from './dto/promote-to-2nd-puc.dto';
 
 export interface PromotionSectionResult {
@@ -48,6 +50,7 @@ export class PromotionService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly logger: LoggerService,
+    private readonly redis: RedisService,
   ) {}
 
   /**
@@ -216,6 +219,11 @@ export class PromotionService {
         });
       }
     });
+
+    // Students just left their 1st-PUC sections, and the cached roster for
+    // those sections still lists them. Without this a teacher could mark
+    // attendance for a cohort that is now in 2nd PUC.
+    await this.redis.delPattern(ATTENDANCE_CACHE_PREFIX);
 
     this.logger.log(
       `[promote-2nd-puc] moved ${movableIds.length} student(s) into ${targetYear.label}`,

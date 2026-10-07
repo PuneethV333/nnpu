@@ -367,6 +367,17 @@ describe('UsersService', () => {
       ]);
     });
 
+    it('clears the cached attendance roster', async () => {
+      // The roster is derived from `User.sectionId` + `isActive`, and was
+      // otherwise only cleared when attendance is *marked*. A teacher could
+      // pass-out a cohort, open its roster and still mark every one of them.
+      prisma.user.findMany.mockResolvedValue([bulkStudent('s1', SEC_A, 'a1')]);
+
+      await service.passOutStudents(dto([SEC_A]));
+
+      expect(redis.delPattern).toHaveBeenCalledWith('attendance:*');
+    });
+
     it('writes nothing on a dry run', async () => {
       prisma.user.findMany.mockResolvedValue([
         bulkStudent('s1', SEC_A, 'nnpu1SB26KA001'),
@@ -381,6 +392,7 @@ describe('UsersService', () => {
       expect(prisma.$transaction).not.toHaveBeenCalled();
       expect(tx.user.updateMany).not.toHaveBeenCalled();
       expect(redis.delMany).not.toHaveBeenCalled();
+      expect(redis.delPattern).not.toHaveBeenCalledWith('attendance:*');
     });
 
     it('passes out several sections in one call', async () => {

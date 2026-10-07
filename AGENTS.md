@@ -355,3 +355,21 @@ costs a cycle:
   `getStrict()` so a Redis outage still yields 503 rather than silently
   treating a revoked token as valid. Do not "simplify" the guard back onto
   the soft path.
+- **Cache key prefixes live in `common/utils/cache-keys.ts`.** Use those
+  constants, not string literals. `attendance:*` existed as a literal in two
+  services while the code that actually described it changed a third, so a
+  promoted / passed-out / newly-imported student stayed in a cached roster for
+  the full TTL.
+- **A cache may only be added if you can name every writer of the data it
+  holds, and every one of them invalidates it.** The admin dashboard was cached
+  for 300s over ~10 write paths (import, pass-out, activate/deactivate,
+  transfer, attendance marking, payments, calendar overrides, fee-structure
+  edits, onboarding) and *none* of them invalidated it. It is deliberately
+  uncached now, and `dashboard.service.spec.ts` asserts that. Stale admin
+  totals look like plausible numbers, which is why this went unnoticed.
+- `delPattern` runs a full keyspace SCAN. Looping it per item is O(n) scans —
+  use `delMany` when the exact key set is known.
+- `SCHOOL_TIMEZONE` is Joi-validated against `Intl.DateTimeFormat`. It was
+  once `Asia/Banglore` in `.env`, which booted fine and then 500'd every
+  date-dependent route at the first `new DateTimeFormat`. A bad zone must fail
+  at boot, not per-request.

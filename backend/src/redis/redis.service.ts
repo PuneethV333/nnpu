@@ -169,8 +169,13 @@ export class RedisService implements OnModuleDestroy {
       cursor = nextCursor;
 
       if (keys.length > 0) {
-        await this.redis.del(...keys);
-        deleteCount += keys.length;
+        // Count what DEL actually removed rather than how many keys SCAN
+        // returned. SCAN may return the same key twice (that is allowed when
+        // the keyspace is rehashed mid-iteration), and a key can expire or be
+        // deleted between the SCAN and the DEL. Both made the returned count
+        // larger than the number of keys really gone, which is what this
+        // method reports as its result.
+        deleteCount += await this.redis.del(...keys);
       }
     } while (cursor !== '0');
 

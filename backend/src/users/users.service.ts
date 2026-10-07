@@ -13,6 +13,7 @@ import { randomBytes } from 'crypto';
 import { hash } from 'bcrypt';
 import type { Prisma } from '@/generated/prisma';
 import type { PassOutStudentsDto, TransferStudentDto } from './dto';
+import { ATTENDANCE_CACHE_PREFIX } from '@/common/utils/cache-keys';
 
 /**
  * Ongoing user lifecycle: deactivation, reactivation, section transfer and
@@ -286,6 +287,13 @@ export class UsersService {
     // `delPattern`, and each of those runs a full keyspace SCAN — 125 students
     // would mean 125 scans. `delMany` DELs exact keys in a single command.
     await this.redis.delMany(authIds.map((authId) => `me:${authId}`));
+
+    // The attendance roster is derived from `User.sectionId` + `isActive` and
+    // is otherwise only cleared when attendance is *marked*. Without this, a
+    // teacher could open the roster of a cohort that had just been passed out
+    // and still mark all of them — the cache would hand back students who no
+    // longer have an account.
+    await this.redis.delPattern(ATTENDANCE_CACHE_PREFIX);
 
     this.logger.log(
       `[users-pass-out] deactivated ${deactivated} student(s)${dto.reason ? ` (reason: ${dto.reason})` : ''}`,
