@@ -130,6 +130,7 @@ describe('UsersService', () => {
         where: { authId: { in: ['nnpu1SB26KA001'] } },
       });
       expect(redis.delPattern).toHaveBeenCalledWith('me:nnpu1SB26KA001');
+      expect(redis.delPattern).toHaveBeenCalledWith('attendance:*');
     });
 
     it('refuses to deactivate the caller', async () => {
@@ -187,6 +188,7 @@ describe('UsersService', () => {
       });
       expect(tx.auth.updateMany).not.toHaveBeenCalled();
       expect(tx.refreshToken.deleteMany).not.toHaveBeenCalled();
+      expect(redis.delPattern).toHaveBeenCalledWith('attendance:*');
     });
 
     it('404s for an unknown user', async () => {

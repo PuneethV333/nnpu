@@ -320,6 +320,13 @@ describe('AuthService', () => {
 
       const result = await service.logOut(mockAuth.authId, 'some-jti', exp);
 
+      expect(prisma.auth.update).toHaveBeenCalledWith({
+        where: { authId: mockAuth.authId },
+        data: { tokenVersion: { increment: 1 } },
+      });
+      expect(prisma.refreshToken.deleteMany).toHaveBeenCalledWith({
+        where: { authId: mockAuth.authId },
+      });
       expect(redis.set).toHaveBeenCalledWith(
         'blacklist:some-jti',
         true,
@@ -353,6 +360,27 @@ describe('AuthService', () => {
       await service.logOut(mockAuth.authId, 'some-jti', nowInSeconds - 10);
 
       expect(redis.set).not.toHaveBeenCalled();
+      expect(prisma.auth.update).toHaveBeenCalledWith({
+        where: { authId: mockAuth.authId },
+        data: { tokenVersion: { increment: 1 } },
+      });
+      expect(prisma.refreshToken.deleteMany).toHaveBeenCalledWith({
+        where: { authId: mockAuth.authId },
+      });
+    });
+
+    it('keeps logout effective when the Redis blacklist write fails', async () => {
+      const nowInSeconds = Math.floor(Date.now() / 1000);
+      redis.set.mockRejectedValue(new Error('redis down'));
+
+      await expect(
+        service.logOut(mockAuth.authId, 'some-jti', nowInSeconds + 600),
+      ).resolves.toEqual({ message: 'Logged out successful' });
+
+      expect(prisma.auth.update).toHaveBeenCalledWith({
+        where: { authId: mockAuth.authId },
+        data: { tokenVersion: { increment: 1 } },
+      });
       expect(prisma.refreshToken.deleteMany).toHaveBeenCalledWith({
         where: { authId: mockAuth.authId },
       });
@@ -428,6 +456,7 @@ describe('AuthService', () => {
       tokenId: 'token-1',
       tokenHash: 'hashed-secret',
       authId: mockAuth.authId,
+      tokenVersion: 0,
       expiresAt: new Date(Date.now() + 1000 * 60 * 60), // 1hr from now
       auth: {
         authId: mockAuth.authId,
@@ -478,6 +507,23 @@ describe('AuthService', () => {
       ).rejects.toThrow(UnauthorizedException);
     });
 
+    it('rejects refresh tokens issued before a durable logout revocation', async () => {
+      (prisma.refreshToken.findUnique as jest.Mock).mockResolvedValue({
+        ...mockRefreshRecord,
+        auth: {
+          ...mockRefreshRecord.auth,
+          tokenVersion: mockRefreshRecord.tokenVersion + 1,
+        },
+      });
+      (bcrypt.compare as jest.Mock).mockResolvedValue(true);
+
+      await expect(
+        service.refresh({ refreshToken: 'token-1.correct-secret' }),
+      ).rejects.toThrow(UnauthorizedException);
+      expect(prisma.refreshToken.deleteMany).not.toHaveBeenCalled();
+      expect(prisma.refreshToken.create).not.toHaveBeenCalled();
+    });
+
     it('issues a new token pair and deletes the old refresh token on success', async () => {
       (prisma.refreshToken.findUnique as jest.Mock).mockResolvedValue(
         mockRefreshRecord,
@@ -502,7 +548,11 @@ describe('AuthService', () => {
         where: { tokenId: 'token-1' },
       });
       expect(prisma.refreshToken.delete).not.toHaveBeenCalled();
-      expect(prisma.refreshToken.create).toHaveBeenCalled();
+      expect(prisma.refreshToken.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          tokenVersion: mockRefreshRecord.auth.tokenVersion,
+        }),
+      });
     });
   });
   describe('getAllStudents authorization', () => {
@@ -658,6 +708,7 @@ describe('AuthService', () => {
       tokenId: 'token-1',
       tokenHash: 'hashed-secret',
       authId: mockAuth.authId,
+      tokenVersion: 0,
       expiresAt: new Date(Date.now() + 1000 * 60 * 60),
       auth: {
         authId: mockAuth.authId,

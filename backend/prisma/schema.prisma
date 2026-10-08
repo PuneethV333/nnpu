@@ -347,8 +347,9 @@ model RefreshToken {
   authId String
   auth   Auth   @relation(fields: [authId], references: [authId])
 
-  expiresAt DateTime
-  createdAt DateTime @default(now())
+  expiresAt    DateTime
+  tokenVersion Int      @default(0)
+  createdAt    DateTime @default(now())
 
   @@index([authId])
 }

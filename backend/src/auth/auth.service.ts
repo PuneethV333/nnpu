@@ -68,6 +68,7 @@ export class AuthService {
         tokenId,
         tokenHash,
         authId,
+        tokenVersion,
         expiresAt: addDays(new Date(), 30),
       },
     });
@@ -191,6 +192,10 @@ export class AuthService {
     }
 
     if (refresh.expiresAt < new Date()) {
+      throw new UnauthorizedException(INVALID_REFRESH);
+    }
+
+    if (refresh.tokenVersion !== refresh.auth.tokenVersion) {
       throw new UnauthorizedException(INVALID_REFRESH);
     }
 
@@ -373,17 +378,24 @@ export class AuthService {
     const nowInSeconds = Math.floor(Date.now() / 1000);
     const ttl = exp - nowInSeconds;
 
+    await this.prisma.$transaction(async (tx) => {
+      await tx.auth.update({
+        where: { authId },
+        data: { tokenVersion: { increment: 1 } },
+      });
+      await tx.refreshToken.deleteMany({ where: { authId } });
+    });
+
     if (ttl > 0) {
-      await this.redis.set(`blacklist:${jti}`, true, ttl);
+      try {
+        await this.redis.set(`blacklist:${jti}`, true, ttl);
+      } catch (err) {
+        this.logger.warn(
+          `[auth] logout blacklist write failed after durable revocation: ${String(err)}`,
+        );
+      }
     }
 
-    // Blacklisting the access token alone was not a logout: refresh tokens live
-    // for 30 days, so the caller could silently mint a fresh access token
-    // straight after "logging out" and carry on indefinitely.
-    await this.prisma.refreshToken.deleteMany({ where: { authId } });
-
-    // Drop the cached profile so the next request cannot be served from a
-    // pre-logout snapshot.
     await this.redis.del(`me:${authId}`);
 
     return { message: 'Logged out successful' };

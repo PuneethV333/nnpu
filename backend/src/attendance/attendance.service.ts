@@ -469,13 +469,36 @@ export class AttendanceService {
       );
     }
 
-    const rows = await this.prisma.attendance.findMany({
-      where: { sectionId, date: dateObj },
-      select: { status: true, markedAt: true },
+    const currentStudents = await this.prisma.user.findMany({
+      where: { sectionId, role: 'Student', isActive: true },
+      select: { id: true },
     });
+    const currentStudentIds = new Set(
+      currentStudents.map((student) => student.id),
+    );
+    const rows = currentStudentIds.size
+      ? await this.prisma.attendance.findMany({
+          where: {
+            sectionId,
+            date: dateObj,
+            studentId: { in: [...currentStudentIds] },
+          },
+          select: { studentId: true, status: true, markedAt: true },
+        })
+      : [];
+    const currentRows = rows.filter((row) =>
+      currentStudentIds.has(row.studentId),
+    );
+    const rowsByStudent = new Map(
+      currentRows.map((row) => [row.studentId, row]),
+    );
 
     const isMarked =
-      rows.length > 0 && rows.every((r) => r.status !== 'NotMarked');
+      currentStudents.length > 0 &&
+      currentStudents.every((student) => {
+        const row = rowsByStudent.get(student.id);
+        return row !== undefined && row.status !== 'NotMarked';
+      });
 
     // Shares the predicate with markAttendance. This used to be "any row whose
     // markedAt is more than 24 hours old", which contradicted the write path's
@@ -485,9 +508,9 @@ export class AttendanceService {
     const isLocked = !attendanceEditWindow(dateObj).editable;
 
     // still surface the earliest markedAt for display purposes
-    const markedTimestamps = rows
-      .map((r) => r.markedAt)
-      .filter((d): d is Date => d !== null)
+    const markedTimestamps = [...rowsByStudent.values()]
+      .map((row) => row.markedAt)
+      .filter((date): date is Date => date !== null)
       .sort((a, b) => a.getTime() - b.getTime());
 
     const markedAt = markedTimestamps[0] ?? null;
