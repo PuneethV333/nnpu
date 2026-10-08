@@ -104,6 +104,7 @@
     "@nestjs/swagger": {
       "js-yaml": "5.4.3"
     },
+    "argparse": "2.0.1",
     "prisma": {
       "mysql2": "3.24.5",
       "@prisma/config": {
