@@ -274,6 +274,7 @@ describe('AttendanceService', () => {
         date: new Date(date),
         type: 'Working',
       });
+      (prisma.user.findMany as jest.Mock).mockResolvedValue([{ id: 's1' }]);
       (prisma.attendance.findMany as jest.Mock).mockResolvedValue(rows);
     };
 
@@ -290,7 +291,9 @@ describe('AttendanceService', () => {
 
         // Read path: yesterday marked a long time ago, so a markedAt-based lock
         // would disagree with the calendar-day rule.
-        primeRead(date, [{ status: 'Present', markedAt: new Date(0) }]);
+        primeRead(date, [
+          { studentId: 's1', status: 'Present', markedAt: new Date(0) },
+        ]);
         const status = await service.getAttendanceStatus(
           'section-1',
           date,
@@ -317,6 +320,72 @@ describe('AttendanceService', () => {
         expect(status.isLocked).toBe(!writeAllowed);
       },
     );
+
+    it('ignores attendance rows for transferred-out or inactive students', async () => {
+      const date = shift(-1);
+      const activeMarkedAt = new Date('2026-08-01T08:00:00.000Z');
+      primeRead(date, [
+        {
+          studentId: 'current-student',
+          status: 'Present',
+          markedAt: activeMarkedAt,
+        },
+        {
+          studentId: 'transferred-student',
+          status: 'NotMarked',
+          markedAt: null,
+        },
+        {
+          studentId: 'deactivated-student',
+          status: 'Present',
+          markedAt: new Date('2026-07-31T08:00:00.000Z'),
+        },
+      ]);
+      (prisma.user.findMany as jest.Mock).mockResolvedValue([
+        { id: 'current-student' },
+      ]);
+
+      const status = await service.getAttendanceStatus(
+        'section-1',
+        date,
+        'auth-1',
+      );
+
+      expect(status.isMarked).toBe(true);
+      expect(status.markedAt).toEqual(activeMarkedAt);
+      const findManyMock = prisma.attendance.findMany as unknown as jest.Mock<
+        unknown,
+        [{ where: Record<string, unknown> }]
+      >;
+      expect(findManyMock.mock.calls[0][0].where).toEqual({
+        sectionId: 'section-1',
+        date: new Date(date),
+        studentId: { in: ['current-student'] },
+      });
+    });
+
+    it('requires attendance rows for every currently active student', async () => {
+      const date = shift(-1);
+      primeRead(date, [
+        {
+          studentId: 'student-1',
+          status: 'Present',
+          markedAt: new Date('2026-08-01T08:00:00.000Z'),
+        },
+      ]);
+      (prisma.user.findMany as jest.Mock).mockResolvedValue([
+        { id: 'student-1' },
+        { id: 'student-2' },
+      ]);
+
+      const status = await service.getAttendanceStatus(
+        'section-1',
+        date,
+        'auth-1',
+      );
+
+      expect(status.isMarked).toBe(false);
+    });
   });
 
   describe('getRoster currency', () => {

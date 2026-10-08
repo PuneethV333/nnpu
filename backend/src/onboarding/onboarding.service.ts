@@ -102,11 +102,28 @@ export class OnboardingService {
       const section = await this.resolveSection(tx, dto);
 
       const combination = await tx.combination.findFirst({
-        where: { idCode: dto.subjectCode },
+        where: { idCode: dto.subjectCode, stream: dto.stream },
       });
       if (!combination) {
+        const existingCombination = await tx.combination.findFirst({
+          where: { idCode: dto.subjectCode },
+          select: { stream: true },
+        });
+
+        if (existingCombination) {
+          throw new BadRequestException(
+            `Combination "${dto.subjectCode}" is not part of the selected ${dto.stream} stream`,
+          );
+        }
+
         throw new NotFoundException(
           `Combination "${dto.subjectCode}" not found`,
+        );
+      }
+
+      if (combination.stream !== dto.stream) {
+        throw new BadRequestException(
+          `Combination "${dto.subjectCode}" is not part of the selected ${dto.stream} stream`,
         );
       }
 

@@ -132,6 +132,10 @@ export class UsersService {
       await this.invalidate(`me:${user.auth.authId}`);
     }
 
+    if (user.role === 'Student') {
+      await this.invalidate(ATTENDANCE_CACHE_PREFIX);
+    }
+
     return { userId, isActive: active, unchanged: false };
   }
 

@@ -90,6 +90,7 @@ describe('OnboardingService', () => {
       subjectCode: 'PCMB',
       language: 'Kannada',
       session: 'A',
+      stream: 'Science',
       name: 'Test Student',
       schoolId: 'school-1',
     } as CreateStudentDto;
@@ -246,6 +247,33 @@ describe('OnboardingService', () => {
   });
 
   describe('createStudent authId integrity', () => {
+    it('rejects a subject combination from a different selected stream', async () => {
+      jest.spyOn(service, 'resolveSection').mockResolvedValue({
+        id: 'section-1',
+        academicYear: { startDate: new Date('2026-06-01') },
+        session: 'COM-A',
+      } as never);
+      tx.combination.findFirst
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce({ stream: 'Science' });
+
+      await expect(
+        service.createStudent({
+          classYear: '1',
+          subjectCode: 'PCMB',
+          language: 'Kannada',
+          session: 'A',
+          stream: 'Commerce',
+          name: 'Test Student',
+          schoolId: 'school-1',
+        }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+
+      expect(tx.idSequence.upsert).not.toHaveBeenCalled();
+      expect(tx.user.create).not.toHaveBeenCalled();
+      expect(tx.auth.create).not.toHaveBeenCalled();
+    });
+
     it('never interpolates "undefined" for an unmapped combination', async () => {
       jest.spyOn(service, 'resolveSection').mockResolvedValue({
         id: 'section-1',
@@ -325,6 +353,7 @@ describe('OnboardingService', () => {
       subjectCode: 'PCMB',
       language: 'Kannada',
       session: 'A',
+      stream: 'Science',
       name: 'Test Student',
       profilePic: '',
       schoolId: 'school-1',
