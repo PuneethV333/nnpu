@@ -89,7 +89,7 @@ import { DashboardModule } from './dashboard/dashboard.module';
     }),
     ThrottlerModule.forRoot([
       {
-        // 100 requests/minute is deliberately generous for normal app use.
+        // 100 requests/minute is deliberately generous for normal app use.i
         // Sensitive routes retain their tighter @Throttle() overrides.
         //
         // Uses Nest's default in-memory storage. The previous Redis-backed
