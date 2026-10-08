@@ -8,6 +8,7 @@
   "scripts": {
     "build": "nest build",
     "prisma:generate": "prisma generate",
+    "postinstall": "prisma generate",
     "prisma:migrate": "prisma migrate deploy",
     "prisma:migrate:dev": "prisma migrate dev",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
@@ -120,12 +121,7 @@
     "rootDir": "src",
     "testRegex": ".*\\.spec\\.ts$",
     "transform": {
-      "^.+\\.(t|j)s$": [
-        "ts-jest",
-        {
-          "isolatedModules": true
-        }
-      ]
+      "^.+\\.(t|j)s$": "ts-jest"
     },
     "moduleNameMapper": {
       "^@/(.*)$": "<rootDir>/$1",
