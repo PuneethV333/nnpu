@@ -1,0 +1,198 @@
+# CI for the NNPU backend and app.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# A new push to the same branch makes an in-flight run irrelevant.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  NODE_VERSION: '24'
+
+jobs:
+  backend-quality:
+    name: backend · lint, typecheck, build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      # `npm ci` runs the `postinstall: prisma generate` hook. That hook is the
+      # only reason a fresh checkout does not fail to compile: the generated
+      # client is gitignored, so without it `tsc` sees a client older than the
+      # schema (which is exactly how `RefreshToken.tokenVersion` broke).
+      - name: Install
+        run: npm ci
+
+      # `--max-warnings 0` and no `--fix`: the package.json `lint` script runs
+      # eslint with `--fix`, which rewrites files and exits 0 even when it had
+      # something to fix — useless as a CI gate.
+      - name: Lint
+        run: npx eslint "src/**/*.ts" "test/**/*.ts" --max-warnings 0
+
+      - name: Typecheck
+        run: npx tsc --noEmit -p tsconfig.json
+
+      - name: Build
+        run: npm run build
+
+  # ---------------------------------------------------------------------------
+  # Unit suite. Mocks PrismaService, so it needs no services.
+  # ---------------------------------------------------------------------------
+  backend-unit:
+    name: backend · unit tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install
+        run: npm ci
+
+      - name: Unit tests
+        run: npm run test -- --ci --runInBand
+
+  # ---------------------------------------------------------------------------
+  # E2E suite. This one boots the real AppModule, so it needs a live Postgres
+  # and Redis — PrismaService connects in onModuleInit and RedisService
+  # connects on construction. The env below mirrors the Joi validation schema,
+  # because a missing key fails the boot rather than the assertion.
+  # ---------------------------------------------------------------------------
+  backend-e2e:
+    name: backend · e2e tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: ci_e2e
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports: ['6379:6379']
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      NODE_ENV: test
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/ci_e2e
+      REDIS_URL: redis://localhost:6379
+
+      # 32+ chars because the schema enforces a floor; a short signing key
+      # silently weakens every JWT.
+      JWT_SECRET: ci-only-secret-never-used-in-production-0123456789
+      JWT_ACCESS_EXPIRES_IN: 15m
+
+      # Firebase/Razorpay are only *initialised*, never called, by the e2e
+      # routes. The key itself is generated in a step below: `cert()` parses
+      # the PEM at boot, so it has to be a real key rather than the string
+      # "dummy". Firebase is never contacted.
+      FIREBASE_PROJECT_ID: ci-dummy-project
+      FIREBASE_CLIENT_EMAIL: ci@example.iam.gserviceaccount.com
+
+      RAZORPAY_KEY_ID: ci_dummy_key
+      RAZORPAY_KEY_SECRET: ci_dummy_secret
+
+      # Validated against Intl.DateTimeFormat at boot, so it has to be a real
+      # IANA zone. It was once `Asia/Banglore`, which booted fine and then 500'd
+      # every date-dependent route.
+      SCHOOL_TIMEZONE: Asia/Kolkata
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install
+        run: npm ci
+
+      # The e2e suite boots the real PrismaService, which needs a schema to
+      # connect against. `migrate deploy` (never `migrate dev`) so CI never
+      # tries to generate a migration of its own.
+      # A throwaway RSA key, generated rather than committed. firebase-admin's
+      # `cert()` parses it during onModuleInit, so a placeholder string would
+      # fail the boot with a parse error before any assertion ran.
+      - name: Generate throwaway Firebase key
+        run: |
+          openssl genrsa -out "$RUNNER_TEMP/firebase.pem" 2048
+          {
+            echo "FIREBASE_PRIVATE_KEY<<CI_EOF"
+            cat "$RUNNER_TEMP/firebase.pem"
+            echo "CI_EOF"
+          } >> "$GITHUB_ENV"
+
+      - name: Apply migrations
+        run: npx prisma migrate deploy
+
+      - name: E2E tests
+        run: npm run test:e2e -- --ci --runInBand
+
+  # ---------------------------------------------------------------------------
+  # The Expo app has no test suite yet, so typecheck and lint are the gate it
+  # can actually offer. Runs only when app/ changes — installing the Expo
+  # dependency tree is slow and a backend-only PR should not pay for it.
+  # ---------------------------------------------------------------------------
+  app-quality:
+    name: app · typecheck, lint
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+
+      - name: Install
+        run: npm ci
+
+      - name: Typecheck
+        run: npx tsc --noEmit
+
+      - name: Lint
+        run: npx eslint . --ext .ts,.tsx --max-warnings 0
