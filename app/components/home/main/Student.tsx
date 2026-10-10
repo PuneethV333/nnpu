@@ -16,6 +16,7 @@ import type { DayType } from "$/types/calendar";
 import HomeHeader from "../HomeHeader";
 import QuickActions from "../QuickActions";
 import AnnouncementCard from "../Announcements";
+import AnnouncementsHeader from "../AnnouncementsHeader";
 import TimeTable from "../TimeTable";
 import ProgressCard from "@/components/attendance-page/ProgressCard";
 import { MONTH_LABELS } from "@/constants/months";
@@ -157,7 +158,7 @@ const Student = () => {
         </View>
 
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Announcements</Text>
+          <AnnouncementsHeader />
 
           {announcementsQuery.isLoading ? (
             <AnnouncementsRowSkeleton />

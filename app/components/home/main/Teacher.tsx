@@ -13,6 +13,7 @@ import HomeHeader from "../HomeHeader";
 import SectionStatusCard from "../SectionStatusCard";
 import QuickActions from "../QuickActions";
 import AnnouncementCard from "../Announcements";
+import AnnouncementsHeader from "../AnnouncementsHeader";
 import TimeTable from "../TimeTable";
 import { DAY_CHIP_COLOR } from "@/constants/dayTypeColor";
 import { EmptyState } from "@/components/ui/Feedback";
@@ -134,7 +135,7 @@ const Teacher = () => {
         </View>
 
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Announcements</Text>
+          <AnnouncementsHeader />
 
           {announcementsQuery.isLoading ? (
             <AnnouncementsRowSkeleton />

@@ -14,6 +14,7 @@ import HomeHeader from "../HomeHeader";
 import SchoolStatsGrid from "../SchoolStatsGrid";
 import QuickActions, { type QuickAction } from "../QuickActions";
 import AnnouncementCard from "../Announcements";
+import AnnouncementsHeader from "../AnnouncementsHeader";
 import { DAY_CHIP_COLOR } from "@/constants/dayTypeColor";
 import {
   DayChipSkeleton,
@@ -23,8 +24,11 @@ import {
 
 const QUICK_ACTIONS: QuickAction[] = [
   { label: "Mark Attendance", icon: "checkmark-done-outline", color: "#2563EB", route: "/(tabs)/attendance" },
-  { label: "Enter Marks", icon: "create-outline", color: "#16A34A", route: "/(tabs)/marks" },
+  // "Enter Marks" was removed: the marks tab is hidden for admins, so the card
+  // pointed at a route they cannot open.
+  { label: "Announcements", icon: "megaphone-outline", color: "#4F46E5", route: "/(tabs)/announcements" },
   { label: "Manage Fees", icon: "cash-outline", color: "#D97706", route: "/(tabs)/fees" },
+  { label: "Manage School", icon: "business-outline", color: "#16A34A", route: "/(tabs)/school" },
 ];
 
 const Admin = () => {
@@ -162,9 +166,7 @@ const Admin = () => {
         </View>
 
         <View className="px-4 mt-5">
-          <Text className="text-base font-semibold text-gray-900 mb-3">
-            Announcements
-          </Text>
+          <AnnouncementsHeader titleClassName="text-base font-semibold text-gray-900" />
 
           {announcementsLoading ? (
             <AnnouncementsRowSkeleton />

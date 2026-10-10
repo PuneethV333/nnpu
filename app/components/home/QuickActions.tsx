@@ -9,7 +9,12 @@ export type QuickAction = {
   label: string;
   icon: React.ComponentProps<typeof Ionicons>["name"];
   color: string;
-  route: "/(tabs)/attendance" | "/(tabs)/marks" | "/(tabs)/fees";
+  route:
+    | "/(tabs)/attendance"
+    | "/(tabs)/marks"
+    | "/(tabs)/fees"
+    | "/(tabs)/announcements"
+    | "/(tabs)/school";
 };
 
 const DEFAULT_ACTIONS: QuickAction[] = [
@@ -25,13 +30,16 @@ type Props = {
 
 const QuickActions = ({ actions = DEFAULT_ACTIONS }: Props) => {
   const router = useRouter();
+  // Four cards in one row leave ~80px each, so labels wrap badly; two per row
+  // reads better once there are more than three actions.
+  const wrap = actions.length > 3;
 
   return (
-    <View style={styles.row}>
+    <View style={[styles.row, wrap && { flexWrap: "wrap" }]}>
       {actions.map((action) => (
         <Pressable
           key={action.route}
-          style={styles.card}
+          style={[styles.card, wrap && { flexBasis: "46%" }]}
           onPress={() => router.push(action.route)}
         >
           <View style={[styles.iconWrap, { backgroundColor: action.color + "1A" }]}>
