@@ -29,6 +29,12 @@ export const useGetRoster = (sectionId: string, date: string) => {
     queryFn: () => roster(sectionId,date),
     select: (res) => res.data,
     enabled: isAuthenticated && role === 'Teacher',
+    // Without a staleTime every query is stale the instant it resolves, so
+    // switching tabs and back refetched the roster and flashed a spinner over
+    // data that had not changed. Marking still invalidates this key on
+    // success, so a real edit is reflected immediately — the cache is not
+    // being trusted past a save, only past a tab switch.
+    staleTime: 30_000,
   })
 }
 
@@ -38,6 +44,9 @@ export const useCheckStatus = (sectionId: string, date: string) => {
     queryKey: ['status',date,sectionId],
     queryFn: () => checkStatus(sectionId,date),
     enabled: isAuthenticated && role === 'Teacher',
+    // Same reasoning as the roster: the locked/marked banners should not
+    // flicker while switching tabs. Invalidated on every successful mark.
+    staleTime: 30_000,
   })
 }
 
