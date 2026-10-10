@@ -8,6 +8,3 @@
 - Firebase's key is **generated in a step**, not committed. `cert()` parses the
   PEM during `onModuleInit`, so `"dummy"` would crash the suite before any
   assertion ran.
-- No CD yet — see "Known open items": `render.yaml` and the Neon/Upstash/Razorpay
-  secrets do not exist, and a deploy job that cannot succeed trains everyone to
-  ignore a red build.
