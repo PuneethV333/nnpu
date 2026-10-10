@@ -1,8 +1,11 @@
 import { api } from './client';
 import {
   importStudentsResponseSchema,
+  promoteTo2ndPucResponseSchema,
   type ImportStudentsBody,
   type ImportStudentsResponse,
+  type PromoteTo2ndPucBody,
+  type PromoteTo2ndPucResponse,
 } from '@/src/types/enrollment';
 
 /**
@@ -33,4 +36,19 @@ export const importStudents = async (
   const res = await api.post('/enrollment/students/import', form);
 
   return importStudentsResponseSchema.parse(res.data);
+};
+/**
+ * Moves every active student in the named 1st-PUC sections into the matching
+ * 2nd-PUC section of the next academic year.
+ *
+ * `dryRun` is worth wiring up rather than treating as optional: the server
+ * creates the target sections as a side effect of a real run, so an admin
+ * should see the counts and the created-section list first. The response shape
+ * is identical either way — only `dryRun` flips.
+ */
+export const promoteTo2ndPuc = async (
+  body: PromoteTo2ndPucBody,
+): Promise<PromoteTo2ndPucResponse> => {
+  const res = await api.post('/enrollment/promote-2nd-puc', body);
+  return promoteTo2ndPucResponseSchema.parse(res.data);
 };
