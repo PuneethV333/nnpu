@@ -1,5 +1,7 @@
-import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
+import { getNotifications } from './notificationsModule';
+
+const Notifications = getNotifications();
 
 /**
  * Notification presentation + Android channel setup.
@@ -10,7 +12,7 @@ import { Platform } from 'react-native';
  * notification is enqueued, so a late re-registration can be missed).
  */
 
-Notifications.setNotificationHandler({
+Notifications?.setNotificationHandler({
   handleNotification: async () => ({
     // Show the banner/list entry even in the foreground — a teacher marking
     // attendance should see the reminder without leaving the screen.
@@ -29,7 +31,7 @@ Notifications.setNotificationHandler({
 export const ANDROID_CHANNEL_ID = 'default';
 
 export const ensureAndroidChannel = async (): Promise<void> => {
-  if (Platform.OS !== 'android') return;
+  if (!Notifications || Platform.OS !== 'android') return;
 
   await Notifications.setNotificationChannelAsync(ANDROID_CHANNEL_ID, {
     name: 'General',
@@ -44,6 +46,8 @@ export const ensureAndroidChannel = async (): Promise<void> => {
 export const resolvePermission = async (): Promise<
   'granted' | 'denied' | 'undetermined'
 > => {
+  if (!Notifications) return 'denied';
+
   const current = await Notifications.getPermissionsAsync();
 
   if (current.status === 'granted') return 'granted';

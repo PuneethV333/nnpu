@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useRef } from 'react';
-import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useAuth } from './useAuth';
 import { useRegisterDevice } from './useNotifications';
 import { pushConfig } from '$/config/env';
+import { getNotifications } from '$/config/notificationsModule';
 import {
   ensureAndroidChannel,
   resolvePermission,
@@ -22,6 +22,8 @@ import {
  * in Expo Go, and `google-services.json` is gitignored (see .env.example).
  */
 export const usePushRegistration = () => {
+  // null in Expo Go, where expo-notifications cannot even be imported.
+  const Notifications = getNotifications();
   const { isAuthenticated } = useAuth();
   const { mutate: registerDevice } = useRegisterDevice();
   const router = useRouter();
@@ -31,6 +33,11 @@ export const usePushRegistration = () => {
   const registering = useRef(false);
 
   const register = useCallback(async () => {
+    if (!Notifications) {
+      console.info('[push] unavailable in Expo Go — use a development build');
+      return;
+    }
+
     if (!pushConfig.enabled) {
       console.info('[push] disabled via EXPO_PUBLIC_PUSH_ENABLED=false');
       return;
@@ -72,7 +79,7 @@ export const usePushRegistration = () => {
     } finally {
       registering.current = false;
     }
-  }, [registerDevice]);
+  }, [Notifications, registerDevice]);
 
   useEffect(() => {
     if (!isAuthenticated) return;
@@ -82,18 +89,18 @@ export const usePushRegistration = () => {
   // Route a tap on a delivered notification to the notification list. Scoped to
   // this hook so the listener is torn down with it.
   useEffect(() => {
-    if (!isAuthenticated) return;
+    if (!isAuthenticated || !Notifications) return;
 
     const subscription = Notifications.addNotificationResponseReceivedListener(
       () => router.push('/notification'),
     );
 
     return () => subscription.remove();
-  }, [isAuthenticated, router]);
+  }, [Notifications, isAuthenticated, router]);
 
   // Cold start: the app was launched by tapping a notification.
   useEffect(() => {
-    if (!isAuthenticated) return;
+    if (!isAuthenticated || !Notifications) return;
 
     let cancelled = false;
 
@@ -104,5 +111,5 @@ export const usePushRegistration = () => {
     return () => {
       cancelled = true;
     };
-  }, [isAuthenticated, router]);
+  }, [Notifications, isAuthenticated, router]);
 };
