@@ -3,7 +3,7 @@ import { View, Text, ScrollView, Pressable } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import { useGetAllSections } from '@/src/hooks/useSections';
+import { useGetAllSections, useGetSectionAssignments } from '@/src/hooks/useSections';
 import { useGetStudents } from '@/src/hooks/useStudents';
 import { useGetMySubjects } from '@/src/hooks/useMarks';
 import { EmptyState, ErrorState } from '@/components/ui/Feedback';
@@ -22,6 +22,7 @@ const Classes = () => {
 
   const { data: students, isLoading: studentsLoading } = useGetStudents(sectionId);
   const { data: subjects, isLoading: subjectsLoading } = useGetMySubjects(sectionId);
+  const { data: staffing } = useGetSectionAssignments(sectionId);
 
   const selected = sections?.find((s) => s.id === sectionId) ?? null;
 
@@ -118,6 +119,40 @@ const Classes = () => {
                     </Text>
                   </View>
                 </View>
+
+                {staffing ? (
+                  <View className="mx-4 mt-3 bg-white rounded-2xl border border-gray-100 p-4">
+                    <Text className="text-xs font-semibold text-gray-400 tracking-wide">
+                      CLASS TEACHER
+                    </Text>
+                    <Text className="text-base font-bold text-gray-900 mt-1">
+                      {staffing.classTeacher?.name ?? 'Not assigned'}
+                    </Text>
+                    {staffing.subjects.length > 0 ? (
+                      <View className="mt-3 pt-3 border-t border-gray-100">
+                        <Text className="text-xs font-semibold text-gray-400 tracking-wide mb-2">
+                          WHO TEACHES WHAT
+                        </Text>
+                        {staffing.subjects.map((s) => (
+                          <View
+                            key={s.subjectId}
+                            className="flex-row items-center justify-between py-1"
+                          >
+                            <Text className="text-sm text-gray-700 flex-1 mr-2" numberOfLines={1}>
+                              {s.subjectName}
+                            </Text>
+                            <Text
+                              className="text-sm"
+                              style={{ color: s.teacherName ? '#6B7280' : '#D97706' }}
+                            >
+                              {s.teacherName ?? 'Unstaffed'}
+                            </Text>
+                          </View>
+                        ))}
+                      </View>
+                    ) : null}
+                  </View>
+                ) : null}
 
                 <View className="px-4 mt-5 mb-2 flex-row items-center justify-between">
                   <Text className="text-base font-semibold text-gray-900">
