@@ -1,22 +1,21 @@
-import React, { lazy } from 'react'
-import { useAuth } from '@/src/hooks/useAuth';
-const Student = lazy(() => import('@/components/home/main/Student'))
-const Admin = lazy(() => import('@/components/home/main/Admin'))
-const Teacher = lazy(() => import('@/components/home/main/Teacher'))
+import React, { lazy } from "react";
+import { View } from "react-native";
+import { RoleScreen } from "@/components/ui/RoleScreen";
+import { ProgressCardSkeleton, SectionTileSkeleton } from "@/components/ui/skeletons";
 
-const Home = () => {
-  const {role} = useAuth()
-  
-  switch(role){
-    case 'Admin':
-      return <Admin/>
-    case 'Student':
-      return <Student/>
-    case 'Teacher':
-      return <Teacher/>
-    default: 
-      break
-  }
-}
+const Student = lazy(() => import("@/components/home/main/Student"));
+const Admin = lazy(() => import("@/components/home/main/Admin"));
+const Teacher = lazy(() => import("@/components/home/main/Teacher"));
 
-export default Home
+const Loading = () => (
+  <View className="bg-gray-50">
+    <ProgressCardSkeleton />
+    <SectionTileSkeleton count={3} />
+  </View>
+);
+
+const Home = () => (
+  <RoleScreen screens={{ Student, Admin, Teacher }} fallback={<Loading />} />
+);
+
+export default Home;

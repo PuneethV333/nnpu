@@ -1,20 +1,18 @@
-import React, { lazy } from 'react';
-import { useAuth } from '@/src/hooks/useAuth';
+import React, { lazy } from "react";
+import { View } from "react-native";
+import { RoleScreen } from "@/components/ui/RoleScreen";
+import { InvoiceCardSkeleton } from "@/components/ui/skeletons";
 
-const Student = lazy(() => import('@/components/fees-page/main/Student'));
-const Admin = lazy(() => import('@/components/fees-page/main/Admin'));
+const Student = lazy(() => import("@/components/fees-page/main/Student"));
+const Admin = lazy(() => import("@/components/fees-page/main/Admin"));
 
-const Fees = () => {
-  const { role } = useAuth();
+/** Matches the fees list: a couple of invoice cards. */
+const Loading = () => (
+  <View className="bg-gray-50" style={{ marginTop: 20 }}>
+    <InvoiceCardSkeleton count={3} />
+  </View>
+);
 
-  switch (role) {
-    case 'Student':
-      return <Student />;
-    case 'Admin':
-      return <Admin />;
-    default:
-      return null;
-  }
-};
+const Fees = () => <RoleScreen screens={{ Student, Admin }} fallback={<Loading />} />;
 
 export default Fees;
