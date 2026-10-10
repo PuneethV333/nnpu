@@ -67,7 +67,7 @@ const Classes = () => {
                     onPress={() =>
                       setSectionId(active ? '' : section.id)
                     }
-                    className="rounded-2xl border px-4 py-3 min-w-[124px]"
+                    className="rounded-2xl border px-4 py-3 min-w-31"
                     style={{
                       backgroundColor: active ? '#2563EB' : '#FFFFFF',
                       borderColor: active ? '#2563EB' : '#E5E7EB',
