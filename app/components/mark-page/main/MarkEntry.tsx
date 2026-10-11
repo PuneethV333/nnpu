@@ -4,7 +4,6 @@ import {
   Text,
   ScrollView,
   Pressable,
-  TextInput,
   ActivityIndicator,
   Alert,
   KeyboardAvoidingView,
@@ -20,6 +19,8 @@ import {
   useEnterMarks,
 } from "@/src/hooks/useMarks";
 import { SectionPicker } from "@/components/attendance-page/SectionPicker";
+import { MarkEntryRow } from "@/components/mark-page/MarkEntryRow";
+import { PillTabs } from "@/components/ui/Primitives";
 import { AttendanceStatusModal } from "@/components/attendance-page/AttendanceStatusModal";
 import { EmptyState, ErrorState } from "@/components/ui/Feedback";
 import {
@@ -28,6 +29,9 @@ import {
   SectionTileSkeleton,
 } from "@/components/ui/skeletons";
 import { useTabBarClearance } from "@/src/hooks/useTabBarClearance";
+
+/** Selection accent, matching the rest of the app's blue. */
+const ACCENT = "#2563EB";
 
 const CATEGORY_LABEL: Record<string, string> = {
   UnitTest: "Unit Test",
@@ -38,8 +42,6 @@ const CATEGORY_LABEL: Record<string, string> = {
 };
 
 /** Quick-tap marks shortcuts, filtered to what the assessment allows. */
-const MARK_PRESETS = [0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100];
-
 type Draft = Record<string, string>;
 
 const Label = ({ children }: { children: React.ReactNode }) => (
@@ -47,103 +49,6 @@ const Label = ({ children }: { children: React.ReactNode }) => (
     {children}
   </Text>
 );
-
-const Pill = ({
-  label,
-  selected,
-  onPress,
-}: {
-  label: string;
-  selected: boolean;
-  onPress: () => void;
-}) => (
-  <Pressable
-    onPress={onPress}
-    className="px-3 py-2 rounded-full border"
-    style={{
-      backgroundColor: selected ? "#2563EB" : "#FFFFFF",
-      borderColor: selected ? "#2563EB" : "#E5E7EB",
-    }}
-  >
-    <Text
-      className="text-sm font-medium"
-      style={{ color: selected ? "#FFFFFF" : "#374151" }}
-    >
-      {label}
-    </Text>
-  </Pressable>
-);
-
-const MarkEntryRow = ({
-  name,
-  value,
-  maxMarks,
-  onChange,
-}: {
-  name: string;
-  value: string;
-  maxMarks: number;
-  onChange: (next: string) => void;
-}) => {
-  const numeric = Number(value);
-  const invalid = value !== "" && (Number.isNaN(numeric) || numeric < 0);
-  const over = !invalid && numeric > maxMarks;
-
-  return (
-    <View className="px-4 py-3 border-b border-gray-100">
-      <View className="flex-row items-center justify-between">
-        <Text
-          className="text-[15px] font-medium text-gray-900 flex-1 mr-3"
-          numberOfLines={1}
-        >
-          {name}
-        </Text>
-
-        <View className="flex-row items-center">
-          <TextInput
-            value={value}
-            onChangeText={onChange}
-            placeholder="-"
-            placeholderTextColor="#D1D5DB"
-            keyboardType="numeric"
-            className="w-16 text-center text-[15px] font-semibold rounded-lg border bg-white"
-            style={{
-              borderColor: invalid || over ? "#DC2626" : "#E5E7EB",
-              paddingVertical: 6,
-              paddingHorizontal: 8,
-              color: invalid || over ? "#DC2626" : "#111827",
-            }}
-          />
-          <Text className="text-sm text-gray-400 ml-2 w-8 text-right">
-            /{maxMarks}
-          </Text>
-        </View>
-      </View>
-
-      {over && (
-        <Text className="text-xs text-red-500 mt-1">
-          Marks can&apos;t exceed {maxMarks}.
-        </Text>
-      )}
-
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={{ gap: 6, paddingTop: 8, paddingRight: 8 }}
-      >
-        {MARK_PRESETS.filter((p) => p <= maxMarks).map((p) => (
-          <Pressable
-            key={p}
-            onPress={() => onChange(String(p))}
-            className="px-2.5 py-1 rounded-full border border-gray-200 bg-gray-50"
-          >
-            <Text className="text-[11px] font-medium text-gray-600">{p}</Text>
-          </Pressable>
-        ))}
-      </ScrollView>
-    </View>
-  );
-};
 
 /**
  * Shared mark-entry screen. `GET /marks/my-subjects`, `/marks/assessment`
@@ -380,20 +285,12 @@ const MarkEntry = ({ heading }: { heading: string }) => {
               ) : (
                 <>
                   <Label>SUBJECT</Label>
-                  <ScrollView
-                    horizontal
-                    showsHorizontalScrollIndicator={false}
-                    contentContainerStyle={{ paddingHorizontal: 16, gap: 8 }}
-                  >
-                    {subjects.map((s) => (
-                      <Pill
-                        key={s.id}
-                        label={s.name}
-                        selected={subjectId === s.id}
-                        onPress={() => selectSubject(s.id)}
-                      />
-                    ))}
-                  </ScrollView>
+                  <PillTabs
+                    options={subjects.map((s) => ({ value: s.id, label: s.name }))}
+                    value={subjectId}
+                    onChange={selectSubject}
+                    activeColor={ACCENT}
+                  />
 
                   {!subjectId ? (
                     <EmptyState
@@ -414,25 +311,17 @@ const MarkEntry = ({ heading }: { heading: string }) => {
                   ) : (
                     <>
                       <Label>ASSESSMENT</Label>
-                      <ScrollView
-                        horizontal
-                        showsHorizontalScrollIndicator={false}
-                        contentContainerStyle={{
-                          paddingHorizontal: 16,
-                          gap: 8,
-                        }}
-                      >
-                        {assessments.map((a) => (
-                          <Pill
-                            key={a.id}
-                            label={`${a.name} · ${
-                              CATEGORY_LABEL[a.category] ?? a.category
-                            } · max ${a.maxMarks}`}
-                            selected={assessmentId === a.id}
-                            onPress={() => selectAssessment(a.id)}
-                          />
-                        ))}
-                      </ScrollView>
+                      <PillTabs
+                        options={assessments.map((a) => ({
+                          value: a.id,
+                          label: `${a.name} · ${
+                            CATEGORY_LABEL[a.category] ?? a.category
+                          } · max ${a.maxMarks}`,
+                        }))}
+                        value={assessmentId}
+                        onChange={selectAssessment}
+                        activeColor={ACCENT}
+                      />
 
                       {!assessment ? (
                         <EmptyState
