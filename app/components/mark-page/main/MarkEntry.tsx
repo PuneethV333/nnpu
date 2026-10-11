@@ -27,7 +27,7 @@ import {
   MarkEntryRowsSkeleton,
   SectionTileSkeleton,
 } from "@/components/ui/skeletons";
-import { useTabBarClearance } from '@/src/hooks/useTabBarClearance';
+import { useTabBarClearance } from "@/src/hooks/useTabBarClearance";
 
 const CATEGORY_LABEL: Record<string, string> = {
   UnitTest: "Unit Test",
@@ -169,14 +169,18 @@ const MarkEntry = ({ heading }: { heading: string }) => {
     message: "",
   });
 
-  const { data: subjects, isLoading: subjectsLoading } = useGetMySubjects(sectionId);
+  const { data: subjects, isLoading: subjectsLoading } =
+    useGetMySubjects(sectionId);
   // `useGetAssessments` is enabled as soon as sectionId is set, so passing an
   // empty sectionId until a subject is chosen avoids fetching every assessment
   // in the section just to discard them.
-  const { data: assessments } = useGetAssessments(
-    subjectId ? sectionId : '',
-    subjectId || undefined,
-  );
+  //
+  // `isLoading` matters here: while the fetch is in flight `assessments` is
+  // undefined, which is indistinguishable from "this subject has none". The
+  // screen used to render the empty state for that whole window, so tapping a
+  // subject briefly claimed the teacher had created no assessments.
+  const { data: assessments, isLoading: assessmentsLoading } =
+    useGetAssessments(subjectId ? sectionId : "", subjectId || undefined);
   const { data: students, isLoading: studentsLoading } =
     useGetStudents(sectionId);
   const { mutate: enterMarks, isPending: isSaving } = useEnterMarks();
@@ -186,30 +190,66 @@ const MarkEntry = ({ heading }: { heading: string }) => {
     [assessments, assessmentId],
   );
 
+  // `draft` is intentionally sparse: a student with no key simply hasn't been
+  // marked yet, so a roster that loads late never clobbers typed-in values.
+  const entered = (students ?? []).filter(
+    (s) => draft[s.id] !== undefined,
+  ).length;
+
+  /**
+   * Runs `apply` unless it would silently destroy typed marks.
+   *
+   * Switching section, subject or assessment all reset the draft, because the
+   * entries belong to the previous assessment — but resetting without asking
+   * means a teacher who has entered 40 marks, taps the wrong subject pill and
+   * loses all of them with no undo and no prompt. That is the worst failure
+   * mode in a data-entry screen, and it looks like the app losing work rather
+   * than the teacher mis-tapping.
+   *
+   * Only the marks are at risk; changing a selection always applies. "Keep
+   * editing" is the safe default so dismissing the dialog does the safe thing.
+   */
+  const withDraftGuard = (label: string, apply: () => void) => {
+    if (entered === 0) {
+      apply();
+      return;
+    }
+
+    Alert.alert(
+      "Discard entered marks?",
+      `You have entered marks for ${entered} student${
+        entered > 1 ? "s" : ""
+      }. Choosing a different ${label} will clear them. This cannot be undone.`,
+      [
+        { text: "Keep editing", style: "cancel" },
+        { text: "Discard", style: "destructive", onPress: apply },
+      ],
+    );
+  };
+
   // Cascading resets live in the handlers below rather than in effects:
   // picking a section drops subject/assessment/marks, picking a subject drops
   // assessment/marks, and picking an assessment starts a blank draft.
-  const selectSection = (id: string) => {
-    setSectionId(id);
-    setSubjectId("");
-    setAssessmentId("");
-    setDraft({});
-  };
+  const selectSection = (id: string) =>
+    withDraftGuard("section", () => {
+      setSectionId(id);
+      setSubjectId("");
+      setAssessmentId("");
+      setDraft({});
+    });
 
-  const selectSubject = (id: string) => {
-    setSubjectId(id);
-    setAssessmentId("");
-    setDraft({});
-  };
+  const selectSubject = (id: string) =>
+    withDraftGuard("subject", () => {
+      setSubjectId(id);
+      setAssessmentId("");
+      setDraft({});
+    });
 
-  const selectAssessment = (id: string) => {
-    setAssessmentId(id);
-    setDraft({});
-  };
-
-  // `draft` is intentionally sparse: a student with no key simply hasn't been
-  // marked yet, so a roster that loads late never clobbers typed-in values.
-  const entered = (students ?? []).filter((s) => draft[s.id] !== undefined).length;
+  const selectAssessment = (id: string) =>
+    withDraftGuard("assessment", () => {
+      setAssessmentId(id);
+      setDraft({});
+    });
 
   // Rows whose typed value isn't a valid mark within [0, maxMarks]. Sending
   // one of these makes the backend reject the entire batch (the DTO validates
@@ -220,7 +260,9 @@ const MarkEntry = ({ heading }: { heading: string }) => {
       const raw = draft[s.id];
       if (raw === undefined) return false;
       const n = Number(raw);
-      return raw.trim() === '' || Number.isNaN(n) || n < 0 || n > assessment.maxMarks;
+      return (
+        raw.trim() === "" || Number.isNaN(n) || n < 0 || n > assessment.maxMarks
+      );
     });
   }, [assessment, students, draft]);
 
@@ -305,7 +347,11 @@ const MarkEntry = ({ heading }: { heading: string }) => {
               onRetry={() => refetchSections()}
             />
           ) : !sections || sections.length === 0 ? (
-            <EmptyState icon="grid" title="No sections yet" subtitle="Sections appear once the school creates them." />
+            <EmptyState
+              icon="grid"
+              title="No sections yet"
+              subtitle="Sections appear once the school creates them."
+            />
           ) : (
             <>
               <Label>SECTION</Label>
@@ -316,7 +362,11 @@ const MarkEntry = ({ heading }: { heading: string }) => {
               />
 
               {!sectionId ? (
-                <EmptyState icon="users" title="Pick a section" subtitle="Choose a section to continue." />
+                <EmptyState
+                  icon="users"
+                  title="Pick a section"
+                  subtitle="Choose a section to continue."
+                />
               ) : subjectsLoading ? (
                 <View style={{ marginTop: 20 }}>
                   <ChipRowSkeleton />
@@ -346,7 +396,15 @@ const MarkEntry = ({ heading }: { heading: string }) => {
                   </ScrollView>
 
                   {!subjectId ? (
-                    <EmptyState icon="book" title="Pick a subject" subtitle="Choose a subject to continue." />
+                    <EmptyState
+                      icon="book"
+                      title="Pick a subject"
+                      subtitle="Choose a subject to continue."
+                    />
+                  ) : assessmentsLoading ? (
+                    <View style={{ marginTop: 20 }}>
+                      <ChipRowSkeleton />
+                    </View>
                   ) : !assessments || assessments.length === 0 ? (
                     <EmptyState
                       icon="clipboard"
@@ -359,7 +417,10 @@ const MarkEntry = ({ heading }: { heading: string }) => {
                       <ScrollView
                         horizontal
                         showsHorizontalScrollIndicator={false}
-                        contentContainerStyle={{ paddingHorizontal: 16, gap: 8 }}
+                        contentContainerStyle={{
+                          paddingHorizontal: 16,
+                          gap: 8,
+                        }}
                       >
                         {assessments.map((a) => (
                           <Pill
@@ -416,7 +477,7 @@ const MarkEntry = ({ heading }: { heading: string }) => {
                                 onChange={(next) =>
                                   setDraft((d) => {
                                     const updated = { ...d };
-                                    if (next.trim() === '') {
+                                    if (next.trim() === "") {
                                       // Treat a cleared box as "not entered"
                                       // rather than a recorded zero.
                                       delete updated[s.id];
@@ -434,10 +495,14 @@ const MarkEntry = ({ heading }: { heading: string }) => {
                             <Pressable
                               onPress={handleSave}
                               disabled={
-                                isSaving || entered === 0 || invalidRows.length > 0
+                                isSaving ||
+                                entered === 0 ||
+                                invalidRows.length > 0
                               }
                               className={`bg-blue-600 rounded-xl py-3.5 items-center flex-row justify-center gap-2 ${
-                                isSaving || entered === 0 || invalidRows.length > 0
+                                isSaving ||
+                                entered === 0 ||
+                                invalidRows.length > 0
                                   ? "opacity-40"
                                   : ""
                               }`}
@@ -446,7 +511,11 @@ const MarkEntry = ({ heading }: { heading: string }) => {
                                 <ActivityIndicator color="#FFFFFF" />
                               ) : (
                                 <>
-                                  <Feather name="save" size={16} color="#FFFFFF" />
+                                  <Feather
+                                    name="save"
+                                    size={16}
+                                    color="#FFFFFF"
+                                  />
                                   <Text className="text-white font-bold text-[15px]">
                                     Save Marks
                                   </Text>
@@ -483,5 +552,6 @@ const MarkEntry = ({ heading }: { heading: string }) => {
     </SafeAreaView>
   );
 };
+
 
 export default MarkEntry;
