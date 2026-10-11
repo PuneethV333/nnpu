@@ -87,6 +87,11 @@ jobs:
   backend-e2e:
     name: backend · e2e tests
     runs-on: ubuntu-latest
+    # The suite boots the real AppModule and connects to Postgres and Redis.
+    # A service that never becomes healthy otherwise hangs until the 6h repo
+    # limit — one run sat for 1h32m and had to be cancelled by hand. Fail at
+    # 10 minutes with a red X that says "this hung" instead.
+    timeout-minutes: 10
     defaults:
       run:
         working-directory: backend
