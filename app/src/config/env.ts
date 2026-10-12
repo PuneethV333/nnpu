@@ -15,6 +15,15 @@ const nonEmpty = (value: string | undefined): string | undefined =>
 
 export const backendUrl = nonEmpty(process.env.EXPO_PUBLIC_API_URL);
 
+export function requireBackendUrl(): string {
+  if (!backendUrl) {
+    throw new Error(
+      'EXPO_PUBLIC_API_URL is required. Configure the backend URL before starting the app.',
+    );
+  }
+  return backendUrl;
+}
+
 /**
  * Firebase project the native build is wired to. Must match the project in
  * `google-services.json` / `GoogleService-Info.plist` and the

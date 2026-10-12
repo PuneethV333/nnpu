@@ -75,7 +75,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   }, [loadCurrentUser, clearSession]);
 
   useEffect(() => {
-    onSessionExpired(() => {
+    return onSessionExpired(() => {
       void clearSession();
     });
   }, [clearSession]);
@@ -92,11 +92,12 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const logout = useCallback(async () => {
     try {
       await authApi.logout();
-      router.push('/(auth)/login');
-    } catch (err) {
-      console.error(err);
+    } catch {
+      // Clear local credentials even when the server is unreachable.
+    } finally {
+      await clearSession();
+      router.replace('/(auth)/login');
     }
-    await clearSession();
   }, [clearSession]);
 
   const changePassword = useCallback(
