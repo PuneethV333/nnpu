@@ -3,7 +3,7 @@ import {
   View,
   Text,
   TextInput,
-  TouchableOpacity,
+  Pressable,
   ImageBackground,
   KeyboardAvoidingView,
   ScrollView,
@@ -136,13 +136,7 @@ const Login = () => {
 
                 <View style={styles.passwordHeader}>
                   <Text style={styles.label}>Password</Text>
-                  <TouchableOpacity
-                    onPress={() => {
-                      /* navigate to forgot-password screen */
-                    }}
-                  >
-                    <Text style={styles.forgotText}>Forgot?</Text>
-                  </TouchableOpacity>
+                  <Text style={styles.forgotText}>Contact your school administrator</Text>
                 </View>
                 <View style={styles.inputRow}>
                   <Ionicons
@@ -159,18 +153,31 @@ const Login = () => {
                     secureTextEntry={!showPassword}
                     style={styles.input}
                   />
-                  <TouchableOpacity onPress={() => setShowPassword((v) => !v)}>
+                  <Pressable
+                    onPress={() => setShowPassword((v) => !v)}
+                    accessibilityRole="button"
+                    accessibilityLabel={showPassword ? "Hide password" : "Show password"}
+                    hitSlop={8}
+                  >
                     <Ionicons
                       name={showPassword ? "eye-off-outline" : "eye-outline"}
                       size={18}
                       color="#9CA3AF"
                     />
-                  </TouchableOpacity>
+                  </Pressable>
                 </View>
 
-                {error ? <Text style={styles.errorText}>{error}</Text> : null}
+                {error ? (
+                  <Text
+                    style={styles.errorText}
+                    accessibilityRole="alert"
+                    accessibilityLiveRegion="polite"
+                  >
+                    {error}
+                  </Text>
+                ) : null}
 
-                <TouchableOpacity
+                <Pressable
                   style={[
                     styles.loginButton,
                     submitting && styles.buttonDisabled,
@@ -187,7 +194,7 @@ const Login = () => {
                       <Ionicons name="arrow-forward" size={18} color="#fff" />
                     </>
                   )}
-                </TouchableOpacity>
+                </Pressable>
               </View>
             </View>
 

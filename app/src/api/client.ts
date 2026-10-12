@@ -1,5 +1,7 @@
 import { AxiosError, create, InternalAxiosRequestConfig } from "axios";
-import { backendUrl } from "$/config/env";
+import { requireBackendUrl } from "$/config/env";
+
+const apiBaseUrl = `${requireBackendUrl()}/v1`;
 import { tokenStore } from "$/store/tokenStore";
 import { RefreshResponseSchema } from "$/types/auth";
 
@@ -8,13 +10,18 @@ type SessionExpiredListener = () => void;
 let sessionExpiredListener: SessionExpiredListener | null = null;
 export function onSessionExpired(listener: SessionExpiredListener) {
   sessionExpiredListener = listener;
+  return () => {
+    if (sessionExpiredListener === listener) {
+      sessionExpiredListener = null;
+    }
+  };
 }
 
 // The backend enables URI versioning with defaultVersion '1' and no
 // controller declares an explicit @Version(), so every route is served
 // under /v1. Without this prefix every request 404s.
 export const api = create({
-  baseURL: `${backendUrl}/v1`,
+  baseURL: apiBaseUrl,
   timeout: 15000
 })
 
@@ -27,7 +34,7 @@ api.interceptors.request.use(async (config: InternalAxiosRequestConfig) => {
   return config;
 })
 
-const refreshClient = create({ baseURL: `${backendUrl}/v1`, timeout: 15000 });
+const refreshClient = create({ baseURL: apiBaseUrl, timeout: 15000 });
 
 let refreshPromise: Promise<string | null> | null = null;
 
