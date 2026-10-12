@@ -178,13 +178,17 @@ const Login = () => {
                 ) : null}
 
                 <Pressable
-                  style={[
+                  style={({ pressed }) => [
                     styles.loginButton,
                     submitting && styles.buttonDisabled,
+                    // `activeOpacity` is a TouchableOpacity prop. Pressable
+                    // ignores it, so the button had no press feedback at all
+                    // even though it read as if it did. `pressed` is the
+                    // supported equivalent.
+                    pressed && !submitting && { opacity: 0.85 },
                   ]}
                   onPress={onSubmit}
                   disabled={submitting}
-                  activeOpacity={0.85}
                 >
                   {submitting ? (
                     <ActivityIndicator color="#fff" />

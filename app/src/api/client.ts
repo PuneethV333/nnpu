@@ -1,9 +1,9 @@
 import { AxiosError, create, InternalAxiosRequestConfig } from "axios";
 import { requireBackendUrl } from "$/config/env";
-
-const apiBaseUrl = `${requireBackendUrl()}/v1`;
 import { tokenStore } from "$/store/tokenStore";
 import { RefreshResponseSchema } from "$/types/auth";
+
+const apiBaseUrl = `${requireBackendUrl()}/v1`;
 
 
 type SessionExpiredListener = () => void;
