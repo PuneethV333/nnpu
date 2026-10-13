@@ -34,7 +34,7 @@ const PerformanceChart = ({ marks }: { marks: MarkArray }) => {
                   />
                 </View>
                 <Text className="text-[10px] text-gray-500 mt-2 text-center" numberOfLines={2}>
-                  {m.assessment.subject.name} ({m.assessment.name})
+                  {m.assessment.subject?.name ?? m.assessment.name}
                 </Text>
               </View>
             );

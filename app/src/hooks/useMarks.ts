@@ -7,6 +7,7 @@ import {
   enterMarks,
   getFinalReport,
   getMySubjects,
+  getAssessmentMarks,
   getPendingAssessments,
 } from '../api/marks';
 
@@ -27,6 +28,25 @@ export const useGetAssessments = (sectionId: string, subjectId?: string) => {
     queryKey: ['assessments', sectionId, subjectId],
     queryFn: () => getAssessments(sectionId, subjectId),
     enabled: isAuthenticated && (role === 'Teacher' || role === 'Admin') && !!sectionId,
+  });
+};
+
+/**
+ * Marks already saved for one assessment.
+ *
+ * Keyed by assessment id alone rather than section+subject so switching
+ * between two assessments of the same subject doesn't refetch the first one's
+ * marks.
+ */
+export const useGetAssessmentMarks = (assessmentId: string) => {
+  const { isAuthenticated, role } = useAuth();
+
+  return useQuery({
+    queryKey: ['assessment-marks', assessmentId],
+    queryFn: () => getAssessmentMarks(assessmentId),
+    enabled: isAuthenticated && !!assessmentId &&
+      (role === 'Teacher' || role === 'Admin'),
+    staleTime: 30_000,
   });
 };
 
@@ -53,6 +73,9 @@ export const useEnterMarks = () => {
       // invalidated too so a Student on another screen doesn't show a stale
       // total.
       queryClient.invalidateQueries({ queryKey: ['assessments'] });
+      // The saved marks this read returns are now stale — the teacher is
+      // looking at what they just submitted.
+      queryClient.invalidateQueries({ queryKey: ['assessment-marks'] });
       queryClient.invalidateQueries({ queryKey: ['pending-assessments'] });
       queryClient.invalidateQueries({ queryKey: ['final-report'] });
       queryClient.invalidateQueries({ queryKey: ['my-marks'] });

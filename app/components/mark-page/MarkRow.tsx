@@ -15,7 +15,7 @@ const MarkRow = ({ mark }: { mark: Mark }) => {
   return (
     <View className="px-4 py-3 border-b border-gray-100 last:border-b-0">
       <Text className="text-[15px] font-bold text-gray-900">
-        {mark.assessment.subject.name}
+        {mark.assessment.subject?.name ?? mark.assessment.name}
       </Text>
       {mark.remarks && (
         <Text className="text-sm text-gray-500 italic mt-0.5">

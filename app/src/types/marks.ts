@@ -26,8 +26,43 @@ export const assessmentSchema = z.object({
   date: z.coerce.date().nullable(),
   createdAt: z.coerce.date(),
   updatedAt: z.coerce.date(),
-  subject: subjectSchema,
+  /**
+   * Optional, and the asymmetry is the backend's, not a guess.
+   *
+   * `GET /marks/me` (a student's own marks) includes the relation, because it
+   * returns Mark rows with `include: { assessment: { include: { subject } } }`.
+   * `GET /marks/assessment` (the teacher's list) returns bare Assessment rows
+   * and has no relation loaded.
+   *
+   * This field was previously required, which meant the teacher's list threw
+   * on every successful response — the Zod parse failed inside queryFn, so the
+   * whole screen died rather than rendering. Optional because of that; the
+   * student views that do render a subject name are unaffected.
+   */
+  subject: subjectSchema.optional(),
 });
+
+/**
+ * One recorded mark row, as returned for an assessment.
+ *
+ * Separate from `markSchema` because the student's `/marks/me` payload nests
+ * the full assessment (with its subject) under `assessment`, whereas this
+ * endpoint returns the mark rows on their own.
+ */
+export const assessmentMarkSchema = z.object({
+  id: z.string(),
+  studentId: z.string(),
+  assessmentId: z.string(),
+  marksObtained: z.number(),
+  remarks: z.string().nullable(),
+  enteredById: z.string().nullable(),
+  createdAt: z.coerce.date(),
+  updatedAt: z.coerce.date(),
+});
+
+export const assessmentMarkArraySchema = z.array(assessmentMarkSchema);
+export type AssessmentMark = z.infer<typeof assessmentMarkSchema>;
+export type AssessmentMarkArray = z.infer<typeof assessmentMarkArraySchema>;
 
 export const markSchema = z.object({
   id: z.string(),

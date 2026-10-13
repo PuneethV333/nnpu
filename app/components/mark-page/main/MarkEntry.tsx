@@ -11,11 +11,12 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
-import { useGetAllSections } from "@/src/hooks/useSections";
+import { useGetMySections } from "@/src/hooks/useSections";
 import { useGetStudents } from "@/src/hooks/useStudents";
 import {
   useGetMySubjects,
   useGetAssessments,
+  useGetAssessmentMarks,
   useEnterMarks,
 } from "@/src/hooks/useMarks";
 import { SectionPicker } from "@/components/attendance-page/SectionPicker";
@@ -44,6 +45,13 @@ const CATEGORY_LABEL: Record<string, string> = {
 /** Quick-tap marks shortcuts, filtered to what the assessment allows. */
 type Draft = Record<string, string>;
 
+/**
+ * "enter" writes marks; "view" shows what is already saved.
+ *
+ * Both render the same row component so the two modes cannot drift.
+ */
+type Mode = "enter" | "view";
+
 const Label = ({ children }: { children: React.ReactNode }) => (
   <Text className="text-xs font-semibold text-gray-400 tracking-wide px-4 mt-5 mb-2">
     {children}
@@ -58,15 +66,32 @@ const Label = ({ children }: { children: React.ReactNode }) => (
  */
 const MarkEntry = ({ heading }: { heading: string }) => {
   const tabBarClearance = useTabBarClearance();
+  // A teacher must pick from the sections they are actually staffed in.
+  // `useGetAllSections` returns every section in the school, and the backend
+  // then answers 403 for any section the teacher has no `sectionSubject` row in
+  // — so picking from the full list offers sections that are guaranteed to
+  // fail, which is what made this screen look dead. `/sections/mine` is the
+  // teacher-scoped list (class teacher OR subject teacher).
   const {
     data: sections,
     isLoading: sectionsLoading,
     isError: sectionsError,
     refetch: refetchSections,
-  } = useGetAllSections();
+  } = useGetMySections();
   const [sectionId, setSectionId] = useState("");
   const [subjectId, setSubjectId] = useState("");
   const [assessmentId, setAssessmentId] = useState("");
+  /**
+   * "enter" overwrites the roster with what the teacher types; "view" shows
+   * what is already saved.
+   *
+   * Defaulting to enter meant a teacher opening an assessment they had already
+   * marked saw an empty sheet and no indication the marks existed — the
+   * strongest reading of "the page is empty" was "nothing has been entered",
+   * when in fact 40 students were already marked. Viewing first makes the
+   * existing state the default and puts editing one deliberate step away.
+   */
+  const [mode, setMode] = useState<Mode>("view");
   const [draft, setDraft] = useState<Draft>({});
   const [modal, setModal] = useState({
     visible: false,
@@ -89,6 +114,16 @@ const MarkEntry = ({ heading }: { heading: string }) => {
   const { data: students, isLoading: studentsLoading } =
     useGetStudents(sectionId);
   const { mutate: enterMarks, isPending: isSaving } = useEnterMarks();
+
+  // Saved marks for the chosen assessment, keyed by studentId. Empty until an
+  // assessment is picked, which is what lets the sheet open on "view" without
+  // showing a false "nothing recorded" for the assessment not yet selected.
+  const { data: savedMarkRows } = useGetAssessmentMarks(assessmentId);
+  const savedMarks = useMemo(() => {
+    const map: Record<string, number> = {};
+    for (const m of savedMarkRows ?? []) map[m.studentId] = m.marksObtained;
+    return map;
+  }, [savedMarkRows]);
 
   const assessment = useMemo(
     () => assessments?.find((a) => a.id === assessmentId) ?? null,
@@ -114,6 +149,28 @@ const MarkEntry = ({ heading }: { heading: string }) => {
    * Only the marks are at risk; changing a selection always applies. "Keep
    * editing" is the safe default so dismissing the dialog does the safe thing.
    */
+  /**
+   * Switching to "view" fills the draft from the saved marks, so the same row
+   * markup renders either mode. `savedMarks` comes from the assessment's marks,
+   * which the backend returns alongside it — no second request, and no
+   * "empty because not loaded" flash.
+   */
+  const changeMode = (next: Mode) => {
+    if (next === mode) return;
+    if (next === "view") {
+      setDraft(Object.fromEntries(
+        Object.entries(savedMarks).map(([id, v]) => [id, String(v)]),
+      ));
+      return;
+    }
+    // Entering starts from the saved values so an edit is a correction rather
+    // than a full retype; the teacher clears a box to blank it.
+    setDraft(Object.fromEntries(
+      Object.entries(savedMarks).map(([id, v]) => [id, String(v)]),
+    ));
+    setMode("enter");
+  };
+
   const withDraftGuard = (label: string, apply: () => void) => {
     if (entered === 0) {
       apply();
@@ -254,8 +311,8 @@ const MarkEntry = ({ heading }: { heading: string }) => {
           ) : !sections || sections.length === 0 ? (
             <EmptyState
               icon="grid"
-              title="No sections yet"
-              subtitle="Sections appear once the school creates them."
+              title="No sections assigned"
+              subtitle="You will see sections here once you are assigned to teach one, or made class teacher."
             />
           ) : (
             <>
@@ -341,6 +398,49 @@ const MarkEntry = ({ heading }: { heading: string }) => {
                         />
                       ) : (
                         <>
+                          {(() => {
+                            const recorded = Object.keys(savedMarks).length;
+                            return (
+                              <View className="px-4 mt-5 mb-1">
+                                <View className="flex-row bg-gray-100 rounded-xl p-1">
+                                  {(["view", "enter"] as const).map((m) => {
+                                    const active = mode === m;
+                                    return (
+                                      <Pressable
+                                        key={m}
+                                        onPress={() => changeMode(m)}
+                                        className="flex-1 py-2 rounded-lg items-center"
+                                        style={{
+                                          backgroundColor: active
+                                            ? "#FFFFFF"
+                                            : "transparent",
+                                        }}
+                                      >
+                                        <Text
+                                          className="text-[13px] font-semibold"
+                                          style={{
+                                            color: active
+                                              ? "#111827"
+                                              : "#6B7280",
+                                          }}
+                                        >
+                                          {m === "view" ? "View marks" : "Enter marks"}
+                                        </Text>
+                                      </Pressable>
+                                    );
+                                  })}
+                                </View>
+                                <Text className="text-[11px] text-gray-400 mt-2">
+                                  {recorded === 0
+                                    ? "Nothing recorded for this assessment yet."
+                                    : `Showing ${recorded} recorded mark${
+                                        recorded === 1 ? "" : "s"
+                                      }.`}
+                                </Text>
+                              </View>
+                            );
+                          })()}
+
                           <View className="flex-row items-center justify-between px-4 mt-5">
                             <Text className="text-xs font-semibold text-gray-400 tracking-wide">
                               OUT OF {assessment.maxMarks}
@@ -380,6 +480,7 @@ const MarkEntry = ({ heading }: { heading: string }) => {
                             ))}
                           </View>
 
+                          {mode === "enter" ? (
                           <View className="px-4 mt-4">
                             <Pressable
                               onPress={handleSave}
@@ -412,6 +513,7 @@ const MarkEntry = ({ heading }: { heading: string }) => {
                               )}
                             </Pressable>
                           </View>
+                          ) : null}
                         </>
                       )}
                     </>

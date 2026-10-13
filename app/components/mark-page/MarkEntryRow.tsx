@@ -19,11 +19,14 @@ export const MarkEntryRow = ({
   value,
   maxMarks,
   onChange,
+  readOnly = false,
 }: {
   name: string;
   value: string;
   maxMarks: number;
   onChange: (next: string) => void;
+  /** View mode: shows the saved mark without offering the quick-tap presets. */
+  readOnly?: boolean;
 }) => {
   const numeric = Number(value);
   const invalid = value !== "" && (Number.isNaN(numeric) || numeric < 0);
@@ -42,7 +45,9 @@ export const MarkEntryRow = ({
         <View className="flex-row items-center">
           <TextInput
             value={value}
-            onChangeText={onChange}
+            onChangeText={readOnly ? undefined : onChange}
+            editable={!readOnly}
+            selectTextOnFocus={!readOnly}
             placeholder="-"
             placeholderTextColor="#D1D5DB"
             keyboardType="numeric"
@@ -66,6 +71,7 @@ export const MarkEntryRow = ({
         </Text>
       )}
 
+      {!readOnly && (
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
@@ -81,6 +87,7 @@ export const MarkEntryRow = ({
           </Pressable>
         ))}
       </ScrollView>
+      )}
     </View>
   );
 };
