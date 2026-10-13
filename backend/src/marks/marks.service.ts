@@ -207,6 +207,46 @@ export class MarksService {
     return { message: `Marks entered for ${dto.entries.length} students` };
   }
 
+  /**
+   * Marks already recorded for one assessment, keyed by nothing — the caller
+   * pairs them with the roster by studentId.
+   *
+   * This exists because there was no read path for a teacher's own work:
+   * `enterMarks` writes, `getMyMarks` is the student's own marks, and
+   * `getFinalReport` is per-student-per-subject (so a teacher would need one
+   * request per student). Without it a teacher can only ever open the entry
+   * screen and overwrite what they previously entered, having no way to check
+   * it first.
+   *
+   * Authorization is the same subject-level check `listAssessments` uses, so
+   * this cannot be used to read another teacher's section.
+   */
+  async getAssessmentMarks(assessmentId: string, authId: string) {
+    this.logger.log('[assessment-marks]');
+    const { userId, role } = await this.resolveUser(authId);
+
+    const assessment = await this.prisma.assessment.findUnique({
+      where: { id: assessmentId },
+      select: { id: true, sectionId: true, subjectId: true },
+    });
+
+    if (!assessment) {
+      throw new NotFoundException(`Assessment ${assessmentId} not found`);
+    }
+
+    await this.assertAssignedTeacher(
+      assessment.sectionId,
+      assessment.subjectId,
+      userId,
+      role,
+    );
+
+    return this.prisma.mark.findMany({
+      where: { assessmentId },
+      orderBy: { createdAt: 'asc' },
+    });
+  }
+
   async getMyMarks(authId: string, subjectId?: string) {
     this.logger.log('[my-marks]');
     const { userId: studentId } = await this.resolveUser(authId);

@@ -19,6 +19,7 @@ import { EnterMarksDto } from './dto/enter-marks.dto';
 import { ListAssessmentsQueryDto } from './dto/list-assessments-query.dto';
 import { MySubjectsQueryDto } from './dto/my-subjects-query.dto';
 import { ReportParamsDto } from './dto/report-params.dto';
+import { AssessmentMarksParamsDto } from './dto/assessment-marks-params.dto';
 import { MyMarksQueryDto } from './dto/my-marks-query.dto';
 import { Throttle } from '@nestjs/throttler';
 
@@ -75,6 +76,22 @@ export class MarksController {
   })
   getMyMarks(@CurrentUser() user: JwtPayload, @Query() query: MyMarksQueryDto) {
     return this.marksService.getMyMarks(user.authId, query.subjectId);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get('assessment/:assessmentId/marks')
+  @Throttle({ default: { limit: 30, ttl: 60000 } })
+  @ApiOperation({
+    summary: 'Marks already recorded for one assessment (Teacher/Admin)',
+  })
+  getAssessmentMarks(
+    @Param() params: AssessmentMarksParamsDto,
+    @CurrentUser() user: JwtPayload,
+  ) {
+    return this.marksService.getAssessmentMarks(
+      params.assessmentId,
+      user.authId,
+    );
   }
 
   @UseGuards(JwtAuthGuard)
