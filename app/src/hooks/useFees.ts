@@ -62,6 +62,9 @@ export const useGenerateInvoices = () => {
     mutationFn: generateInvoices,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['my-invoices'] });
+      // Generation is an Admin action, so the Admin is the one who needs to
+      // see the result — and the list they read is `student-invoices`.
+      queryClient.invalidateQueries({ queryKey: ['student-invoices'] });
     },
   });
 };

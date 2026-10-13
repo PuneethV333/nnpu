@@ -65,6 +65,11 @@ const useInvalidateSectionState = () => {
     queryClient.invalidateQueries({ queryKey: ['section-assignments', sectionId] });
     queryClient.invalidateQueries({ queryKey: ['all-sections'] });
     queryClient.invalidateQueries({ queryKey: ['my-sections'] });
+    // Assigning a subject rewrites who teaches it, which is exactly what
+    // `my-subjects` is. Without this, staffing a teacher onto a subject and
+    // then opening Marks shows the pre-staffing list. The backend clears its
+    // own Redis copy; this is the client's.
+    queryClient.invalidateQueries({ queryKey: ['my-subjects'] });
   };
 };
 
