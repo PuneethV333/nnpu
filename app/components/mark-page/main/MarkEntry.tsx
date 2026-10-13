@@ -21,6 +21,10 @@ import {
 } from "@/src/hooks/useMarks";
 import { SectionPicker } from "@/components/attendance-page/SectionPicker";
 import { MarkEntryRow } from "@/components/mark-page/MarkEntryRow";
+import {
+  CreateAssessmentSheet,
+  NewAssessmentButton,
+} from "@/components/mark-page/CreateAssessmentSheet";
 import { PillTabs } from "@/components/ui/Primitives";
 import { AttendanceStatusModal } from "@/components/attendance-page/AttendanceStatusModal";
 import { EmptyState, ErrorState } from "@/components/ui/Feedback";
@@ -92,6 +96,7 @@ const MarkEntry = ({ heading }: { heading: string }) => {
    * existing state the default and puts editing one deliberate step away.
    */
   const [mode, setMode] = useState<Mode>("view");
+  const [creatingFor, setCreatingFor] = useState<string | null>(null);
   const [draft, setDraft] = useState<Draft>({});
   const [modal, setModal] = useState({
     visible: false,
@@ -349,6 +354,12 @@ const MarkEntry = ({ heading }: { heading: string }) => {
                     activeColor={ACCENT}
                   />
 
+                  {subjectId &&
+                    (!assessments || assessments.length === 0) &&
+                    !assessmentsLoading && (
+                      <NewAssessmentButton onPress={() => setCreatingFor(subjectId)} />
+                    )}
+
                   {!subjectId ? (
                     <EmptyState
                       icon="book"
@@ -363,7 +374,7 @@ const MarkEntry = ({ heading }: { heading: string }) => {
                     <EmptyState
                       icon="clipboard"
                       title="No assessments yet"
-                      subtitle="No assessments have been created for this subject."
+                      subtitle="Create one to start entering marks for this subject."
                     />
                   ) : (
                     <>
@@ -524,6 +535,25 @@ const MarkEntry = ({ heading }: { heading: string }) => {
           )}
         </ScrollView>
       </KeyboardAvoidingView>
+
+      {creatingFor ? (
+        <CreateAssessmentSheet
+          sectionId={sectionId}
+          sectionName={sections?.find((x) => x.id === sectionId)?.name ?? ""}
+          subjectId={creatingFor}
+          subjectName={
+            subjects?.find((x) => x.id === creatingFor)?.name ?? ""
+          }
+          onClose={() => setCreatingFor(null)}
+          onCreated={(id) => {
+            // Select it straight away so the teacher can start entering marks
+            // without hunting through a list they just created the only entry
+            // of.
+            setAssessmentId(id);
+            setDraft({});
+          }}
+        />
+      ) : null}
 
       <AttendanceStatusModal
         visible={modal.visible}
