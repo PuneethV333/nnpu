@@ -15,6 +15,13 @@ export const sectionSchema = z.object({
    * this is on the section payload instead of parsed out of the label.
    */
   academicYearStart: z.number(),
+  /**
+   * Added alongside `academicYearStart` so the fees screen can resolve a fee
+   * structure, which is keyed by (section, academicYear). Without it the only
+   * way to get an academic-year id was to reconstruct one from the label,
+   * which the backend treats as opaque.
+   */
+  academicYearId: z.string(),
   isClassTeacher: z.boolean(),
 });
 

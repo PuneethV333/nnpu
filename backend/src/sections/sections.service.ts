@@ -54,6 +54,7 @@ export class SectionsService {
       className: s.class.name,
       academicYearLabel: s.academicYear.label,
       academicYearStart: s.academicYear.startDate.getFullYear(),
+      academicYearId: s.academicYearId,
       isClassTeacher: s.classTeacherId === auth.userId,
     }));
 
@@ -85,6 +86,7 @@ export class SectionsService {
       className: s.class.name,
       academicYearLabel: s.academicYear.label,
       academicYearStart: s.academicYear.startDate.getFullYear(),
+      academicYearId: s.academicYearId,
       isClassTeacher: false,
     }));
 
