@@ -5,6 +5,10 @@ import { Feather } from '@expo/vector-icons';
 import { useGetAllSections } from '@/src/hooks/useSections';
 import { useGetStudents } from '@/src/hooks/useStudents';
 import { useGetStudentInvoices } from '@/src/hooks/useFees';
+import {
+  GenerateInvoicesButton,
+  GenerateInvoicesSheet,
+} from '@/components/fees-page/GenerateInvoicesSheet';
 import { useGetAdminDashboard } from '@/src/hooks/useDashboard';
 import { formatDate, formatMoney } from '@/src/libs/money';
 import { SectionPicker } from '@/components/attendance-page/SectionPicker';
@@ -82,6 +86,7 @@ const FeesPage = () => {
 
   const [sectionId, setSectionId] = useState('');
   const [studentId, setStudentId] = useState('');
+  const [generating, setGenerating] = useState(false);
 
   const { data: students, isLoading: studentsLoading } = useGetStudents(sectionId);
   const { data: invoices, isLoading: invoicesLoading } = useGetStudentInvoices(
@@ -91,6 +96,13 @@ const FeesPage = () => {
   const selectedStudent = useMemo(
     () => students?.find((s) => s.id === studentId) ?? null,
     [students, studentId],
+  );
+
+  // The section the generate sheet bills, resolved from the picker. Needed for
+  // its `academicYearId`, which is what a fee structure is keyed by.
+  const section = useMemo(
+    () => sections?.find((s) => s.id === sectionId) ?? null,
+    [sections, sectionId],
   );
 
   const onSelectSection = (id: string) => {
@@ -128,6 +140,20 @@ const FeesPage = () => {
         <Text className="text-base font-semibold text-gray-900 px-4 mb-2">
           Student Invoices
         </Text>
+
+        <GenerateInvoicesButton
+          disabled={!sectionId || (students?.length ?? 0) === 0}
+          onPress={() => setGenerating(true)}
+        />
+        {generating && section && (
+          <GenerateInvoicesSheet
+            sectionId={section.id}
+            sectionName={section.name}
+            academicYearId={section.academicYearId}
+            studentCount={students?.length ?? 0}
+            onClose={() => setGenerating(false)}
+          />
+        )}
 
         {sectionsLoading ? (
           <>
