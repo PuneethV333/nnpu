@@ -42,6 +42,18 @@ import {
 } from '@/common/utils/section-session.util';
 
 const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL });
+
+/**
+ * Calendar upsert batching, tuned for a remote database.
+ *
+ * On localhost 50 rows is well inside the 5s interactive-transaction default.
+ * Against Neon each statement is a round-trip across the internet, so the same
+ * 50 takes longer than the default allows and the whole seed aborts. Smaller
+ * batches and an explicit timeout make the seed work in both places rather than
+ * only on a developer's machine.
+ */
+const CALENDAR_BATCH = 25;
+const CALENDAR_TX_TIMEOUT_MS = 60_000;
 const prisma = new PrismaClient({ adapter });
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
@@ -621,7 +633,6 @@ async function main() {
     }
   }
 
-  let totalStudents = 0;
   let studentGlobalIdx = 0;
 
   for (const plan of studentPlan) {
@@ -672,10 +683,21 @@ async function main() {
           },
         });
 
-        totalStudents++;
       }
     }
   }
+
+  // Counted from the database, not from what this run happened to create.
+  //
+  // Counting the loop's own increments made the School counters depend on the
+  // database having been empty beforehand. A seed that dies partway through
+  // and is re-run leaves those counters at 0 while 500 students exist — which
+  // is exactly what a `Students : 0` summary line is a symptom of, not a
+  // harmless print bug. Deriving it from `count()` makes a re-run correct
+  // whatever state the previous attempt left behind.
+  const totalStudents = await prisma.user.count({
+    where: { role: 'Student' },
+  });
 
   await flushSequences();
   console.log(`✅ Students seeded: ${totalStudents}`);
@@ -1091,9 +1113,16 @@ async function main() {
     }
   }
 
-  // Upsert in batches of 50 to stay within transaction limits
-  for (let i = 0; i < calDays.length; i += 50) {
-    const batch = calDays.slice(i, i + 50);
+  // Upsert in batches, and give the transaction an explicit timeout.
+  //
+  // The batch size alone is not enough on a remote database. Against Neon every
+  // statement is a network round-trip, so a 50-row interactive transaction
+  // takes ~5.5s and trips Prisma's 5000ms default with
+  // "A rollback cannot be executed on an expired transaction" — which aborts
+  // the whole seed rather than just that batch. Batch size is kept modest and
+  // the timeout is raised so a slow link costs nothing.
+  for (let i = 0; i < calDays.length; i += CALENDAR_BATCH) {
+    const batch = calDays.slice(i, i + CALENDAR_BATCH);
     await prisma.$transaction(
       batch.map((cd) =>
         prisma.academicCalendarDay.upsert({
@@ -1102,6 +1131,7 @@ async function main() {
           create: cd,
         }),
       ),
+      { timeout: CALENDAR_TX_TIMEOUT_MS, maxWait: CALENDAR_TX_TIMEOUT_MS },
     );
   }
   console.log(`✅ Calendar generated: ${calDays.length} days (2026)`);
