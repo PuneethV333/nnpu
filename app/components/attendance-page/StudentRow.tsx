@@ -30,16 +30,28 @@ export const StudentRow = ({
             onPress={() => onChange(opt.value)}
             // Immediate press feedback. The draft update is synchronous, but on
             // a long roster the re-render is not free, and a button with no
-            // pressed state reads as "dead" for the duration — which is what
-            // made tapping a status feel unresponsive. The scale is the RN
-            // equivalent of a tap highlight: it fires on touch-down, before any
-            // state update is committed.
+            // pressed state reads as "dead" for the duration.
             style={({ pressed }) => ({
               backgroundColor: selected ? opt.color : "#F3F4F6",
               opacity: disabled ? 0.5 : pressed ? 0.6 : 1,
               transform: [{ scale: pressed && !disabled ? 0.88 : 1 }],
+              // A selected status used to be a flat fill with white text, which
+              // on a 60-row roster read as "the buttons disappeared" — the
+              // marked row no longer looked like it had controls. The ring plus
+              // a coloured shadow keeps it visibly *on* and still clearly the
+              // chosen one, without changing the fill that already worked.
+              borderWidth: selected ? 2 : 1,
+              borderColor: selected ? '#FFFFFF' : '#E5E7EB',
+              shadowColor: selected ? opt.color : 'transparent',
+              shadowOpacity: selected ? 0.85 : 0,
+              shadowRadius: selected ? 6 : 0,
+              shadowOffset: { width: 0, height: 0 },
+              elevation: selected ? 6 : 0,
             })}
             className="w-9 h-9 rounded-full items-center justify-center ml-2"
+            accessibilityRole="button"
+            accessibilityState={{ selected, disabled }}
+            accessibilityLabel={`Mark ${item.name ?? item.studentId} ${opt.label === 'P' ? 'present' : opt.label === 'A' ? 'absent' : 'late'}`}
           >
             <Text
               className="inter_bold text-sm"
