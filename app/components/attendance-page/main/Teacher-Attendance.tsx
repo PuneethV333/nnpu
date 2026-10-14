@@ -16,6 +16,7 @@ import {
 } from "@/src/hooks/useAttendance";
 import { useTabBarClearance } from "@/src/hooks/useTabBarClearance";
 import { toISODate } from "@/src/libs/week";
+import { errorMessage } from "@/src/libs/errorMessage";
 import { useGetAllSections } from "@/src/hooks/useSections";
 import { SectionPicker } from "../SectionPicker";
 import { RosterEditor } from "../RosterEditor";
@@ -23,6 +24,35 @@ import { shiftDate } from "@/src/libs/shiftDate";
 import { formatDisplayDate } from "@/src/libs/formatDisplayDate";
 import { styles } from "@/src/style/markAttendance";
 
+
+/**
+ * Why the roster/status could not be loaded.
+ *
+ * This banner used to claim "The day may not be a working day" for every
+ * failure. The backend distinguishes the causes — a Holiday genuinely returns
+ * "Cannot mark attendance on a Holiday day", but an unstaffed section returns
+ * 403 and a server outage returns a network error — and the server's own
+ * wording was discarded because the query only exposed `isError`, not `error`.
+ *
+ * A wrong guess is worse than none here: "unknown issue" sent whoever reported
+ * this looking at the calendar for a problem that was a permissions fault, and
+ * the roster is the same for a non-working day and an offline server.
+ */
+const attendanceErrorMessage = (err: unknown): string => {
+  if (err && typeof err === "object" && "response" in err) {
+    const status = (err as { response?: { status?: number } }).response?.status;
+    if (status === 403) {
+      return "You aren't assigned to this section, so you can't mark its attendance.";
+    }
+    if (status === 400) {
+      return "Attendance can only be marked on a working day. Pick another date.";
+    }
+    if (status === 401) {
+      return "Your session expired. Sign in again to continue.";
+    }
+  }
+  return errorMessage(err, "Couldn't load this section. Check your connection.");
+};
 
 const MarkAttendancePage = () => {
   const tabBarClearance = useTabBarClearance();
@@ -48,12 +78,16 @@ const MarkAttendancePage = () => {
     data: status,
     isLoading: statusLoading,
     isError: statusError,
+    error: statusErr,
+    refetch: refetchStatus,
   } = useCheckStatus(sectionId, isoDate);
 
   const {
     data: roster,
     isLoading: rosterLoading,
     isError: rosterError,
+    error: rosterErr,
+    refetch: refetchRoster,
   } = useGetRoster(sectionId, isoDate);
 
   const { mutate: mark, isPending: isSaving } = useMarkAttendance();
@@ -145,10 +179,24 @@ const MarkAttendancePage = () => {
               color="#DC2626"
               style={{ marginTop: 2, marginRight: 8 }}
             />
-            <Text style={styles.errorBannerText}>
-              Couldn&apos;t load this section&apos;s attendance. The day may not
-              be a working day.
-            </Text>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.errorBannerText}>
+                {attendanceErrorMessage(rosterErr ?? statusErr)}
+              </Text>
+              <Pressable
+                onPress={() => {
+                  void refetchRoster();
+                  void refetchStatus();
+                }}
+                style={({ pressed }) => [
+                  styles.retryButton,
+                  pressed && { opacity: 0.6 },
+                ]}
+              >
+                <Feather name="refresh-cw" size={13} color="#DC2626" />
+                <Text style={styles.retryButtonText}>Try again</Text>
+              </Pressable>
+            </View>
           </View>
         )}
 

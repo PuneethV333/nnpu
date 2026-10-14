@@ -125,6 +125,18 @@ export const styles = StyleSheet.create({
     justifyContent: "center",
     flexDirection: "row",
   },
+  retryButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    marginTop: 8,
+    alignSelf: 'flex-start',
+  },
+  retryButtonText: {
+    color: '#DC2626',
+    fontSize: 13,
+    fontWeight: '600',
+  },
   saveButtonText: {
     color: "#FFFFFF",
     fontWeight: "700",
