@@ -14,6 +14,7 @@ import {
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "@/src/hooks/useAuth";
+import { errorMessage } from "@/src/libs/errorMessage";
 import { Redirect } from "expo-router";
 import { isAxiosError } from "axios";
 import { images } from "@/constants/image";
@@ -63,10 +64,25 @@ const Login = () => {
     try {
       await login(id.trim(), pass);
     } catch (err) {
-      if (isAxiosError(err) && err.response?.status === 401) {
-        setError("Invalid ID or password.");
+      if (isAxiosError(err)) {
+        const status = err.response?.status;
+        if (status === 401) {
+          // The backend answers 401 for both a wrong authId and a wrong
+          // password, and deliberately does not say which. Kept that way here
+          // — telling a caller which half was wrong turns the form into a way
+          // to enumerate valid School IDs.
+          setError("Invalid ID or password.");
+        } else if (status === 429) {
+          setError("Too many attempts. Wait a moment and try again.");
+        } else if (status === undefined) {
+          setError("Couldn't reach the server. Check your connection.");
+        } else {
+          setError(errorMessage(err, "Couldn't sign in. Try again."));
+        }
       } else {
-        setError("Couldn't reach the server. Try again later.");
+        // A Zod parse failure means the server answered with a shape this
+        // build does not understand. Saying "try again" would be misleading.
+        setError("Sign-in response was unexpected. Please try again.");
       }
     } finally {
       setSubmitting(false);
