@@ -6,6 +6,7 @@ import {
   Field,
   PrimaryButton,
 } from "@/components/ui/Primitives";
+import { DateField } from "@/components/ui/DateField";
 import { useCreateAssessment } from "@/src/hooks/useMarks";
 import {
   assessmentCategoryEnum,
@@ -26,8 +27,6 @@ const CATEGORY_LABEL: Record<AssessmentCategory, string> = {
 };
 
 const CATEGORIES = assessmentCategoryEnum.options;
-
-const today = () => new Date().toISOString().slice(0, 10);
 
 /**
  * Creates an assessment for a section+subject.
@@ -71,9 +70,8 @@ export const CreateAssessmentSheet = ({
   // this form is actually misused.
   const max = Number(maxMarks);
   const maxInvalid = maxMarks !== "" && (!Number.isInteger(max) || max < 1);
-  const dateInvalid = date !== "" && !/^\d{4}-\d{2}-\d{2}$/.test(date);
-  const canSubmit =
-    name.trim().length > 0 && maxMarks !== "" && !maxInvalid && !dateInvalid;
+  // `date` comes from the picker, so it is either "" or a valid YYYY-MM-DD.
+  const canSubmit = name.trim().length > 0 && maxMarks !== "" && !maxInvalid;
 
   const submit = () => {
     if (!canSubmit || saving) return;
@@ -161,18 +159,11 @@ export const CreateAssessmentSheet = ({
         </Text>
       )}
 
-      <Field
-        label={`Date (optional, ${today()})`}
+      <DateField
+        label="Date (optional)"
         value={date}
-        onChangeText={setDate}
-        placeholder="YYYY-MM-DD"
-        autoCapitalize="none"
+        onChange={setDate}
       />
-      {dateInvalid && (
-        <Text className="text-xs text-red-500 -mt-3 mb-4">
-          Use YYYY-MM-DD, or leave it blank.
-        </Text>
-      )}
 
       {error && (
         <Text className="text-xs text-red-500 mb-3">{error}</Text>
@@ -187,7 +178,7 @@ export const CreateAssessmentSheet = ({
             disabled={saving}
           />
         </View>
-        <View className="flex-[2]">
+        <View className="flex-2">
           <PrimaryButton
             label="Create"
             icon="plus-circle"

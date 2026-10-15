@@ -289,9 +289,15 @@ const MarkEntry = ({ heading }: { heading: string }) => {
   };
 
   return (
-    <SafeAreaView className="flex-1 bg-gray-50" edges={["top"]}>
+    // `style`, not `className`, on both wrappers. SafeAreaView comes from
+    // react-native-safe-area-context, so NativeWind does not map `className`
+    // onto it: `flex-1` and `bg-gray-50` were silently dropped. The
+    // KeyboardAvoidingView inside kept its own `flex-1`, which inside a parent
+    // with no height collapses to 0 - so the whole screen, heading included,
+    // rendered as nothing on the navigator's default grey.
+    <SafeAreaView style={{ flex: 1, backgroundColor: "#F9FAFB" }} edges={["top"]}>
       <KeyboardAvoidingView
-        className="flex-1"
+        style={{ flex: 1 }}
         behavior={Platform.OS === "ios" ? "padding" : undefined}
       >
         <ScrollView
