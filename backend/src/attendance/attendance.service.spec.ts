@@ -146,6 +146,8 @@ describe('AttendanceService', () => {
         ),
       ).rejects.toBeInstanceOf(ForbiddenException);
 
+      expect(prisma.attendance.updateMany).not.toHaveBeenCalled();
+      expect(prisma.attendance.createMany).not.toHaveBeenCalled();
       expect(prisma.attendance.upsert).not.toHaveBeenCalled();
       expect(prisma.$transaction).not.toHaveBeenCalled();
     });
@@ -551,6 +553,19 @@ describe('AttendanceService', () => {
 
     const entry = [{ studentId: 's1', status: 'Present' as const }];
 
+    // Prisma's overloaded `updateMany` signature leaves `mock.calls` untyped.
+    // Narrow it once here rather than casting at each assertion.
+    type UpdateArgs = [
+      { where: Record<string, unknown>; data: Record<string, unknown> },
+    ];
+    const updateCallArgs = () =>
+      (
+        prisma.attendance.updateMany as unknown as jest.Mock<
+          unknown,
+          UpdateArgs
+        >
+      ).mock.calls.map((c) => c[0]);
+
     it('rejects a future date', async () => {
       asClassTeacher();
       singleStudent();
@@ -587,6 +602,8 @@ describe('AttendanceService', () => {
         ),
       ).rejects.toBeInstanceOf(ForbiddenException);
 
+      expect(prisma.attendance.updateMany).not.toHaveBeenCalled();
+      expect(prisma.attendance.createMany).not.toHaveBeenCalled();
       expect(prisma.attendance.upsert).not.toHaveBeenCalled();
     });
 
@@ -602,7 +619,60 @@ describe('AttendanceService', () => {
         'auth-1',
       );
 
-      expect(prisma.attendance.upsert).toHaveBeenCalled();
+      expect(prisma.attendance.createMany).toHaveBeenCalled();
+      expect(prisma.attendance.upsert).not.toHaveBeenCalled();
+    });
+
+    it('writes a full section in a handful of statements, not one per student', async () => {
+      // A section holds 125 students. One upsert each inside a single
+      // interactive transaction exceeded the 5000ms default against a remote
+      // database and made marking attendance impossible. The number of
+      // statements sent must not scale with the size of the section.
+      asClassTeacher();
+      const students = Array.from({ length: 125 }, (_, i) => ({ id: `s${i}` }));
+      (prisma.user.findMany as jest.Mock).mockResolvedValue(students);
+
+      const entries = students.map((s, i) => ({
+        studentId: s.id,
+        // Three distinct statuses, so three update groups.
+        status: (['Present', 'Absent', 'Late'] as const)[i % 3],
+      }));
+      (prisma.attendance.findMany as jest.Mock).mockResolvedValue(
+        entries.slice(0, 100).map((e) => ({ studentId: e.studentId })),
+      );
+      (prisma.academicCalendarDay.findUnique as jest.Mock).mockResolvedValue({
+        type: 'Working',
+      });
+
+      await service.markAttendance(
+        { sectionId: 'section-1', date: shift(0), entries },
+        'auth-1',
+      );
+
+      // 3 updateMany calls (one per status) + 1 createMany for the 25 new
+      // rows = 4 statements, and one upsert per student = none.
+      expect(prisma.attendance.updateMany).toHaveBeenCalledTimes(3);
+      expect(prisma.attendance.createMany).toHaveBeenCalledTimes(1);
+      expect(prisma.attendance.upsert).not.toHaveBeenCalled();
+
+      // The 25 students with no existing row are the ones inserted.
+      const createArgs = (
+        prisma.attendance.createMany as unknown as jest.Mock<
+          unknown,
+          [{ data: unknown[] }]
+        >
+      ).mock.calls[0][0];
+      expect(createArgs.data).toHaveLength(25);
+
+      // The insert half is still one transaction, and with a real budget.
+      expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+      type TxArgs = [unknown[], { timeout: number; maxWait: number }];
+      const txCalls = (
+        prisma.$transaction as unknown as jest.Mock<unknown, TxArgs>
+      ).mock.calls[0];
+      expect(txCalls[0]).toHaveLength(4);
+      expect(txCalls[1].timeout).toEqual(expect.any(Number));
+      expect(txCalls[1].maxWait).toEqual(expect.any(Number));
     });
 
     it('reassigns sectionId when a transferred student is re-marked', async () => {
@@ -621,17 +691,63 @@ describe('AttendanceService', () => {
         'auth-1',
       );
 
-      // Prisma's overloaded `upsert` signature makes `mock.calls` untyped, so
-      // re-type it narrowly rather than indexing an `any`.
-      const upsertMock = prisma.attendance.upsert as unknown as jest.Mock<
-        unknown,
-        [{ update: Record<string, unknown> }]
-      >;
-      const arg = upsertMock.mock.calls[0][0];
+      // The row already exists, so this must go down the update path, not the
+      // insert path — and markedAt must be left alone so the original marking
+      // time survives a re-mark.
+      const updateArg = updateCallArgs()[0];
+      expect(updateArg.where.studentId).toEqual({ in: ['s1'] });
+      expect(prisma.attendance.createMany).not.toHaveBeenCalled();
 
       // The unique key is [studentId, date] and never mentions the section, so
       // without reassignment the row kept pointing at the old section.
-      expect(arg.update.sectionId).toBe('section-1');
+      expect(updateArg.data.sectionId).toBe('section-1');
+      expect(updateArg.data).not.toHaveProperty('markedAt');
+    });
+
+    it('stamps markedAt on a row the seeding cron created without one', async () => {
+      asClassTeacher();
+      singleStudent();
+      (prisma.academicCalendarDay.findUnique as jest.Mock).mockResolvedValue({
+        type: 'Working',
+      });
+      // The cron inserts rows carrying only a date: no status, no markedAt.
+      // The first time a teacher actually marks such a row it must gain a
+      // marking time, or the UI shows the day as never marked.
+      (prisma.attendance.findMany as jest.Mock).mockResolvedValue([
+        { studentId: 's1', markedAt: null },
+      ]);
+
+      await service.markAttendance(
+        { sectionId: 'section-1', date: shift(0), entries: entry },
+        'auth-1',
+      );
+
+      const stamped = updateCallArgs().find((a) => Boolean(a.data.markedAt));
+      expect(stamped).toBeDefined();
+      expect(stamped?.data.markedAt).toBeInstanceOf(Date);
+    });
+
+    it('never rewrites markedAt on a row that already has one', async () => {
+      asClassTeacher();
+      singleStudent();
+      (prisma.academicCalendarDay.findUnique as jest.Mock).mockResolvedValue({
+        type: 'Working',
+      });
+      const original = new Date('2026-01-01T00:00:00.000Z');
+      (prisma.attendance.findMany as jest.Mock).mockResolvedValue([
+        { studentId: 's1', markedAt: original },
+      ]);
+
+      await service.markAttendance(
+        { sectionId: 'section-1', date: shift(0), entries: entry },
+        'auth-1',
+      );
+
+      // The row was already marked, so its marking time is part of the record
+      // and a correction to the status must not move it.
+      for (const args of updateCallArgs()) {
+        expect(args.data).not.toHaveProperty('markedAt');
+      }
     });
   });
 });

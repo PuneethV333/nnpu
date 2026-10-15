@@ -10,8 +10,12 @@ import {
 import { AttendanceArray, GetMyType } from './types/getMy.type';
 import { AttendanceSummary } from './types/summary.type';
 import type { RosterType, RosterArray } from './types/roster.type';
-import { MarkAttendanceDto } from './dto/mark-attendance.dto';
-import { AttendanceStatus } from '@/generated/prisma';
+import {
+  MarkAttendanceDto,
+  MarkEntryDto,
+  MarkableAttendanceStatus,
+} from './dto/mark-attendance.dto';
+import { AttendanceStatus, Prisma } from '@/generated/prisma';
 import {
   ATTENDANCE_EDIT_GRACE_DAYS,
   attendanceEditWindow,
@@ -23,6 +27,16 @@ import {
 } from '@/common/utils/section-students.util';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { schoolTimeZone, zonedToday } from '@/common/utils/date.util';
+
+/**
+ * Budget for the attendance write transaction.
+ *
+ * This is not decoration: Prisma's interactive-transaction default is 5000ms,
+ * and against a remote database that budget is consumed by network round-trips
+ * rather than by work. Raising it costs nothing when the batch is small and
+ * is the difference between succeeding and returning 500 when it is not.
+ */
+const ATTENDANCE_WRITE_TIMEOUT_MS = 30_000;
 
 @Injectable()
 export class AttendanceService {
@@ -414,38 +428,116 @@ export class AttendanceService {
       },
     });
 
-    const rowMap = new Map(existingRows.map((r) => [r.studentId, r]));
-
     const now = new Date();
 
-    await this.prisma.$transaction(
-      dto.entries.map((entry) => {
-        const existing = rowMap.get(entry.studentId);
-        return this.prisma.attendance.upsert({
-          where: {
-            studentId_date: { studentId: entry.studentId, date: dateObj },
-          },
-          update: {
-            status: entry.status,
-            markedById: teacherId,
-            // The unique key is [studentId, date], which never mentions the
-            // section. A student who transfers sections therefore updates the
-            // row created under their *old* section, and without this the row
-            // kept pointing at the section they are no longer in.
-            sectionId: dto.sectionId,
-            markedAt: existing?.markedAt ?? now,
-          },
-          create: {
+    // Split the batch into "row already exists" and "row is new", which the
+    // findMany above already told us — then collapse each half into as few
+    // statements as possible.
+    //
+    // This used to be one `upsert` per student inside a single interactive
+    // transaction. A section holds 125 students, so that is 125 sequential
+    // statements sharing one 5000ms interactive-transaction budget. On
+    // localhost that is instant and passes every test; against a remote
+    // database each statement is a network round-trip and the whole request
+    // dies with "A rollback cannot be executed on an expired transaction",
+    // marking attendance for a real section impossible.
+    //
+    // Attendance has only three submittable statuses, so the update half needs
+    // at most three statements — one per status — and the insert half needs one.
+    // Four round-trips instead of 125, regardless of section size.
+    const existingIds = new Set(existingRows.map((r) => r.studentId));
+
+    // Rows the seeding cron created have `markedAt: null` — the cron inserts
+    // them with no more than the date. Those still need a marking time the
+    // first time a teacher actually marks them, which is what the old
+    // `markedAt: existing?.markedAt ?? now` did: keep an existing stamp,
+    // otherwise write one. An unconditional `updateMany` that simply omitted
+    // markedAt would preserve an existing stamp but leave a cron row null
+    // forever, so the two cases are split here rather than merged.
+    const unstampedIds = new Set(
+      existingRows.filter((r) => r.markedAt === null).map((r) => r.studentId),
+    );
+
+    const idsByStatus = new Map<MarkableAttendanceStatus, string[]>();
+    const toCreate: MarkEntryDto[] = [];
+
+    for (const entry of dto.entries) {
+      if (existingIds.has(entry.studentId)) {
+        const bucket = idsByStatus.get(entry.status);
+        if (bucket) {
+          bucket.push(entry.studentId);
+        } else {
+          idsByStatus.set(entry.status, [entry.studentId]);
+        }
+      } else {
+        toCreate.push(entry);
+      }
+    }
+
+    const writes: Prisma.PrismaPromise<unknown>[] = [];
+
+    for (const [status, studentIds] of idsByStatus) {
+      const keep = studentIds.filter((id) => !unstampedIds.has(id));
+      const stamp = studentIds.filter((id) => unstampedIds.has(id));
+
+      if (keep.length > 0) {
+        writes.push(
+          this.prisma.attendance.updateMany({
+            where: { studentId: { in: keep }, date: dateObj },
+            data: {
+              status,
+              markedById: teacherId,
+              // The unique key is [studentId, date], which never mentions the
+              // section. A student who transfers sections therefore updates the
+              // row created under their *old* section, and without this the row
+              // kept pointing at the section they are no longer in.
+              sectionId: dto.sectionId,
+            },
+          }),
+        );
+      }
+
+      if (stamp.length > 0) {
+        writes.push(
+          this.prisma.attendance.updateMany({
+            where: { studentId: { in: stamp }, date: dateObj },
+            data: {
+              status,
+              markedById: teacherId,
+              sectionId: dto.sectionId,
+              markedAt: now,
+            },
+          }),
+        );
+      }
+    }
+
+    if (toCreate.length > 0) {
+      writes.push(
+        this.prisma.attendance.createMany({
+          data: toCreate.map((entry) => ({
             studentId: entry.studentId,
             sectionId: dto.sectionId,
             date: dateObj,
             status: entry.status,
             markedById: teacherId,
             markedAt: now,
-          },
-        });
-      }),
-    );
+          })),
+          // Two teachers can pass the date window for the same section at the
+          // same moment. Without this the loser's insert would violate the
+          // [studentId, date] unique key and roll back the whole batch; the
+          // winner's row already carries the answer, so skipping is correct.
+          skipDuplicates: true,
+        }),
+      );
+    }
+
+    if (writes.length > 0) {
+      await this.prisma.$transaction(writes, {
+        timeout: ATTENDANCE_WRITE_TIMEOUT_MS,
+        maxWait: ATTENDANCE_WRITE_TIMEOUT_MS,
+      });
+    }
 
     await this.redis.delPattern('attendance:*');
 
