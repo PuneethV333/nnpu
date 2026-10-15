@@ -14,7 +14,6 @@ import { getMonthRange } from "$/libs/getMonthRange";
 import { styles } from "$/style/Teacher";
 import type { DayType } from "$/types/calendar";
 import HomeHeader from "../HomeHeader";
-import QuickActions from "../QuickActions";
 import AnnouncementCard from "../Announcements";
 import AnnouncementsHeader from "../AnnouncementsHeader";
 import TimeTable from "../TimeTable";
@@ -150,11 +149,6 @@ const Student = () => {
               ))}
             </View>
           )}
-        </View>
-
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Quick Actions</Text>
-          <QuickActions />
         </View>
 
         <View style={styles.section}>
