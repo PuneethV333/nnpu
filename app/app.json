@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "NNPU Academy",
-    "slug": "nnpu-academy",
+    "slug": "nnpu",
     "version": "1.0.0",
     "orientation": "portrait",
     "scheme": "nnpuacademy",
@@ -12,12 +12,15 @@
         "foregroundImage": "./assets/images/adaptive-icon.png",
         "backgroundColor": "#081126"
       },
-      "package": "com.nnpu.mobile",
+      "package": "com.nnpu.app",
       "googleServicesFile": "./google-services.json"
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.nnpu.mobile"
+      "bundleIdentifier": "com.nnpu.mobile",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "plugins": [
       "expo-router",
@@ -44,6 +47,13 @@
     ],
     "experiments": {
       "typedRoutes": true
-    }
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "406be5d0-3cc0-4899-a4d6-ea0f4e1663d4"
+      }
+    },
+    "owner": "punivijay"
   }
 }
