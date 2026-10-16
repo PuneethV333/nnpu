@@ -47,21 +47,21 @@ export class AttendanceService {
   ) {}
 
   /**
-   * Resolves the caller and asserts they are allowed to touch this section.
+   * Resolves the caller and asserts they may act on this section.
    *
-   * Authorization rule mirrors `GET /sections/mine` (sections.service.ts),
-   * which is the documented authority for "sections this teacher may mark
-   * attendance for": class teacher of the section, OR teacher of any subject
-   * assigned to it. Admin is allowed through.
+   * Passes `allowAnyTeacher` because attendance is a shared duty: any teacher
+   * may mark any section, e.g. covering for an absent class teacher. Fees and
+   * marks keep their stricter assignment checks.
    *
    * Returns the caller's userId so callers don't re-query auth.
    */
-  /** Delegates to the shared util so fees and marks scope identically. */
   private async assertSectionAccess(
     sectionId: string,
     authId: string,
   ): Promise<string> {
-    return assertSectionAccess(this.prisma, sectionId, authId);
+    return assertSectionAccess(this.prisma, sectionId, authId, {
+      allowAnyTeacher: true,
+    });
   }
 
   // 06:00 in the school's timezone; without it this ran at 11:30 IST on a UTC
@@ -238,9 +238,9 @@ export class AttendanceService {
   ): Promise<RosterType> {
     this.logger.log('[roster]');
 
-    // Assert BEFORE the cache read: the roster cache is keyed by
-    // section+date only, so serving a cache hit to an unassigned teacher
-    // would leak another section's student list.
+    // Resolve the caller BEFORE the cache read: the roster cache is keyed by
+    // section+date only, so it must not be served before the caller has been
+    // resolved and authorised.
     await this.assertSectionAccess(sectionId, authId);
 
     const cacheKey = `attendance:roster:${sectionId}:${date}`;
@@ -359,7 +359,7 @@ export class AttendanceService {
       throw new BadRequestException('NotMarked is not a submittable status');
     }
 
-    // Resolves the caller AND asserts section access in one query pair.
+    // Resolves the caller and validates the sectionId before any write.
     const teacherId = await this.assertSectionAccess(dto.sectionId, authId);
 
     const dateObj = new Date(dto.date);

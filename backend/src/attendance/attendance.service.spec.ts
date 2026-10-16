@@ -104,17 +104,34 @@ describe('AttendanceService', () => {
       },
     );
 
-    it('rejects getRoster when the caller does not teach the section', async () => {
+    it('allows a teacher who is not assigned to the section to load the roster', async () => {
       asTeacher();
-      (prisma.section.findFirst as jest.Mock).mockResolvedValue(null);
+      (prisma.academicCalendarDay.findUnique as jest.Mock).mockResolvedValue(
+        WORKING_DAY,
+      );
+      (prisma.user.findMany as jest.Mock).mockResolvedValue([
+        { id: 's1', details: { name: 'Asha', profilePic: null } },
+      ]);
+      (prisma.attendance.findMany as jest.Mock).mockResolvedValue([]);
 
-      await expect(
-        service.getRoster('section-9', '2026-08-01', 'auth-1'),
-      ).rejects.toBeInstanceOf(ForbiddenException);
+      // Attendance is a shared duty — covering for an absent class teacher
+      // must not be blocked by the class-teacher / subject-teacher rule that
+      // still governs marks and fees.
+      const result = await service.getRoster(
+        'section-9',
+        '2026-08-01',
+        'auth-1',
+      );
+
+      expect(result.source).toBe('db');
+      expect(prisma.section.findFirst).not.toHaveBeenCalled();
     });
 
-    it('does not leak a cached roster to an unassigned teacher', async () => {
-      asTeacher();
+    it('rejects a caller with no teaching role before the roster cache is read', async () => {
+      (prisma.auth.findUnique as jest.Mock).mockResolvedValue({
+        userId: 'student-1',
+        user: { role: 'Student' },
+      });
       (prisma.section.findFirst as jest.Mock).mockResolvedValue(null);
       const redisGet = jest
         .fn()
@@ -131,34 +148,43 @@ describe('AttendanceService', () => {
       expect(redisGet).not.toHaveBeenCalled();
     });
 
-    it('rejects markAttendance when the caller does not teach the section', async () => {
+    it('allows a teacher who is not assigned to the section to mark', async () => {
       asTeacher();
-      (prisma.section.findFirst as jest.Mock).mockResolvedValue(null);
+      (prisma.academicCalendarDay.findUnique as jest.Mock).mockResolvedValue(
+        WORKING_DAY,
+      );
+      (prisma.user.findMany as jest.Mock).mockResolvedValue([{ id: 's1' }]);
+      (prisma.attendance.findMany as jest.Mock).mockResolvedValue([]);
 
-      await expect(
-        service.markAttendance(
-          {
-            sectionId: 'section-9',
-            date: '2026-08-01',
-            entries: [{ studentId: 's1', status: 'Present' }],
-          } as never,
-          'auth-1',
-        ),
-      ).rejects.toBeInstanceOf(ForbiddenException);
+      await service.markAttendance(
+        {
+          sectionId: 'section-9',
+          date: zonedToday().toISOString().slice(0, 10),
+          entries: [{ studentId: 's1', status: 'Present' }],
+        } as never,
+        'auth-1',
+      );
 
-      expect(prisma.attendance.updateMany).not.toHaveBeenCalled();
-      expect(prisma.attendance.createMany).not.toHaveBeenCalled();
-      expect(prisma.attendance.upsert).not.toHaveBeenCalled();
-      expect(prisma.$transaction).not.toHaveBeenCalled();
+      expect(prisma.section.findFirst).not.toHaveBeenCalled();
+      expect(prisma.attendance.createMany).toHaveBeenCalled();
     });
 
-    it('rejects getAttendanceStatus when the caller does not teach the section', async () => {
+    it('allows a teacher who is not assigned to the section to read status', async () => {
       asTeacher();
-      (prisma.section.findFirst as jest.Mock).mockResolvedValue(null);
+      (prisma.academicCalendarDay.findUnique as jest.Mock).mockResolvedValue(
+        WORKING_DAY,
+      );
+      (prisma.user.findMany as jest.Mock).mockResolvedValue([{ id: 's1' }]);
+      (prisma.attendance.findMany as jest.Mock).mockResolvedValue([]);
 
-      await expect(
-        service.getAttendanceStatus('section-9', '2026-08-01', 'auth-1'),
-      ).rejects.toBeInstanceOf(ForbiddenException);
+      const status = await service.getAttendanceStatus(
+        'section-9',
+        '2026-08-01',
+        'auth-1',
+      );
+
+      expect(prisma.section.findFirst).not.toHaveBeenCalled();
+      expect(status.isMarked).toBe(false);
     });
 
     it('throws Unauthorized when the auth record does not exist', async () => {
@@ -169,11 +195,8 @@ describe('AttendanceService', () => {
       ).rejects.toBeInstanceOf(UnauthorizedException);
     });
 
-    it('allows a class teacher of the section', async () => {
+    it('returns the mapped roster for a teacher', async () => {
       asTeacher();
-      (prisma.section.findFirst as jest.Mock).mockResolvedValue({
-        id: 'section-1',
-      });
       (prisma.academicCalendarDay.findUnique as jest.Mock).mockResolvedValue(
         WORKING_DAY,
       );
@@ -202,24 +225,6 @@ describe('AttendanceService', () => {
       expect(result.data).toHaveLength(1);
     });
 
-    it('allows a subject teacher assigned to the section', async () => {
-      asTeacher();
-      (prisma.section.findFirst as jest.Mock).mockResolvedValue({
-        id: 'section-1',
-      });
-      (prisma.academicCalendarDay.findUnique as jest.Mock).mockResolvedValue(
-        WORKING_DAY,
-      );
-      (prisma.user.findMany as jest.Mock).mockResolvedValue([
-        { id: 's1', details: { name: 'Asha', profilePic: null } },
-      ]);
-      (prisma.attendance.findMany as jest.Mock).mockResolvedValue([]);
-
-      await expect(
-        service.getRoster('section-1', '2026-08-01', 'auth-1'),
-      ).resolves.toBeDefined();
-    });
-
     it('lets an Admin through without a section lookup', async () => {
       (prisma.auth.findUnique as jest.Mock).mockResolvedValue({
         userId: 'admin-1',
@@ -240,9 +245,6 @@ describe('AttendanceService', () => {
 
     it('still rejects marking on a non-working day after authorization passes', async () => {
       asTeacher();
-      (prisma.section.findFirst as jest.Mock).mockResolvedValue({
-        id: 'section-1',
-      });
       (prisma.academicCalendarDay.findUnique as jest.Mock).mockResolvedValue({
         date: new Date(),
         type: 'Holiday',
@@ -268,9 +270,6 @@ describe('AttendanceService', () => {
       (prisma.auth.findUnique as jest.Mock).mockResolvedValue({
         userId: 'teacher-1',
         user: { role: 'Teacher' },
-      });
-      (prisma.section.findFirst as jest.Mock).mockResolvedValue({
-        id: 'section-1',
       });
       (prisma.academicCalendarDay.findUnique as jest.Mock).mockResolvedValue({
         date: new Date(date),
@@ -401,9 +400,6 @@ describe('AttendanceService', () => {
         userId: 'teacher-1',
         user: { role: 'Teacher' },
       });
-      (prisma.section.findFirst as jest.Mock).mockResolvedValue({
-        id: 'section-1',
-      });
       (prisma.academicCalendarDay.findUnique as jest.Mock).mockResolvedValue({
         date: new Date(date),
         type: 'Working',
@@ -531,13 +527,10 @@ describe('AttendanceService', () => {
   });
 
   describe('markAttendance date window', () => {
-    const asClassTeacher = () => {
+    const asTeacher = () => {
       (prisma.auth.findUnique as jest.Mock).mockResolvedValue({
         userId: 'teacher-1',
         user: { role: 'Teacher' },
-      });
-      (prisma.section.findFirst as jest.Mock).mockResolvedValue({
-        id: 'section-1',
       });
     };
 
@@ -567,7 +560,7 @@ describe('AttendanceService', () => {
       ).mock.calls.map((c) => c[0]);
 
     it('rejects a future date', async () => {
-      asClassTeacher();
+      asTeacher();
       singleStudent();
 
       // The calendar contains every day of the year, so a future *working* day
@@ -587,7 +580,7 @@ describe('AttendanceService', () => {
     });
 
     it('rejects a date older than the grace window even when never marked', async () => {
-      asClassTeacher();
+      asTeacher();
       singleStudent();
       (prisma.academicCalendarDay.findUnique as jest.Mock).mockResolvedValue({
         type: 'Working',
@@ -608,7 +601,7 @@ describe('AttendanceService', () => {
     });
 
     it('still allows editing yesterday', async () => {
-      asClassTeacher();
+      asTeacher();
       singleStudent();
       (prisma.academicCalendarDay.findUnique as jest.Mock).mockResolvedValue({
         type: 'Working',
@@ -628,7 +621,7 @@ describe('AttendanceService', () => {
       // interactive transaction exceeded the 5000ms default against a remote
       // database and made marking attendance impossible. The number of
       // statements sent must not scale with the size of the section.
-      asClassTeacher();
+      asTeacher();
       const students = Array.from({ length: 125 }, (_, i) => ({ id: `s${i}` }));
       (prisma.user.findMany as jest.Mock).mockResolvedValue(students);
 
@@ -676,7 +669,7 @@ describe('AttendanceService', () => {
     });
 
     it('reassigns sectionId when a transferred student is re-marked', async () => {
-      asClassTeacher();
+      asTeacher();
       singleStudent();
       (prisma.academicCalendarDay.findUnique as jest.Mock).mockResolvedValue({
         type: 'Working',
@@ -705,7 +698,7 @@ describe('AttendanceService', () => {
     });
 
     it('stamps markedAt on a row the seeding cron created without one', async () => {
-      asClassTeacher();
+      asTeacher();
       singleStudent();
       (prisma.academicCalendarDay.findUnique as jest.Mock).mockResolvedValue({
         type: 'Working',
@@ -728,7 +721,7 @@ describe('AttendanceService', () => {
     });
 
     it('never rewrites markedAt on a row that already has one', async () => {
-      asClassTeacher();
+      asTeacher();
       singleStudent();
       (prisma.academicCalendarDay.findUnique as jest.Mock).mockResolvedValue({
         type: 'Working',

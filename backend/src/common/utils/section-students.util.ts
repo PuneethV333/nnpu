@@ -79,8 +79,11 @@ export const assertNoDuplicateStudents = (studentIds: string[]): void => {
  * Asserts the caller may act on `sectionId`, returning their userId.
  *
  * Admin passes unconditionally. A teacher passes if they are the section's class
- * teacher or teach any of its subjects. Returns the userId so callers can record
- * who did the work without a second lookup.
+ * teacher or teach any of its subjects, unless the caller passes
+ * `allowAnyTeacher` — attendance does, because any teacher may cover any
+ * section — in which case any teacher passes without the assignment lookup.
+ * Returns the userId so callers can record who did the work without a second
+ * lookup.
  *
  * Shared rather than private to `AttendanceService` because several
  * teacher-facing endpoints scope by section — attendance, marks and fees — and
@@ -97,6 +100,7 @@ export const assertSectionAccess = async (
   prisma: PrismaService,
   sectionId: string,
   authId: string,
+  options: { allowAnyTeacher?: boolean } = {},
 ): Promise<string> => {
   if (typeof sectionId !== 'string' || sectionId.trim() === '') {
     throw new BadRequestException('sectionId is required');
@@ -114,6 +118,10 @@ export const assertSectionAccess = async (
   const userId = auth.userId;
 
   if (auth.user.role === 'Admin') {
+    return userId;
+  }
+
+  if (options.allowAnyTeacher && auth.user.role === 'Teacher') {
     return userId;
   }
 
