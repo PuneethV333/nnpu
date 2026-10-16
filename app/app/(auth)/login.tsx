@@ -152,7 +152,6 @@ const Login = () => {
 
                 <View style={styles.passwordHeader}>
                   <Text style={styles.label}>Password</Text>
-                  <Text style={styles.forgotText}>Contact your school administrator</Text>
                 </View>
                 <View style={styles.inputRow}>
                   <Ionicons

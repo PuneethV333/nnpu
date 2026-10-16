@@ -22,8 +22,9 @@ export const SectionPicker = ({
       return (
         <Pressable
           onPress={() => onSelect(item.id)}
-          className="px-3 py-2 rounded-full border"
+          className="px-3 py-2 rounded-full border flex-row items-center"
           style={{
+            gap: 6,
             backgroundColor: selected ? "#2563EB" : "#FFFFFF",
             borderColor: selected ? "#2563EB" : "#E5E7EB",
           }}
@@ -34,6 +35,12 @@ export const SectionPicker = ({
           >
             {item.className} {item.name}
             {item.isClassTeacher ? " ★" : ""}
+          </Text>
+          <Text
+            className="text-[10px]"
+            style={{ color: selected ? "#DBEAFE" : "#9CA3AF" }}
+          >
+            {item.academicYearLabel}
           </Text>
         </Pressable>
       );
