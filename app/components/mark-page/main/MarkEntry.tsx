@@ -70,12 +70,15 @@ const Label = ({ children }: { children: React.ReactNode }) => (
  */
 const MarkEntry = ({ heading }: { heading: string }) => {
   const tabBarClearance = useTabBarClearance();
-  // A teacher must pick from the sections they are actually staffed in.
-  // `useGetAllSections` returns every section in the school, and the backend
-  // then answers 403 for any section the teacher has no `sectionSubject` row in
-  // — so picking from the full list offers sections that are guaranteed to
-  // fail, which is what made this screen look dead. `/sections/mine` is the
-  // teacher-scoped list (class teacher OR subject teacher).
+  // A teacher must pick from the sections they can actually do marks work in.
+  // Every marks endpoint here is scoped to a `SectionSubject` row:
+  // `GET /marks/my-subjects` returns nothing for a section they do not teach,
+  // and `POST /marks/enter` plus `/marks/assessment` still answer 403. Reading a
+  // roster is now open to any teacher (`/auth/students-details` passes
+  // `allowAnyTeacher`, matching attendance), but nothing can be *done* with a
+  // section a teacher is not staffed in, so `useGetAllSections` would offer
+  // sections that lead to a dead end. `/sections/mine` is the teacher-scoped
+  // list (class teacher OR subject teacher).
   const {
     data: sections,
     isLoading: sectionsLoading,
@@ -123,7 +126,13 @@ const MarkEntry = ({ heading }: { heading: string }) => {
   // Saved marks for the chosen assessment, keyed by studentId. Empty until an
   // assessment is picked, which is what lets the sheet open on "view" without
   // showing a false "nothing recorded" for the assessment not yet selected.
-  const { data: savedMarkRows } = useGetAssessmentMarks(assessmentId);
+  //
+  // `isLoading` is tracked because "view" renders straight from this data, so
+  // while it is in flight the screen has nothing truthful to show: it used to
+  // report "Nothing recorded for this assessment yet", which is a statement
+  // about the marks, not about the request.
+  const { data: savedMarkRows, isLoading: savedMarksLoading } =
+    useGetAssessmentMarks(assessmentId);
   const savedMarks = useMemo(() => {
     const map: Record<string, number> = {};
     for (const m of savedMarkRows ?? []) map[m.studentId] = m.marksObtained;
@@ -137,9 +146,20 @@ const MarkEntry = ({ heading }: { heading: string }) => {
 
   // `draft` is intentionally sparse: a student with no key simply hasn't been
   // marked yet, so a roster that loads late never clobbers typed-in values.
+  // This count stays draft-based on purpose — it guards *unsaved* work, and
+  // "view" mode holds none.
   const entered = (students ?? []).filter(
     (s) => draft[s.id] !== undefined,
   ).length;
+
+  /**
+   * What the "N/M" label counts. "view" shows the recorded marks, so counting
+   * the draft there reported "0/40 entered" above 40 visible marks.
+   */
+  const shownCount =
+    mode === "view"
+      ? (students ?? []).filter((s) => savedMarks[s.id] !== undefined).length
+      : entered;
 
   /**
    * Runs `apply` unless it would silently destroy typed marks.
@@ -163,16 +183,25 @@ const MarkEntry = ({ heading }: { heading: string }) => {
   const changeMode = (next: Mode) => {
     if (next === mode) return;
     if (next === "view") {
-      setDraft(Object.fromEntries(
-        Object.entries(savedMarks).map(([id, v]) => [id, String(v)]),
-      ));
+      // Nothing to prepare: "view" reads `savedMarks` directly, so there is no
+      // snapshot to take and none to go stale. Copying into `draft` here is
+      // what broke the default — `mode` already starts on "view", so the copy
+      // only ever ran for a teacher who toggled away and back, and opening an
+      // assessment cold showed an empty sheet instead of its recorded marks.
+      setMode("view");
       return;
     }
     // Entering starts from the saved values so an edit is a correction rather
-    // than a full retype; the teacher clears a box to blank it.
-    setDraft(Object.fromEntries(
-      Object.entries(savedMarks).map(([id, v]) => [id, String(v)]),
-    ));
+    // than a full retype; the teacher clears a box to blank it. Only unset ids
+    // are seeded, so a round trip through "view" no longer discards marks
+    // already typed in this session.
+    setDraft((d) => {
+      const seeded: Draft = { ...d };
+      for (const [id, v] of Object.entries(savedMarks)) {
+        if (seeded[id] === undefined) seeded[id] = String(v);
+      }
+      return seeded;
+    });
     setMode("enter");
   };
 
@@ -232,6 +261,11 @@ const MarkEntry = ({ heading }: { heading: string }) => {
       );
     });
   }, [assessment, students, draft]);
+
+  // One condition drives the Save button's disabled state, its opacity and
+  // whether it can show a pressed fill, rather than the same three-part
+  // expression written out twice.
+  const canSave = !isSaving && entered > 0 && invalidRows.length === 0;
 
   const handleSave = () => {
     if (!assessment || !students) return;
@@ -403,7 +437,12 @@ const MarkEntry = ({ heading }: { heading: string }) => {
                           title="Pick an assessment"
                           subtitle="Choose an assessment to enter marks."
                         />
-                      ) : studentsLoading ? (
+                      ) : studentsLoading || savedMarksLoading ? (
+                        // The rows read the saved marks in the default "view"
+                        // mode, so those marks are as much a prerequisite for
+                        // this block as the roster is. Without the second flag
+                        // the header claimed "Nothing recorded for this
+                        // assessment yet" for the length of the request.
                         <View style={{ marginTop: 20 }}>
                           <MarkEntryRowsSkeleton />
                         </View>
@@ -426,12 +465,26 @@ const MarkEntry = ({ heading }: { heading: string }) => {
                                       <Pressable
                                         key={m}
                                         onPress={() => changeMode(m)}
-                                        className="flex-1 py-2 rounded-lg items-center"
-                                        style={{
+                                        accessibilityRole="button"
+                                        accessibilityState={{ selected: active }}
+                                        // Geometry inline: `className` plus a
+                                        // function `style` drops the function.
+                                        // The segment that would change darkens
+                                        // most; the already-selected one only
+                                        // tints, since pressing it is a no-op.
+                                        style={({ pressed }) => ({
+                                          flex: 1,
+                                          paddingVertical: 8,
+                                          borderRadius: 8,
+                                          alignItems: "center",
                                           backgroundColor: active
-                                            ? "#FFFFFF"
-                                            : "transparent",
-                                        }}
+                                            ? pressed
+                                              ? "#E5E7EB"
+                                              : "#FFFFFF"
+                                            : pressed
+                                              ? "#D1D5DB"
+                                              : "transparent",
+                                        })}
                                       >
                                         <Text
                                           className="text-[13px] font-semibold"
@@ -469,7 +522,8 @@ const MarkEntry = ({ heading }: { heading: string }) => {
                                   : "text-gray-500"
                               }`}
                             >
-                              {entered}/{students.length} entered
+                              {shownCount}/{students.length}{" "}
+                              {mode === "view" ? "recorded" : "entered"}
                             </Text>
                           </View>
 
@@ -478,7 +532,19 @@ const MarkEntry = ({ heading }: { heading: string }) => {
                               <MarkEntryRow
                                 key={s.id}
                                 name={s.name ?? s.id}
-                                value={draft[s.id] ?? ""}
+                                // "view" reads the saved marks straight from the
+                                // server data, so it cannot show an empty or
+                                // stale snapshot. It is also read-only there:
+                                // the boxes used to accept typing whose edits
+                                // were then discarded on the way to "enter".
+                                value={
+                                  mode === "view"
+                                    ? savedMarks[s.id] !== undefined
+                                      ? String(savedMarks[s.id])
+                                      : ""
+                                    : draft[s.id] ?? ""
+                                }
+                                readOnly={mode === "view"}
                                 maxMarks={assessment.maxMarks}
                                 onChange={(next) =>
                                   setDraft((d) => {
@@ -501,18 +567,26 @@ const MarkEntry = ({ heading }: { heading: string }) => {
                           <View className="px-4 mt-4">
                             <Pressable
                               onPress={handleSave}
-                              disabled={
-                                isSaving ||
-                                entered === 0 ||
-                                invalidRows.length > 0
-                              }
-                              className={`bg-blue-600 rounded-xl py-3.5 items-center flex-row justify-center gap-2 ${
-                                isSaving ||
-                                entered === 0 ||
-                                invalidRows.length > 0
-                                  ? "opacity-40"
-                                  : ""
-                              }`}
+                              disabled={!canSave}
+                              accessibilityRole="button"
+                              accessibilityLabel="Save marks"
+                              // Geometry and fill in the style function, not
+                              // `className`: a function-valued `style` is
+                              // dropped whenever `className` is present, so the
+                              // button would have shown no press feedback.
+                              // `disabled` already suppresses `pressed`.
+                              style={({ pressed }) => ({
+                                borderRadius: 12,
+                                paddingVertical: 14,
+                                alignItems: "center",
+                                flexDirection: "row",
+                                justifyContent: "center",
+                                gap: 8,
+                                backgroundColor: pressed
+                                  ? "#1D4ED8"
+                                  : "#2563EB",
+                                opacity: canSave ? 1 : 0.4,
+                              })}
                             >
                               {isSaving ? (
                                 <ActivityIndicator color="#FFFFFF" />

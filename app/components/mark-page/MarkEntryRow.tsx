@@ -81,7 +81,21 @@ export const MarkEntryRow = ({
           <Pressable
             key={p}
             onPress={() => onChange(String(p))}
-            className="px-2.5 py-1 rounded-full border border-gray-200 bg-gray-50"
+            accessibilityRole="button"
+            accessibilityLabel={`Set ${p}`}
+            // Same reason as the pills: `className` plus a function `style`
+            // silently drops the function, so the geometry is inline here.
+            // These are also the most numerous pressables on the screen (up to
+            // 11 per student), so dropping the className is a small win too -
+            // NativeWind re-resolves every classed element on each render.
+            style={({ pressed }) => ({
+              borderRadius: 9999,
+              borderWidth: 1,
+              paddingHorizontal: 10,
+              paddingVertical: 4,
+              backgroundColor: pressed ? '#E5E7EB' : '#F9FAFB',
+              borderColor: pressed ? '#D1D5DB' : '#E5E7EB',
+            })}
           >
             <Text className="text-[11px] font-medium text-gray-600">{p}</Text>
           </Pressable>

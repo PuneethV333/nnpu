@@ -129,11 +129,28 @@ export const CreateAssessmentSheet = ({
             <Pressable
               key={c}
               onPress={() => setCategory(c)}
-              className="rounded-full border px-3 py-1.5"
-              style={{
-                backgroundColor: active ? "#2563EB" : "#FFFFFF",
-                borderColor: active ? "#2563EB" : "#E5E7EB",
-              }}
+              accessibilityRole="button"
+              accessibilityState={{ selected: active }}
+              style={({ pressed }) => ({
+                borderRadius: 9999,
+                borderWidth: 1,
+                paddingHorizontal: 12,
+                paddingVertical: 6,
+                backgroundColor: active
+                  ? pressed
+                    ? "#1D4ED8"
+                    : "#2563EB"
+                  : pressed
+                    ? "#E5E7EB"
+                    : "#FFFFFF",
+                borderColor: active
+                  ? pressed
+                    ? "#1D4ED8"
+                    : "#2563EB"
+                  : pressed
+                    ? "#D1D5DB"
+                    : "#E5E7EB",
+              })}
             >
               <Text
                 className="text-[13px] font-medium"
@@ -201,7 +218,23 @@ export const NewAssessmentButton = ({
   <Pressable
     onPress={onPress}
     accessibilityRole="button"
-    className="flex-row items-center justify-center gap-1.5 mx-4 mt-3 py-2.5 rounded-xl border border-dashed border-gray-300 bg-white"
+    // Geometry inline rather than in `className`, for the usual reason: a
+    // function-valued `style` is dropped when `className` is present. A dashed
+    // outline has no fill to darken, so the surface darkens instead.
+    style={({ pressed }) => ({
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "center",
+      gap: 6,
+      marginHorizontal: 16,
+      marginTop: 12,
+      paddingVertical: 10,
+      borderRadius: 12,
+      borderWidth: 1,
+      borderStyle: "dashed",
+      backgroundColor: pressed ? "#F3F4F6" : "#FFFFFF",
+      borderColor: pressed ? "#9CA3AF" : "#D1D5DB",
+    })}
   >
     <Feather name="plus" size={14} color="#2563EB" />
     <Text className="text-[13px] font-semibold text-blue-600">
