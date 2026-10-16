@@ -26,7 +26,7 @@ const Teacher = () => {
               CLASS TEACHER
             </Text>
             <Text className="text-base font-bold text-gray-900 mt-1">
-              {data.classTeacherOf.class?.name ?? '-'} - {data.classTeacherOf.name}
+              {data.classTeacherOf.name}
             </Text>
           </View>
         )}
@@ -47,7 +47,7 @@ const Teacher = () => {
                   {ts.subject.name}
                 </Text>
                 <Text className="text-sm text-gray-500">
-                  {(ts.section.class?.name ?? '')} - {ts.section.name}
+                  {ts.section.name}
                 </Text>
               </View>
             ))}

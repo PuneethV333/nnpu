@@ -77,14 +77,14 @@ const Classes = () => {
                       className="text-base font-bold"
                       style={{ color: active ? '#FFFFFF' : '#111827' }}
                     >
-                      {section.className}-{section.name}
+                      {section.name}
                       {section.isClassTeacher ? ' ★' : ''}
                     </Text>
                     <Text
                       className="text-xs mt-0.5"
                       style={{ color: active ? '#DBEAFE' : '#6B7280' }}
                     >
-                      {section.session}
+                      {section.academicYearLabel}
                     </Text>
                   </Pressable>
                 );

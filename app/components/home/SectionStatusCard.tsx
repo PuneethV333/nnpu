@@ -37,7 +37,9 @@ const SectionStatusCard = ({ section, date, isWorkingDay }: Props) => {
   const { data, isLoading } = useCheckStatus(section.id, date);
 
   const pill = getPill(isWorkingDay, isLoading, data);
-  const displayName = `${section.className} - ${section.name}`;
+  // `Section.name` already carries the class ("1-SCI-A"); prefixing
+  // `className` rendered it twice ("1 - 1-SCI-A").
+  const displayName = section.name;
 
   return (
     <Pressable

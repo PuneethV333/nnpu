@@ -58,10 +58,9 @@ const Student = () => {
     (notificationsQuery.data ?? []).some((n) => !n.isRead) || false;
 
   const section = user?.section;
-  const classLabel = section?.class?.name ?? null;
-  const sectionLabel = section
-    ? [classLabel, section.name].filter(Boolean).join(" - ")
-    : null;
+  // `section.name` already carries the class ("1-SCI-A"); joining `class.name`
+  // in front rendered it twice ("1 - 1-SCI-A").
+  const sectionLabel = section?.name ?? null;
 
   return (
     <SafeAreaView style={styles.safeArea} edges={["top"]}>

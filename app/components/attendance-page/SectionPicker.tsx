@@ -33,7 +33,7 @@ export const SectionPicker = ({
             className="inter_medium text-sm"
             style={{ color: selected ? "#FFFFFF" : "#374151" }}
           >
-            {item.className} {item.name}
+            {item.name}
             {item.isClassTeacher ? " ★" : ""}
           </Text>
           <Text
