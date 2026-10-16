@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, ScrollView, Pressable } from 'react-native';
+import { View, Text, ScrollView, Pressable, type ViewStyle } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
@@ -10,9 +10,31 @@ import { EmptyState, ErrorState } from '@/components/ui/Feedback';
 import {
   SectionTileSkeleton,
   SkeletonList,
+  SkeletonCard,
+  Skeleton,
   ChipRowSkeleton,
 } from '@/components/ui/skeletons';
 import { useTabBarClearance } from '@/src/hooks/useTabBarClearance';
+import { errorMessage } from '@/src/libs/errorMessage';
+
+/**
+ * The two bottom actions differ only in colour, and neither can use `className`:
+ * NativeWind wraps a className'd Pressable and drops a function-valued `style`,
+ * so a press state added that way would silently do nothing at all. Geometry
+ * lives here instead, and the fill darkens on press.
+ */
+const actionButtonStyle =
+  (base: string, pressedColor: string) =>
+  ({ pressed }: { pressed: boolean }): ViewStyle => ({
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    borderRadius: 12,
+    paddingVertical: 12,
+    backgroundColor: pressed ? pressedColor : base,
+  });
 
 const Classes = () => {
   const tabBarClearance = useTabBarClearance();
@@ -20,9 +42,16 @@ const Classes = () => {
   const { data: sections, isLoading, isError, refetch } = useGetAllSections();
   const [sectionId, setSectionId] = useState('');
 
-  const { data: students, isLoading: studentsLoading } = useGetStudents(sectionId);
+  const {
+    data: students,
+    isLoading: studentsLoading,
+    isError: studentsError,
+    error: studentsErr,
+    refetch: refetchStudents,
+  } = useGetStudents(sectionId);
   const { data: subjects, isLoading: subjectsLoading } = useGetMySubjects(sectionId);
-  const { data: staffing } = useGetSectionAssignments(sectionId);
+  const { data: staffing, isLoading: staffingLoading } =
+    useGetSectionAssignments(sectionId);
 
   const selected = sections?.find((s) => s.id === sectionId) ?? null;
 
@@ -67,11 +96,35 @@ const Classes = () => {
                     onPress={() =>
                       setSectionId(active ? '' : section.id)
                     }
-                    className="rounded-2xl border px-4 py-3 min-w-31"
-                    style={{
-                      backgroundColor: active ? '#2563EB' : '#FFFFFF',
-                      borderColor: active ? '#2563EB' : '#E5E7EB',
-                    }}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected: active }}
+                    // No `className` on this Pressable: NativeWind wraps a
+                    // className'd Pressable and drops a function-valued `style`,
+                    // which would cost the tile its active fill entirely. The
+                    // rounded-2xl / px-4 / py-3 / min-w-31 geometry from the
+                    // class list lives in the style object instead.
+                    style={({ pressed }) => ({
+                      borderRadius: 16,
+                      borderWidth: 1,
+                      paddingHorizontal: 16,
+                      paddingVertical: 12,
+                      minWidth: 124,
+                      // Same "darker on press" language as the rest of the app:
+                      // the accent deepens when the tile is already selected,
+                      // white darkens when it is not.
+                      backgroundColor: active
+                        ? pressed
+                          ? '#1D4ED8'
+                          : '#2563EB'
+                        : pressed
+                          ? '#E5E7EB'
+                          : '#FFFFFF',
+                      borderColor: active
+                        ? pressed
+                          ? '#1D4ED8'
+                          : '#2563EB'
+                        : '#E5E7EB',
+                    })}
                   >
                     <Text
                       className="text-base font-bold"
@@ -120,7 +173,14 @@ const Classes = () => {
                   </View>
                 </View>
 
-                {staffing ? (
+                {staffingLoading ? (
+                  <View className="mx-4 mt-3">
+                    <SkeletonCard>
+                      <Skeleton width="40%" height={10} radius="sm" />
+                      <Skeleton width="55%" height={16} radius="sm" />
+                    </SkeletonCard>
+                  </View>
+                ) : staffing ? (
                   <View className="mx-4 mt-3 bg-white rounded-2xl border border-gray-100 p-4">
                     <Text className="text-xs font-semibold text-gray-400 tracking-wide">
                       CLASS TEACHER
@@ -192,15 +252,38 @@ const Classes = () => {
                   <Text className="text-base font-semibold text-gray-900">
                     Students
                   </Text>
-                  <Text className="text-xs font-semibold text-gray-500">
-                    {students?.length ?? 0}
-                  </Text>
+                  {/* Hidden while loading: a literal "0" next to a half-second
+                      spinner reads as an empty section rather than a pending
+                      one. */}
+                  {studentsLoading ? (
+                    <Skeleton width={18} height={12} radius="sm" />
+                  ) : studentsError ? null : (
+                    <Text className="text-xs font-semibold text-gray-500">
+                      {students?.length ?? 0}
+                    </Text>
+                  )}
                 </View>
 
                 {studentsLoading ? (
                   <View className="mt-2">
                     <SkeletonList count={6} lastWidth="55%" />
                   </View>
+                ) : studentsError ? (
+                  // A rejected roster request used to fall through to the empty
+                  // state below and be reported as "no students enrolled". The
+                  // server has distinct reasons for refusing - not attached to
+                  // the section, session expired - and the teacher needs to see
+                  // which one rather than a silent, wrong zero.
+                  <ErrorState
+                    title="Couldn't load students"
+                    subtitle={
+                      errorMessage(
+                        studentsErr,
+                        "You may not have access to this section's roster.",
+                      )
+                    }
+                    onRetry={() => refetchStudents()}
+                  />
                 ) : !students || students.length === 0 ? (
                   <View className="mx-4 bg-white rounded-2xl border border-gray-100 items-center py-8">
                     <Feather name="user-x" size={22} color="#D1D5DB" />
@@ -243,7 +326,9 @@ const Classes = () => {
                         params: { sectionId: selected.id },
                       })
                     }
-                    className="flex-1 bg-blue-600 rounded-xl py-3 items-center flex-row justify-center gap-2"
+                    accessibilityRole="button"
+                    accessibilityLabel="Mark attendance"
+                    style={actionButtonStyle('#2563EB', '#1D4ED8')}
                   >
                     <Feather name="check-square" size={16} color="#FFFFFF" />
                     <Text className="text-white font-bold text-sm">
@@ -252,7 +337,9 @@ const Classes = () => {
                   </Pressable>
                   <Pressable
                     onPress={() => router.push('/marks')}
-                    className="flex-1 bg-green-600 rounded-xl py-3 items-center flex-row justify-center gap-2"
+                    accessibilityRole="button"
+                    accessibilityLabel="Enter marks"
+                    style={actionButtonStyle('#16A34A', '#15803D')}
                   >
                     <Feather name="edit-3" size={16} color="#FFFFFF" />
                     <Text className="text-white font-bold text-sm">
