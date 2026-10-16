@@ -3,7 +3,6 @@ import {
   HttpException,
   HttpStatus,
   Injectable,
-  ForbiddenException,
   NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
@@ -536,20 +535,19 @@ export class AuthService {
   }
 
   async getAllStudents(sectionId: string, authId: string) {
-    // Delegates to the shared helper instead of hand-rolling the check, which
-    // is what it used to do - and the local copy had drifted. It looked only at
-    // `SectionSubject`, so the section's own *class teacher* was refused its
-    // roster, while every other section-scoped route (attendance and marks both
-    // go through `assertSectionAccess`) accepted them. A class teacher opening
-    // their own class on the Classes page therefore got a 403 they could not
-    // see, because the page renders a rejected request as "no students
-    // enrolled". The helper is strictly the wider, and correct, check: it
-    // accepts the class teacher or a subject assignment.
+    // `allowAnyTeacher` on purpose: reading a section's roster is no more
+    // sensitive than marking its attendance, and attendance was relaxed to any
+    // teacher for the same reason - the staff cover each other's sections, so
+    // gating the roster behind an assignment left teachers looking at a class
+    // they were about to take with an empty student list. The guard was also
+    // the source of a wrong answer rather than an honest refusal, because the
+    // Classes page renders a rejected request as "no students enrolled".
     //
-    // No `allowAnyTeacher` here on purpose. Attendance is a shared duty; reading
-    // a roster for marks and fees is not, so those stay scoped to staff who are
-    // actually attached to the section.
-    await assertSectionAccess(this.prisma, sectionId, authId);
+    // This leaves only the role check: Teacher or Admin. A Student still cannot
+    // read a roster, and the sectionId is still required and still validated.
+    await assertSectionAccess(this.prisma, sectionId, authId, {
+      allowAnyTeacher: true,
+    });
 
     const res = await this.prisma.user.findMany({
       where: {

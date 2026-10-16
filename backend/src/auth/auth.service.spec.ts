@@ -561,8 +561,8 @@ describe('AuthService', () => {
     });
   });
   describe('getAllStudents authorization', () => {
-    // Both helpers answer through the same single query: assertSectionAccess
-    // reads the role off `auth.user` rather than a second `user.findUnique`.
+    // assertSectionAccess reads the role off `auth.user` rather than making a
+    // second `user.findUnique`.
     const asAdmin = () => {
       (prisma.auth.findUnique as jest.Mock).mockResolvedValue({
         userId: 'admin-1',
@@ -577,48 +577,35 @@ describe('AuthService', () => {
       });
     };
 
-    it('rejects a teacher with no attachment to that section', async () => {
-      // Regression: only role gating existed, so any teacher could pass any
-      // sectionId and read that section roster.
+    it('lets any teacher read any section, assigned or not', async () => {
+      // Deliberate, and the reason the attachment lookup below is skipped
+      // entirely. Staff cover each other's sections; gating the roster behind
+      // an assignment made the Classes page report "no students enrolled" for a
+      // class the teacher was about to walk into.
       asTeacher();
-      (prisma.section.findFirst as jest.Mock).mockResolvedValue(null);
-
-      await expect(
-        service.getAllStudents('section-9', 'teacher-auth'),
-      ).rejects.toBeInstanceOf(ForbiddenException);
-
-      expect(prisma.user.findMany).not.toHaveBeenCalled();
-    });
-
-    it('allows a teacher attached to the section, including as its class teacher', async () => {
-      // Regression: this route used to run its own copy of the check that
-      // looked only at SectionSubject, so a section's own class teacher was
-      // refused its roster while attendance and marks (which both go through
-      // assertSectionAccess) accepted them. The OR below is the fix: class
-      // teacher *or* subject assignment, same as every other section route.
-      asTeacher();
-      (prisma.section.findFirst as jest.Mock).mockResolvedValue({
-        id: 'section-1',
-      });
       (prisma.user.findMany as jest.Mock).mockResolvedValue([
         { id: 'student-1', details: { name: 'A' } },
       ]);
 
       await expect(
-        service.getAllStudents('section-1', 'teacher-auth'),
+        service.getAllStudents('section-9', 'teacher-auth'),
       ).resolves.toEqual([{ id: 'student-1', name: 'A' }]);
 
-      expect(prisma.section.findFirst).toHaveBeenCalledWith(
-        expect.objectContaining({
-          where: expect.objectContaining({
-            id: 'section-1',
-            OR: [
-              { classTeacherId: 'teacher-1' },
-              { subjects: { some: { teacherId: 'teacher-1' } } },
-            ],
-          }),
-        }),
-      );
+      expect(prisma.section.findFirst).not.toHaveBeenCalled();
+    });
+
+    it('still refuses a student', async () => {
+      (prisma.auth.findUnique as jest.Mock).mockResolvedValue({
+        userId: 'student-1',
+        user: { role: 'Student' },
+      });
+      (prisma.section.findFirst as jest.Mock).mockResolvedValue(null);
+
+      await expect(
+        service.getAllStudents('section-9', 'student-auth'),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+
+      expect(prisma.user.findMany).not.toHaveBeenCalled();
     });
 
     it('lets an Admin list any section without an assignment check', async () => {
