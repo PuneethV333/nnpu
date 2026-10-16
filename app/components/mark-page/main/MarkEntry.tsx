@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useCallback, useMemo, useState } from "react";
 import {
   View,
   Text,
@@ -138,6 +138,26 @@ const MarkEntry = ({ heading }: { heading: string }) => {
     for (const m of savedMarkRows ?? []) map[m.studentId] = m.marksObtained;
     return map;
   }, [savedMarkRows]);
+
+  /**
+   * Stable for the life of the screen, and deliberately not a closure over
+   * `draft`: the value is read inside the functional update instead. A handler
+   * rebuilt per render would give every `MarkEntryRow` a new prop on every
+   * keystroke and defeat its `React.memo`, putting the whole roster back in the
+   * render path for each tap.
+   */
+  const handleRowChange = useCallback((studentId: string, next: string) => {
+    setDraft((d) => {
+      const updated = { ...d };
+      if (next.trim() === "") {
+        // Treat a cleared box as "not entered" rather than a recorded zero.
+        delete updated[studentId];
+      } else {
+        updated[studentId] = next;
+      }
+      return updated;
+    });
+  }, []);
 
   const assessment = useMemo(
     () => assessments?.find((a) => a.id === assessmentId) ?? null,
@@ -546,19 +566,8 @@ const MarkEntry = ({ heading }: { heading: string }) => {
                                 }
                                 readOnly={mode === "view"}
                                 maxMarks={assessment.maxMarks}
-                                onChange={(next) =>
-                                  setDraft((d) => {
-                                    const updated = { ...d };
-                                    if (next.trim() === "") {
-                                      // Treat a cleared box as "not entered"
-                                      // rather than a recorded zero.
-                                      delete updated[s.id];
-                                    } else {
-                                      updated[s.id] = next;
-                                    }
-                                    return updated;
-                                  })
-                                }
+                                studentId={s.id}
+                                onChange={handleRowChange}
                               />
                             ))}
                           </View>

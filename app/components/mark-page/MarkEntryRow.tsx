@@ -14,17 +14,26 @@ import { View, Text, ScrollView, Pressable, TextInput } from "react-native";
  */
 const MARK_PRESETS = [0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100];
 
-export const MarkEntryRow = ({
+const MarkEntryRowBase = ({
+  studentId,
   name,
   value,
   maxMarks,
   onChange,
   readOnly = false,
 }: {
+  /**
+   * Identifies the row to its parent's handler. Kept separate, alongside a
+   * handler that is fixed for the life of the screen (`useCallback` in
+   * MarkEntry), so this row's props stay referentially equal while a sibling is
+   * being edited — which is what lets the `React.memo` at the bottom of this
+   * file actually skip the rest of the roster.
+   */
+  studentId: string;
   name: string;
   value: string;
   maxMarks: number;
-  onChange: (next: string) => void;
+  onChange: (studentId: string, next: string) => void;
   /** View mode: shows the saved mark without offering the quick-tap presets. */
   readOnly?: boolean;
 }) => {
@@ -45,7 +54,9 @@ export const MarkEntryRow = ({
         <View className="flex-row items-center">
           <TextInput
             value={value}
-            onChangeText={readOnly ? undefined : onChange}
+            onChangeText={
+              readOnly ? undefined : (next) => onChange(studentId, next)
+            }
             editable={!readOnly}
             selectTextOnFocus={!readOnly}
             placeholder="-"
@@ -77,31 +88,68 @@ export const MarkEntryRow = ({
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={{ gap: 6, paddingTop: 8, paddingRight: 8 }}
       >
-        {MARK_PRESETS.filter((p) => p <= maxMarks).map((p) => (
-          <Pressable
-            key={p}
-            onPress={() => onChange(String(p))}
-            accessibilityRole="button"
-            accessibilityLabel={`Set ${p}`}
-            // Same reason as the pills: `className` plus a function `style`
-            // silently drops the function, so the geometry is inline here.
-            // These are also the most numerous pressables on the screen (up to
-            // 11 per student), so dropping the className is a small win too -
-            // NativeWind re-resolves every classed element on each render.
-            style={({ pressed }) => ({
-              borderRadius: 9999,
-              borderWidth: 1,
-              paddingHorizontal: 10,
-              paddingVertical: 4,
-              backgroundColor: pressed ? '#E5E7EB' : '#F9FAFB',
-              borderColor: pressed ? '#D1D5DB' : '#E5E7EB',
-            })}
-          >
-            <Text className="text-[11px] font-medium text-gray-600">{p}</Text>
-          </Pressable>
-        ))}
+        {MARK_PRESETS.filter((p) => p <= maxMarks).map((p) => {
+          // Lit when the box already holds exactly this value. Without it the
+          // chips all look alike and the teacher has to read the number back
+          // out of the input to know whether a preset is what is in there.
+          const selected = value !== "" && !invalid && !over && numeric === p;
+          return (
+            <Pressable
+              key={p}
+              onPress={() => onChange(studentId, String(p))}
+              accessibilityRole="button"
+              accessibilityState={{ selected }}
+              accessibilityLabel={`Set ${p}`}
+              // Same reason as the pills: `className` plus a function `style`
+              // silently drops the function, so the geometry is inline here.
+              // These are also the most numerous pressables on the screen (up
+              // to 11 per student), so dropping the className is a small win
+              // too - NativeWind re-resolves every classed element on render.
+              style={({ pressed }) => ({
+                borderRadius: 9999,
+                borderWidth: 1,
+                paddingHorizontal: 10,
+                paddingVertical: 4,
+                backgroundColor: selected
+                  ? pressed
+                    ? '#1D4ED8'
+                    : '#2563EB'
+                  : pressed
+                    ? '#E5E7EB'
+                    : '#F9FAFB',
+                borderColor: selected
+                  ? pressed
+                    ? '#1D4ED8'
+                    : '#2563EB'
+                  : pressed
+                    ? '#D1D5DB'
+                    : '#E5E7EB',
+              })}
+            >
+              {/* No `text-gray-600` here: a className colour beats an object
+                  `style` colour in NativeWind's merge, which would pin the
+                  label grey on the selected chip too. */}
+              <Text
+                className="text-[11px] font-medium"
+                style={{ color: selected ? '#FFFFFF' : '#4B5563' }}
+              >
+                {p}
+              </Text>
+            </Pressable>
+          );
+        })}
       </ScrollView>
       )}
     </View>
   );
 };
+
+/**
+ * Memoised because a roster is one row per student and every keystroke or chip
+ * tap writes to the single `draft` object on the screen, which re-renders all
+ * of them. Each row is a TextInput plus up to 11 pressables, so on a 60-student
+ * section that was ~700 elements re-rendering per tap — which is what the chip
+ * tap felt like. With a stable `onChange` and a primitive-only prop set, only
+ * the edited row re-renders now.
+ */
+export const MarkEntryRow = React.memo(MarkEntryRowBase);
