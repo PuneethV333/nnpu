@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useCallback, useState } from "react";
 import { View, Text, Pressable, ActivityIndicator } from "react-native";
 import { Feather } from "@expo/vector-icons";
 import { StudentRow } from "@/components/attendance-page/StudentRow";
@@ -54,6 +54,14 @@ const RosterEditor = ({
   const markAll = (value: MarkStatus) => {
     setDraft(Object.fromEntries(roster.map((r) => [r.studentId, value])));
   };
+
+  // One stable callback for the whole roster, not a fresh arrow per row:
+  // <StudentRow> is memoised, and a new prop identity on every render would
+  // re-render all of them on a single tap. The id is passed in so this can stay
+  // dependency-free.
+  const handleChange = useCallback((studentId: string, value: MarkStatus) => {
+    setDraft((d) => ({ ...d, [studentId]: value }));
+  }, []);
 
   const handleSave = () => {
     const entries = roster.map((r) => ({
@@ -129,9 +137,7 @@ const RosterEditor = ({
               item={item}
               status={draft[item.studentId] ?? "NotMarked"}
               disabled={isLocked}
-              onChange={(value) =>
-                setDraft((d) => ({ ...d, [item.studentId]: value }))
-              }
+              onChange={handleChange}
             />
             {idx !== roster.length - 1 && <View style={styles.rowSeparator} />}
           </View>
