@@ -19,6 +19,7 @@ import { addDays } from 'date-fns';
 import { Role } from '@/generated/prisma';
 import { login } from './types/get-me.type';
 import { refreshDto } from './dto/refresh.dto';
+import { assertSectionAccess } from '@/common/utils/section-students.util';
 
 /**
  * A real bcrypt hash of a value nobody knows. Compared against on the
@@ -535,26 +536,20 @@ export class AuthService {
   }
 
   async getAllStudents(sectionId: string, authId: string) {
-    const auth = await this.prisma.auth.findUnique({ where: { authId } });
-    if (!auth) throw new UnauthorizedException('user not found');
-
-    const role = await this.prisma.user.findUnique({
-      where: { id: auth.userId },
-      select: { role: true },
-    });
-
-    // Role gating alone was not enough: any teacher could pass any sectionId and
-    // read that section's roster. A teacher must be assigned to the section.
-    if (role?.role !== 'Admin') {
-      const assignment = await this.prisma.sectionSubject.findFirst({
-        where: { sectionId, teacherId: auth.userId },
-        select: { id: true },
-      });
-
-      if (!assignment) {
-        throw new ForbiddenException('You are not assigned to this section');
-      }
-    }
+    // Delegates to the shared helper instead of hand-rolling the check, which
+    // is what it used to do - and the local copy had drifted. It looked only at
+    // `SectionSubject`, so the section's own *class teacher* was refused its
+    // roster, while every other section-scoped route (attendance and marks both
+    // go through `assertSectionAccess`) accepted them. A class teacher opening
+    // their own class on the Classes page therefore got a 403 they could not
+    // see, because the page renders a rejected request as "no students
+    // enrolled". The helper is strictly the wider, and correct, check: it
+    // accepts the class teacher or a subject assignment.
+    //
+    // No `allowAnyTeacher` here on purpose. Attendance is a shared duty; reading
+    // a roster for marks and fees is not, so those stay scoped to staff who are
+    // actually attached to the section.
+    await assertSectionAccess(this.prisma, sectionId, authId);
 
     const res = await this.prisma.user.findMany({
       where: {
