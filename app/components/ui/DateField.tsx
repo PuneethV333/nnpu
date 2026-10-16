@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import { View, Text, Pressable, Platform } from "react-native";
 import { Feather } from "@expo/vector-icons";
 import DateTimePicker, {
-  type DateTimePickerEvent,
+  type DateTimePickerChangeEvent,
 } from "@react-native-community/datetimepicker";
 import { FieldLabel } from "./Primitives";
 
@@ -52,16 +52,16 @@ export const DateField = ({
 }) => {
   const [open, setOpen] = useState(false);
 
-  const handleChange = (event: DateTimePickerEvent, picked?: Date) => {
-    if (Platform.OS === "android") {
-      // Android shows a dialog that closes itself on both outcomes.
-      setOpen(false);
-      if (event.type === "set" && picked) onChange(toYmd(picked));
-      return;
-    }
-    // iOS renders inline and reports every change; it stays open until Done.
-    if (picked) onChange(toYmd(picked));
+  // `onChange` is deprecated on 9.x in favour of the specific listeners below,
+  // which split what used to be one callback by outcome. Android's dialog
+  // closes itself on both paths, so the close is now in each listener rather
+  // than before the branch.
+  const handleValueChange = (_event: DateTimePickerChangeEvent, picked: Date) => {
+    onChange(toYmd(picked));
+    if (Platform.OS === "android") setOpen(false);
   };
+
+  const close = () => setOpen(false);
 
   return (
     <View style={{ marginBottom: 16 }}>
@@ -115,7 +115,11 @@ export const DateField = ({
             value={value ? fromYmd(value) : new Date()}
             mode="date"
             display={Platform.OS === "ios" ? "inline" : "default"}
-            onChange={handleChange}
+            onValueChange={handleValueChange}
+            // Android-only: the dialog was dismissed without a selection.
+            // Deliberately not wired on iOS, where the inline picker does not
+            // dismiss itself and stays open until the app's own Done button.
+            onDismiss={Platform.OS === "android" ? close : undefined}
           />
           {Platform.OS === "ios" ? (
             <Pressable
