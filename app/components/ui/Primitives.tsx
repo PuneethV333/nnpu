@@ -65,6 +65,43 @@ const TONE: Record<Tone, { bg: string; fg: string; border: string }> = {
   neutral: { bg: '#FFFFFF', fg: '#374151', border: '#E5E7EB' },
 };
 
+/**
+ * Pressed fill for a control whose accent arrives as a prop.
+ *
+ * The app's press convention is "a darker fill". Where the colour is a literal
+ * the darker value is written out at the call site (#2563EB -> #1D4ED8), but a
+ * shared component cannot do that, so the accents the app actually passes are
+ * listed and anything else takes a computed 18% step. The fallback is the point:
+ * quietly returning the base colour would leave a new caller with a press state
+ * that looks wired up and does nothing, which is the failure this file keeps
+ * hitting.
+ */
+const PRESSED_FILL: Record<string, string> = {
+  '#2563EB': '#1D4ED8', // blue-600   -> blue-700
+  '#4F46E5': '#4338CA', // indigo-600 -> indigo-700
+  '#16A34A': '#15803D', // green-600  -> green-700
+  '#DC2626': '#B91C1C', // red-600    -> red-700
+  '#FFFFFF': '#E5E7EB', // white      -> gray-200, for outlined/secondary fills
+};
+
+const pressedFill = (base: string): string => {
+  const known = PRESSED_FILL[base.toUpperCase()];
+  if (known) return known;
+
+  const hex = /^#([0-9a-f]{6})$/i.exec(base);
+  if (!hex) return base;
+
+  const n = parseInt(hex[1], 16);
+  const step = (c: number) => Math.max(0, Math.round(c * 0.82));
+  const r = step((n >> 16) & 0xff);
+  const g = step((n >> 8) & 0xff);
+  const b = step(n & 0xff);
+  return `#${((r << 16) | (g << 8) | b)
+    .toString(16)
+    .padStart(6, '0')
+    .toUpperCase()}`;
+};
+
 export const PrimaryButton = ({
   label,
   onPress,
@@ -88,10 +125,25 @@ export const PrimaryButton = ({
       onPress={onPress}
       disabled={inactive}
       accessibilityRole="button"
-      className={`rounded-xl py-3 px-4 items-center justify-center flex-row border ${
-        inactive ? 'opacity-40' : ''
-      }`}
-      style={{ backgroundColor: t.bg, borderColor: t.border, gap: 8 }}
+      // No `className`: NativeWind wraps a className'd Pressable and drops a
+      // function-valued `style`, so the press fill would never reach the button.
+      // The rounded-xl / py-3 / px-4 geometry and the `opacity-40` disabled look
+      // live in the style function instead.
+      style={({ pressed }) => ({
+        borderRadius: 12,
+        paddingVertical: 12,
+        paddingHorizontal: 16,
+        alignItems: 'center',
+        justifyContent: 'center',
+        flexDirection: 'row',
+        borderWidth: 1,
+        gap: 8,
+        // `disabled` suppresses `pressed`, so `inactive` cannot reach the
+        // pressed branch and no extra guard is needed here.
+        backgroundColor: pressed ? pressedFill(t.bg) : t.bg,
+        borderColor: pressed ? pressedFill(t.border) : t.border,
+        opacity: inactive ? 0.4 : 1,
+      })}
     >
       {loading ? (
         <ActivityIndicator size="small" color={t.fg} />
@@ -130,11 +182,34 @@ export const PillTabs = <T extends string>({
         <Pressable
           key={o.value}
           onPress={() => onChange(o.value)}
-          className="rounded-full px-4 py-2 border"
-          style={{
-            backgroundColor: active ? activeColor : '#FFFFFF',
-            borderColor: active ? activeColor : '#E5E7EB',
-          }}
+          accessibilityRole="button"
+          accessibilityState={{ selected: active }}
+          // Geometry moved out of `className` for the same reason as
+          // PrimaryButton: a function-valued `style` is dropped when
+          // `className` is present, so the pills would get no press feedback.
+          style={({ pressed }) => ({
+            borderRadius: 9999,
+            borderWidth: 1,
+            paddingHorizontal: 16,
+            paddingVertical: 8,
+            // The selected pill deepens within its accent; an unselected one
+            // darkens from white. Either way the press is visible whether or
+            // not the pill is the current selection.
+            backgroundColor: active
+              ? pressed
+                ? pressedFill(activeColor)
+                : activeColor
+              : pressed
+                ? '#E5E7EB'
+                : '#FFFFFF',
+            borderColor: active
+              ? pressed
+                ? pressedFill(activeColor)
+                : activeColor
+              : pressed
+                ? '#D1D5DB'
+                : '#E5E7EB',
+          })}
         >
           <Text
             className="text-sm font-semibold"
