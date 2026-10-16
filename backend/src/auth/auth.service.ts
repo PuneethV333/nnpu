@@ -79,14 +79,33 @@ export class AuthService {
   async login(dto: LoginDto): Promise<login> {
     this.logger.log('[auth]');
 
-    // Normalised for the throttle key only; the lookup below stays exact so
-    // existing mixed-case auth ids keep working.
-    const throttleKey = dto.authId.trim().toLowerCase();
+    // The login id is case-insensitive end to end.
+    //
+    // It is *stored* in a canonical mixed case — the stream/combination/
+    // language/session codes are upper-cased when the id is built so every id
+    // reads uniformly (`nnpu1SB26KA018`) — but nobody types it that way. The
+    // credential email, an ID card and a person's own memory will each produce
+    // a lowercase id, and the exact match turned all of those into a bare
+    // "invalid auth id or password" with no hint that only the case was wrong.
+    //
+    // Trimmed too: this gets pasted from a mail or a spreadsheet far more often
+    // than it is typed, and a trailing space was equally fatal.
+    const submittedId = dto.authId.trim();
+    // Lower-cased for the lockout key only. `NNPU...` and `nnpu...` must share
+    // one counter — keying it on the submitted casing would let an attacker
+    // reset the attempt budget by toggling case.
+    const throttleKey = submittedId.toLowerCase();
 
     await this.assertLoginNotLocked(throttleKey);
 
-    const auth = await this.prisma.auth.findUnique({
-      where: { authId: dto.authId },
+    // `findFirst`, not `findUnique`: the generated unique input takes a plain
+    // string and exposes no `mode`, so a case-insensitive match cannot go
+    // through the unique index. `Auth` holds one row per person, so the scan is
+    // not a concern at this size — and the alternative, lower-casing the stored
+    // values, would mean a migration plus a redesign of the ids that are
+    // deliberately upper-cased to stay uniformly readable.
+    const auth = await this.prisma.auth.findFirst({
+      where: { authId: { equals: submittedId, mode: 'insensitive' } },
       include: { user: true },
     });
 

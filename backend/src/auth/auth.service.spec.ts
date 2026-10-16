@@ -35,6 +35,9 @@ describe('AuthService', () => {
           useValue: {
             auth: {
               findUnique: jest.fn(),
+              // login() looks the id up case-insensitively, which the generated
+              // unique input cannot express (no `mode`), so it uses findFirst.
+              findFirst: jest.fn(),
               update: jest.fn(),
             },
             user: {
@@ -112,15 +115,70 @@ describe('AuthService', () => {
 
   describe('login', () => {
     it('throws UnauthorizedException if authId does not exist', async () => {
-      (prisma.auth.findUnique as jest.Mock).mockResolvedValue(null);
+      (prisma.auth.findFirst as jest.Mock).mockResolvedValue(null);
 
       await expect(
         service.login({ authId: 'nope', password: 'whatever' }),
       ).rejects.toThrow('Invalid auth id or password');
     });
 
+    it('matches the stored auth id regardless of the case it is typed in', async () => {
+      // Stored ids are mixed case by construction (the segment codes are
+      // upper-cased when the id is built), but the credential email and an ID
+      // card will show it however they were produced, and a person lowercase is
+      // still a person. An exact match made all of those fail with the same
+      // "invalid auth id or password" as a wrong password, so the case was
+      // invisible as the actual problem.
+      (prisma.auth.findFirst as jest.Mock).mockResolvedValue(mockAuth);
+      (bcrypt.compare as jest.Mock).mockResolvedValue(true);
+      (bcrypt.hash as jest.Mock).mockResolvedValue('hashed-secret');
+      (jwtService.signAsync as jest.Mock).mockResolvedValue('signed-token');
+      (prisma.refreshToken.create as jest.Mock).mockResolvedValue({});
+
+      const { accessToken } = await service.login({
+        authId: mockAuth.authId.toUpperCase(),
+        password: 'correct',
+      });
+
+      expect(accessToken).toBe('signed-token');
+      // Asserted on the submitted casing, not a lower-cased copy: the
+      // insensitivity must come from `mode`, since lower-casing the query would
+      // only ever match a lower-cased column.
+      expect(prisma.auth.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: {
+            authId: {
+              equals: mockAuth.authId.toUpperCase(),
+              mode: 'insensitive',
+            },
+          },
+        }),
+      );
+    });
+
+    it('trims whitespace around the auth id', async () => {
+      // This arrives pasted from a mail or a spreadsheet more often than it is
+      // typed, and a trailing space used to be as fatal as a wrong password.
+      (prisma.auth.findFirst as jest.Mock).mockResolvedValue(mockAuth);
+      (bcrypt.compare as jest.Mock).mockResolvedValue(true);
+      (bcrypt.hash as jest.Mock).mockResolvedValue('hashed-secret');
+      (jwtService.signAsync as jest.Mock).mockResolvedValue('signed-token');
+      (prisma.refreshToken.create as jest.Mock).mockResolvedValue({});
+
+      await service.login({
+        authId: `  ${mockAuth.authId}  `,
+        password: 'correct',
+      });
+
+      expect(prisma.auth.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { authId: { equals: mockAuth.authId, mode: 'insensitive' } },
+        }),
+      );
+    });
+
     it('throws UnauthorizedException if password does not match', async () => {
-      (prisma.auth.findUnique as jest.Mock).mockResolvedValue(mockAuth);
+      (prisma.auth.findFirst as jest.Mock).mockResolvedValue(mockAuth);
       (bcrypt.compare as jest.Mock).mockResolvedValue(false);
 
       await expect(
@@ -133,7 +191,7 @@ describe('AuthService', () => {
     });
 
     it('reports a deactivated account with the same message as a bad password', async () => {
-      (prisma.auth.findUnique as jest.Mock).mockResolvedValue({
+      (prisma.auth.findFirst as jest.Mock).mockResolvedValue({
         ...mockAuth,
         user: { ...mockAuth.user, isActive: false },
       });
@@ -149,7 +207,7 @@ describe('AuthService', () => {
     });
 
     it('uses the same message for an unknown auth id as for a wrong password', async () => {
-      (prisma.auth.findUnique as jest.Mock).mockResolvedValue(null);
+      (prisma.auth.findFirst as jest.Mock).mockResolvedValue(null);
 
       await expect(
         service.login({ authId: 'does-not-exist', password: 'whatever' }),
@@ -158,7 +216,7 @@ describe('AuthService', () => {
 
     it('still runs bcrypt on the unknown-auth-id path', async () => {
       // Otherwise response time alone reveals which auth ids exist.
-      (prisma.auth.findUnique as jest.Mock).mockResolvedValue(null);
+      (prisma.auth.findFirst as jest.Mock).mockResolvedValue(null);
 
       await expect(
         service.login({ authId: 'does-not-exist', password: 'whatever' }),
@@ -168,7 +226,7 @@ describe('AuthService', () => {
     });
 
     it('returns an accessToken, refreshToken, and user on successful login', async () => {
-      (prisma.auth.findUnique as jest.Mock).mockResolvedValue(mockAuth);
+      (prisma.auth.findFirst as jest.Mock).mockResolvedValue(mockAuth);
       (bcrypt.compare as jest.Mock).mockResolvedValue(true);
       (bcrypt.hash as jest.Mock).mockResolvedValue('hashed-secret');
       (jwtService.signAsync as jest.Mock).mockResolvedValue('signed-token');
@@ -636,12 +694,12 @@ describe('AuthService', () => {
   });
   describe('per-auth-id login lockout', () => {
     const asRealUser = () => {
-      (prisma.auth.findUnique as jest.Mock).mockResolvedValue(mockAuth);
+      (prisma.auth.findFirst as jest.Mock).mockResolvedValue(mockAuth);
       (bcrypt.compare as jest.Mock).mockResolvedValue(true);
     };
 
     it('locks the account after repeated failures', async () => {
-      (prisma.auth.findUnique as jest.Mock).mockResolvedValue(mockAuth);
+      (prisma.auth.findFirst as jest.Mock).mockResolvedValue(mockAuth);
       (bcrypt.compare as jest.Mock).mockResolvedValue(false);
       (redis.get as jest.Mock).mockResolvedValue(5);
       (redis.incr as jest.Mock).mockResolvedValue(1);
@@ -651,13 +709,30 @@ describe('AuthService', () => {
       ).rejects.toMatchObject({ status: 429 });
 
       // Must not even reach the credential check once locked.
-      expect(prisma.auth.findUnique).not.toHaveBeenCalled();
+      expect(prisma.auth.findFirst).not.toHaveBeenCalled();
+    });
+
+    it('shares one counter across the case variants of an auth id', async () => {
+      // Keyed on the submitted casing, `NNPU...` would be a fresh budget, so a
+      // lockout could be shed by toggling case on the next attempt.
+      (prisma.auth.findFirst as jest.Mock).mockResolvedValue(mockAuth);
+      (bcrypt.compare as jest.Mock).mockResolvedValue(false);
+      (redis.get as jest.Mock).mockResolvedValue(0);
+      (redis.incr as jest.Mock).mockResolvedValue(1);
+
+      await service
+        .login({ authId: mockAuth.authId.toUpperCase(), password: 'wrong' })
+        .catch(() => undefined);
+
+      expect(redis.incr).toHaveBeenCalledWith(
+        `login:fail:${mockAuth.authId.toLowerCase()}`,
+      );
     });
 
     it('records each failure against the auth id, not the IP', async () => {
       // Regression: the route throttle was keyed on IP at 5/min, so a school
       // behind one NAT locked each other out.
-      (prisma.auth.findUnique as jest.Mock).mockResolvedValue(mockAuth);
+      (prisma.auth.findFirst as jest.Mock).mockResolvedValue(mockAuth);
       (bcrypt.compare as jest.Mock).mockResolvedValue(false);
       (redis.get as jest.Mock).mockResolvedValue(0);
       (redis.incr as jest.Mock).mockResolvedValue(1);
@@ -672,7 +747,7 @@ describe('AuthService', () => {
     });
 
     it('sets the lock TTL only on the first failure', async () => {
-      (prisma.auth.findUnique as jest.Mock).mockResolvedValue(mockAuth);
+      (prisma.auth.findFirst as jest.Mock).mockResolvedValue(mockAuth);
       (bcrypt.compare as jest.Mock).mockResolvedValue(false);
       (redis.get as jest.Mock).mockResolvedValue(0);
       (redis.incr as jest.Mock).mockResolvedValue(3);
