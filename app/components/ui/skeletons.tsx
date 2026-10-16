@@ -114,6 +114,90 @@ export const AnnouncementsRowSkeleton = ({ count = 2 }: { count?: number }) => (
   </ScrollView>
 );
 
+/** Matches `components/home/HomeHeader.tsx` (avatar + greeting/name + bell). */
+export const HomeHeaderSkeleton = () => (
+  <View
+    style={{
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      paddingHorizontal: 20,
+      paddingVertical: 16,
+    }}
+  >
+    <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
+      <SkeletonCircle size={48} />
+      <View style={{ marginLeft: 12, gap: 6 }}>
+        <Skeleton width={72} height={11} radius="sm" />
+        <Skeleton width={128} height={15} radius="sm" />
+      </View>
+    </View>
+    <SkeletonCircle size={40} />
+  </View>
+);
+
+/** Matches the "My Class" card in `components/home/main/Student.tsx`. */
+export const MyClassCardSkeleton = () => (
+  <SkeletonCard style={{ marginHorizontal: 20, marginTop: 16 }} gap={0}>
+    <View
+      style={{
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+      }}
+    >
+      <View style={{ flex: 1, gap: 8 }}>
+        <Skeleton width={64} height={11} radius="sm" />
+        <Skeleton width={140} height={18} radius="sm" />
+        <Skeleton width={168} height={10} radius="sm" />
+      </View>
+      <Skeleton width={20} height={20} radius="sm" />
+    </View>
+  </SkeletonCard>
+);
+
+/** Matches `components/home/QuickActions.tsx`. */
+export const QuickActionsSkeleton = ({
+  count = 2,
+  wrap = false,
+}: {
+  count?: number;
+  wrap?: boolean;
+}) => (
+  <View
+    style={{
+      flexDirection: 'row',
+      flexWrap: wrap ? 'wrap' : 'nowrap',
+      gap: 12,
+    }}
+  >
+    {Array.from({ length: count }).map((_, i) => (
+      <View
+        key={i}
+        style={{
+          flex: 1,
+          flexBasis: wrap ? '46%' : undefined,
+          backgroundColor: '#FFFFFF',
+          borderRadius: 14,
+          paddingVertical: 16,
+          paddingHorizontal: 14,
+          borderWidth: 1,
+          borderColor: '#F3F4F6',
+        }}
+      >
+        <Skeleton width={36} height={36} radius="md" phase={i} />
+        <Skeleton
+          width="70%"
+          height={13}
+          radius="sm"
+          phase={i}
+          style={{ marginTop: 10 }}
+        />
+      </View>
+    ))}
+  </View>
+);
+
 /** Matches `components/attendance-page/ProgressCard.tsx`. */
 export const ProgressCardSkeleton = ({ count = 1 }: { count?: number }) => (
   <>
