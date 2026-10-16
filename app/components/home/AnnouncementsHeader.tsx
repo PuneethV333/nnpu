@@ -10,7 +10,14 @@ const AnnouncementsHeader = ({
 }) => (
   <View className="flex-row items-center justify-between mb-3">
     <Text className={titleClassName}>Announcements</Text>
-    <Pressable onPress={() => router.push("/announcements")} hitSlop={10}>
+    <Pressable
+      onPress={() => router.push("/announcements")}
+      hitSlop={10}
+      accessibilityRole="button"
+      // Opacity only: there is no shape here to shrink, and scaling the glyphs
+      // under the finger makes a text link look like it is jumping.
+      style={({ pressed }) => (pressed ? { opacity: 0.5 } : null)}
+    >
       <Text className="text-sm font-semibold text-blue-600">See all</Text>
     </Pressable>
   </View>

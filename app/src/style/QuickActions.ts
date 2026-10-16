@@ -27,4 +27,8 @@ export const styles = StyleSheet.create({
     fontWeight: "600",
     color: "#111827",
   },
+  cardPressed: {
+    opacity: 0.85,
+    transform: [{ scale: 0.97 }],
+  },
 });

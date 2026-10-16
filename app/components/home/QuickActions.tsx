@@ -39,7 +39,12 @@ const QuickActions = ({ actions = DEFAULT_ACTIONS }: Props) => {
       {actions.map((action) => (
         <Pressable
           key={action.route}
-          style={[styles.card, wrap && { flexBasis: "46%" }]}
+          accessibilityRole="button"
+          style={({ pressed }) => [
+            styles.card,
+            wrap && { flexBasis: "46%" },
+            pressed && styles.cardPressed,
+          ]}
           onPress={() => router.push(action.route)}
         >
           <View style={[styles.iconWrap, { backgroundColor: action.color + "1A" }]}>

@@ -41,7 +41,8 @@ const SectionStatusCard = ({ section, date, isWorkingDay }: Props) => {
 
   return (
     <Pressable
-      style={styles.card}
+      accessibilityRole="button"
+      style={({ pressed }) => [styles.card, pressed && styles.cardPressed]}
       onPress={() =>
         router.push({ pathname: "/attendance", params: { sectionId: section.id } })
       }
