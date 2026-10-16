@@ -26,6 +26,16 @@ const Login = () => {
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Whether the message describes a problem with the fields themselves, so the
+  // rows can be outlined red. Deliberately not derived from `error`'s text: a
+  // 429 or a network failure is not the fields' fault, and marking them red
+  // would claim it is.
+  const [fieldError, setFieldError] = useState(false);
+  // Which row the caret is in. Focus is the one piece of state a login form
+  // had no visual answer for at all.
+  const [focusedField, setFocusedField] = useState<
+    "authId" | "password" | null
+  >(null);
   const [submitting, setSubmitting] = useState(false);
   const [keyboardVisible, setKeyboardVisible] = useState(false);
   const scrollRef = useRef<ScrollView>(null);
@@ -56,8 +66,10 @@ const Login = () => {
 
   const submit = async (id: string, pass: string) => {
     setError(null);
+    setFieldError(false);
     if (!id.trim() || !pass) {
       setError("Enter both School ID and password");
+      setFieldError(true);
       return;
     }
     setSubmitting(true);
@@ -72,6 +84,7 @@ const Login = () => {
           // — telling a caller which half was wrong turns the form into a way
           // to enumerate valid School IDs.
           setError("Invalid ID or password.");
+          setFieldError(true);
         } else if (status === 429) {
           setError("Too many attempts. Wait a moment and try again.");
         } else if (status === undefined) {
@@ -90,6 +103,23 @@ const Login = () => {
   };
 
   const onSubmit = () => submit(authId, password);
+
+  /**
+   * Outline for one field row. Values match the base `inputRow` style, so an
+   * inactive row is byte-identical to before.
+   *
+   * Red outranks blue on purpose: while the user is retyping after a rejected
+   * sign-in, an outline that flipped back to blue the instant they tapped in
+   * would erase the only marker of what the error was about.
+   */
+  const inputBorder = (field: "authId" | "password") => ({
+    borderColor: fieldError
+      ? "#DC2626"
+      : focusedField === field
+        ? "#2563EB"
+        : "#E5E7EB",
+    borderWidth: fieldError || focusedField === field ? 1.5 : 1,
+  });
 
   return (
       <ImageBackground
@@ -132,7 +162,7 @@ const Login = () => {
             <View style={styles.middleSection}>
               <View style={styles.card}>
                 <Text style={styles.label}>School ID</Text>
-                <View style={styles.inputRow}>
+                <View style={[styles.inputRow, inputBorder("authId")]}>
                   <Ionicons
                     name="person-outline"
                     size={18}
@@ -142,6 +172,8 @@ const Login = () => {
                   <TextInput
                     value={authId}
                     onChangeText={setAuthId}
+                    onFocus={() => setFocusedField("authId")}
+                    onBlur={() => setFocusedField(null)}
                     placeholder="Enter your ID"
                     placeholderTextColor="#9CA3AF"
                     autoCapitalize="none"
@@ -153,7 +185,7 @@ const Login = () => {
                 <View style={styles.passwordHeader}>
                   <Text style={styles.label}>Password</Text>
                 </View>
-                <View style={styles.inputRow}>
+                <View style={[styles.inputRow, inputBorder("password")]}>
                   <Ionicons
                     name="lock-closed-outline"
                     size={18}
@@ -163,6 +195,8 @@ const Login = () => {
                   <TextInput
                     value={password}
                     onChangeText={setPassword}
+                    onFocus={() => setFocusedField("password")}
+                    onBlur={() => setFocusedField(null)}
                     placeholder="Enter password"
                     placeholderTextColor="#9CA3AF"
                     secureTextEntry={!showPassword}
@@ -173,6 +207,7 @@ const Login = () => {
                     accessibilityRole="button"
                     accessibilityLabel={showPassword ? "Hide password" : "Show password"}
                     hitSlop={8}
+                    style={({ pressed }) => (pressed ? styles.iconPressed : null)}
                   >
                     <Ionicons
                       name={showPassword ? "eye-off-outline" : "eye-outline"}
@@ -193,14 +228,18 @@ const Login = () => {
                 ) : null}
 
                 <Pressable
+                  accessibilityRole="button"
+                  accessibilityState={{ disabled: submitting, busy: submitting }}
                   style={({ pressed }) => [
                     styles.loginButton,
                     submitting && styles.buttonDisabled,
                     // `activeOpacity` is a TouchableOpacity prop. Pressable
                     // ignores it, so the button had no press feedback at all
                     // even though it read as if it did. `pressed` is the
-                    // supported equivalent.
-                    pressed && !submitting && { opacity: 0.85 },
+                    // supported equivalent, and it flips on touch-down rather
+                    // than on release, so the acknowledgement lands the instant
+                    // the finger goes down rather than when it lifts.
+                    pressed && !submitting && styles.loginButtonPressed,
                   ]}
                   onPress={onSubmit}
                   disabled={submitting}

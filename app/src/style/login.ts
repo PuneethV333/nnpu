@@ -98,6 +98,12 @@ export const styles = StyleSheet.create({
     elevation: 4,
   },
   buttonDisabled: { opacity: 0.7 },
+  // Press feedback. `scale` scales the label and icon with the button, so the
+  // whole thing reads as being pushed in rather than just dimming. Kept at
+  // 0.97: subtle enough not to look like the button is moving.
+  loginButtonPressed: { opacity: 0.85, transform: [{ scale: 0.97 }] },
+  // The eye toggle is a bare icon with no shape to shrink, so it dims instead.
+  iconPressed: { opacity: 0.45 },
   loginButtonText: { color: "#fff", fontSize: 16, fontWeight: "600" },
   footerText: {
     color: "#E2E8F0",
