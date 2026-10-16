@@ -27,8 +27,14 @@ export const styles = StyleSheet.create({
     fontWeight: "600",
     color: "#111827",
   },
+  // Press feedback: the card darkens instead of dimming or scaling, so the tap
+  // reads as a highlight. `pressed` flips on touch-down, not on release, so it
+  // lands the instant the finger goes down.
+  //
+  // The border darkens with the fill on purpose: left at #F3F4F6 it would be
+  // lighter than the fill it outlines.
   cardPressed: {
-    opacity: 0.85,
-    transform: [{ scale: 0.97 }],
+    backgroundColor: "#E5E7EB",
+    borderColor: "#E5E7EB",
   },
 });

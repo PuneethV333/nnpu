@@ -37,11 +37,10 @@ export const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: "600",
   },
+  // Darkens rather than scaling, matching the QuickActions cards. The border
+  // darkens with the fill so it is never lighter than what it outlines.
   cardPressed: {
-    opacity: 0.85,
-    // Gentler than the 0.97 used on buttons and half-width cards. This one spans
-    // the screen, so 0.97 would pull each edge in by roughly 5px and read as the
-    // row detaching from the list rather than being pressed.
-    transform: [{ scale: 0.98 }],
+    backgroundColor: "#E5E7EB",
+    borderColor: "#E5E7EB",
   },
 });
