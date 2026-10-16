@@ -1,0 +1,172 @@
+# Publish an over-the-air (OTA) update to the Expo app via EAS Update.
+#
+# This does NOT build a new binary. It ships the JS bundle + assets to devices
+# that already have a build installed whose `channel` matches the one published
+# here. A native/config change (new Expo config plugin, permission, Firebase
+# file) still needs a real `eas build` — an OTA update cannot carry native code.
+#
+# ---------------------------------------------------------------------------
+# Setup status
+# ---------------------------------------------------------------------------
+# DONE (in app/):
+#  - expo-updates installed (~57.0.26) and its config plugin auto-applied.
+#  - app.json: `runtimeVersion: { policy: "appVersion" }` and
+#    `updates.url` = https://u.expo.dev/406be5d0-3cc0-4899-a4d6-ea0f4e1663d4
+#    (verified via `npx expo config --type introspect`).
+#  - eas.json: each build profile now sets `channel`
+#    (development / preview / production).
+#
+# STILL REQUIRED before this workflow can succeed:
+#  1. Add a repo secret `EXPO_TOKEN` at
+#     https://expo.dev/settings/access-tokens  →  GitHub repo → Settings →
+#     Secrets and variables → Actions → New repository secret.
+#     Until then the "Auth check" step fails fast with a clear message rather
+#     than an eas-cli prompt hanging on stdin.
+#  2. Rebuild and redistribute ONCE (`eas build --profile <profile>`). Adding
+#     expo-updates is a NATIVE change: the already-installed binaries do not
+#     carry the channel or the updates URL, so they can never receive an OTA
+#     update. Every OTA-published JS change after that build is delivered
+#     without a rebuild.
+#
+# Reminder: this ships JS + assets only. A native/config change (new Expo config
+# plugin, permission, Firebase file) still needs a real `eas build`.
+# ---------------------------------------------------------------------------
+
+name: App OTA update
+
+on:
+  # Manual by default. Flip the `push` block below on once updates are wired up
+  # and you are happy publishing to `preview` on every main merge.
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: EAS Update channel to publish to
+        type: choice
+        options: [preview, production]
+        default: preview
+      platform:
+        description: Which platform bundle(s) to publish
+        type: choice
+        options: [android, all, ios]
+        default: android
+      message:
+        description: Update message (shown in the EAS dashboard)
+        type: string
+        default: Manual update
+  # Uncomment to publish automatically on every merge to main.
+  # push:
+  #   branches: [main]
+  #   paths:
+  #     - 'app/**'
+  #     - '.github/workflows/app-update.yml'
+
+# Never cancel a publish that is already uploading — a half-published update is
+# worse than a queued one.
+concurrency:
+  group: app-ota-update
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  NODE_VERSION: '24'
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Gate. Publishing is fast and hard to notice, so refuse to publish a bundle
+  # that does not even typecheck. Kept self-contained rather than reusing
+  # ci.yml, because a workflow_dispatch run does not imply a push to main.
+  # ---------------------------------------------------------------------------
+  quality:
+    name: app · typecheck, lint
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+
+      # `npm ci` runs the `postinstall: patch-package` hook, which re-applies
+      # patches/react-native-css+3.0.7.patch. Without it the bundle would crash
+      # on any styled TextInput (see that patch file for the full story).
+      - name: Install
+        run: npm ci
+
+      - name: Typecheck
+        run: npx tsc --noEmit
+
+      - name: Lint
+        run: npx eslint . --ext .ts,.tsx --max-warnings 0
+
+  # ---------------------------------------------------------------------------
+  # Publish. `eas update` uploads the JS bundle + assets for the given channel.
+  # ---------------------------------------------------------------------------
+  update:
+    name: app · publish OTA update
+    needs: quality
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+
+      # Fail with a readable message instead of an eas-cli login prompt that
+      # would hang until the job times out.
+      - name: Auth check
+        run: |
+          if [ -z "$EXPO_TOKEN" ]; then
+            echo "::error::EXPO_TOKEN is not set. Create one at https://expo.dev/settings/access-tokens and add it as a repository secret." >&2
+            exit 1
+          fi
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+
+      - uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - name: Install
+        run: npm ci
+
+      # eas update refuses to run against a dirty tree; CI checkouts are clean,
+      # but the app's `app.config.js` and install hooks can leave artefacts.
+      # Opt out of the git-status check rather than depend on that staying true.
+      - name: Publish update
+        env:
+          EXPO_NO_GIT_STATUS: 1
+        run: |
+          eas update \
+            --channel "${{ inputs.channel }}" \
+            --platform "${{ inputs.platform }}" \
+            --message "${{ inputs.message }}" \
+            --non-interactive
+
+      # Surfaces the update id / dashboard link in the run summary for a manual
+      # dispatch. On an auto-push run the inputs are empty, so it is skipped.
+      - name: Summary
+        if: ${{ github.event_name == 'workflow_dispatch' }}
+        run: |
+          {
+            echo "### OTA update published"
+            echo ""
+            echo "- channel: \`${{ inputs.channel }}\`"
+            echo "- platform: \`${{ inputs.platform }}\`"
+            echo "- message: ${{ inputs.message }}"
+            echo ""
+            echo "Dashboard: https://expo.dev/accounts/punivijay/projects/nnpu/updates"
+          } >> "$GITHUB_STEP_SUMMARY"

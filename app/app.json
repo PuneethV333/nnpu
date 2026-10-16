@@ -3,6 +3,12 @@
     "name": "NNPU Academy",
     "slug": "nnpu",
     "version": "1.0.0",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/406be5d0-3cc0-4899-a4d6-ea0f4e1663d4"
+    },
     "orientation": "portrait",
     "scheme": "nnpuacademy",
     "userInterfaceStyle": "light",

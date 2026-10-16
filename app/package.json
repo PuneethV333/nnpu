@@ -3,6 +3,7 @@
   "main": "expo-router/entry",
   "version": "1.0.0",
   "scripts": {
+    "postinstall": "patch-package",
     "start": "expo start",
     "reset-project": "node ./scripts/reset-project.js",
     "android": "expo run:android",
@@ -36,6 +37,7 @@
     "expo-status-bar": "~57.0.1",
     "expo-symbols": "~57.0.3",
     "expo-system-ui": "~57.0.4",
+    "expo-updates": "~57.0.26",
     "expo-web-browser": "~57.0.3",
     "jod": "^0.0.0",
     "lucide-react-native": "^1.28.0",
@@ -60,6 +62,7 @@
     "@types/react-native-razorpay": "^2.2.6",
     "eslint": "^9.25.0",
     "eslint-config-expo": "~57.0.2",
+    "patch-package": "^8.0.1",
     "postcss": "^8.5.19",
     "tailwindcss": "^4.3.2",
     "typescript": "~6.0.3"
