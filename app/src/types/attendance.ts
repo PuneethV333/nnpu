@@ -93,8 +93,10 @@ export const STATUS_OPTIONS: {
   value: MarkStatus;
   label: string;
   color: string;
+  /** `color` one step darker, for the pressed state of the P/A/L button. */
+  pressedColor: string;
 }[] = [
-  { value: "Present", label: "P", color: "#10B981" },
-  { value: "Absent", label: "A", color: "#EF4444" },
-  { value: "Late", label: "L", color: "#F59E0B" },
+  { value: "Present", label: "P", color: "#10B981", pressedColor: "#059669" },
+  { value: "Absent", label: "A", color: "#EF4444", pressedColor: "#DC2626" },
+  { value: "Late", label: "L", color: "#F59E0B", pressedColor: "#D97706" },
 ];

@@ -36,6 +36,10 @@ export const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
+  // #F3F4F6 sat only a hair off the #FFFFFF card these arrows live in, so a
+  // press registered as nothing on the one control a teacher taps most while
+  // catching up on missed days.
+  navButtonPressed: { backgroundColor: "#E5E7EB" },
   dateText: { fontSize: 15, fontWeight: "700", color: "#111827" },
   todayBadge: {
     fontSize: 11,

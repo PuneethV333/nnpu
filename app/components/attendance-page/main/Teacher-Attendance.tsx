@@ -4,7 +4,6 @@ import {
   Text,
   ScrollView,
   Pressable,
-  ActivityIndicator,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useLocalSearchParams } from "expo-router";
@@ -23,6 +22,10 @@ import { RosterEditor } from "../RosterEditor";
 import { shiftDate } from "@/src/libs/shiftDate";
 import { formatDisplayDate } from "@/src/libs/formatDisplayDate";
 import { styles } from "@/src/style/markAttendance";
+import {
+  ChipRowSkeleton,
+  RosterEditorSkeleton,
+} from "@/components/ui/skeletons";
 
 
 /**
@@ -98,13 +101,24 @@ const MarkAttendancePage = () => {
   const isMarked = status?.isMarked ?? false;
   const disableNextDay = dayOffset >= 0;
 
+  // `isLoading` is true for a query key with no cached data even though
+  // `staleTime` is set, so this fires on every section and day change. It gates
+  // the banners as well as the loader: the skeleton draws a banner placeholder
+  // of its own, and rendering both would stack two banners for a frame.
+  const isInitialLoad = !!sectionId && (statusLoading || rosterLoading);
+
   return (
     <SafeAreaView style={styles.screen} edges={["top"]}>
       <ScrollView contentContainerStyle={{ paddingBottom: tabBarClearance }}>
         <Text style={styles.pageTitle}>Mark Attendance</Text>
 
         {sectionsLoading && (
-          <ActivityIndicator style={{ marginBottom: 12 }} color="#2563EB" />
+          // Same wrapper as the real picker below: it adds 16px on top of the
+          // skeleton's own inset, so the pills do not jump sideways when the
+          // sections land.
+          <View style={{ marginBottom: 16, paddingHorizontal: 16 }}>
+            <ChipRowSkeleton />
+          </View>
         )}
 
         {sections && sections.length > 0 && (
@@ -126,9 +140,11 @@ const MarkAttendancePage = () => {
           <Pressable
             onPress={() => setDayOffset((d) => d - 1)}
             hitSlop={8}
+            accessibilityRole="button"
+            accessibilityLabel="Previous day"
             style={({ pressed }) => [
               styles.navButton,
-              pressed && { backgroundColor: "#F3F4F6" },
+              pressed && styles.navButtonPressed,
             ]}
           >
             <Feather name="chevron-left" size={20} color="#374151" />
@@ -143,9 +159,12 @@ const MarkAttendancePage = () => {
             onPress={() => !disableNextDay && setDayOffset((d) => d + 1)}
             disabled={disableNextDay}
             hitSlop={8}
+            accessibilityRole="button"
+            accessibilityLabel="Next day"
+            accessibilityState={{ disabled: disableNextDay }}
             style={({ pressed }) => [
               styles.navButton,
-              pressed && !disableNextDay && { backgroundColor: "#F3F4F6" },
+              pressed && !disableNextDay && styles.navButtonPressed,
               disableNextDay && { opacity: 0.3 },
             ]}
           >
@@ -164,9 +183,7 @@ const MarkAttendancePage = () => {
           </View>
         )}
 
-        {sectionId && (statusLoading || rosterLoading) && (
-          <ActivityIndicator style={{ marginTop: 32 }} color="#2563EB" />
-        )}
+        {isInitialLoad && <RosterEditorSkeleton />}
 
         {sectionId && (statusError || rosterError) && (
           <View style={styles.errorBanner}>
@@ -197,7 +214,7 @@ const MarkAttendancePage = () => {
           </View>
         )}
 
-        {sectionId && status && (
+        {sectionId && !isInitialLoad && status && (
           <>
 {isLocked && (
               <View style={[styles.banner, styles.bannerAmber]}>

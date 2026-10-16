@@ -1,6 +1,7 @@
 import React from 'react';
-import { View, ScrollView } from 'react-native';
+import { View, ScrollView, type ViewStyle } from 'react-native';
 import { styles } from '@/src/style/Teacher';
+import { styles as attendanceStyles } from '@/src/style/markAttendance';
 import {
   Skeleton,
   SkeletonText,
@@ -240,16 +241,25 @@ export const NotificationListSkeleton = ({ count = 8 }: { count?: number }) => (
 );
 
 /** Matches `components/attendance-page/StudentRow.tsx` (P/A/L picker). */
-export const RosterRowsSkeleton = ({ count = 8 }: { count?: number }) => (
+export const RosterRowsSkeleton = ({
+  count = 8,
+  style,
+}: {
+  count?: number;
+  /** Replaces the default card shell, so a caller can match its own container. */
+  style?: ViewStyle;
+}) => (
   <View
-    style={{
-      marginHorizontal: 16,
-      backgroundColor: '#FFFFFF',
-      borderRadius: RADIUS.xl,
-      borderWidth: 1,
-      borderColor: '#F3F4F6',
-      overflow: 'hidden',
-    }}
+    style={
+      style ?? {
+        marginHorizontal: 16,
+        backgroundColor: '#FFFFFF',
+        borderRadius: RADIUS.xl,
+        borderWidth: 1,
+        borderColor: '#F3F4F6',
+        overflow: 'hidden',
+      }
+    }
   >
     {Array.from({ length: count }).map((_, i) => (
       <View
@@ -273,6 +283,48 @@ export const RosterRowsSkeleton = ({ count = 8 }: { count?: number }) => (
       </View>
     ))}
   </View>
+);
+
+/**
+ * Matches `components/attendance-page/RosterEditor.tsx` in full: the status
+ * banner, the "All P/A/L" row, the roster card and the save button.
+ *
+ * The pieces around the roster matter as much as the rows do. The teacher
+ * attendance screen used to swap this entire block for one small spinner, so
+ * every section and day change collapsed the page and then pushed it back down
+ * when the data landed. Layout values come from the real stylesheet where they
+ * are pure geometry, so the two cannot drift apart.
+ */
+export const RosterEditorSkeleton = ({ count = 8 }: { count?: number }) => (
+  <>
+    <Skeleton
+      height={44}
+      radius={12}
+      style={{ marginHorizontal: 16, marginBottom: 12 }}
+    />
+
+    <View style={attendanceStyles.markAllRow}>
+      <View style={{ flexDirection: 'row' }}>
+        {[0, 1, 2].map((i) => (
+          <Skeleton
+            key={i}
+            width={74}
+            height={29}
+            radius="full"
+            phase={i}
+            style={{ marginRight: 8 }}
+          />
+        ))}
+      </View>
+      <Skeleton width={30} height={12} radius="sm" phase={1} />
+    </View>
+
+    <RosterRowsSkeleton count={count} style={attendanceStyles.rosterCard} />
+
+    <View style={{ padding: 16 }}>
+      <Skeleton height={47} radius={12} />
+    </View>
+  </>
 );
 
 /** Matches the mark-entry rows in `components/mark-page/main/MarkEntry.tsx`. */

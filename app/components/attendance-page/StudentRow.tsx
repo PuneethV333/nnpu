@@ -42,9 +42,21 @@ export const StudentRow = ({
               marginLeft: 8,
               alignItems: "center",
               justifyContent: "center",
-              backgroundColor: selected ? opt.color : "#F3F4F6",
-              opacity: disabled ? 0.5 : pressed ? 0.6 : 1,
-              transform: [{ scale: pressed && !disabled ? 0.88 : 1 }],
+              // Press feedback is a darker fill, not a fade. Fading the selected
+              // button pulled its white label toward the white card, which is
+              // the same vanished-button class of bug the comment above guards
+              // against - and it bit hardest on the button the teacher had just
+              // picked. The small scale stays as a second, tactile cue.
+              backgroundColor:
+                pressed && !disabled
+                  ? selected
+                    ? opt.pressedColor
+                    : "#D1D5DB"
+                  : selected
+                    ? opt.color
+                    : "#F3F4F6",
+              opacity: disabled ? 0.5 : 1,
+              transform: [{ scale: pressed && !disabled ? 0.94 : 1 }],
               borderWidth: selected ? 2 : 1,
               borderColor: selected ? "#FFFFFF" : "#E5E7EB",
               shadowColor: selected ? opt.color : "transparent",

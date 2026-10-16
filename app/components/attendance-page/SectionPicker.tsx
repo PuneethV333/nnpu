@@ -22,12 +22,37 @@ export const SectionPicker = ({
       return (
         <Pressable
           onPress={() => onSelect(item.id)}
-          className="px-3 py-2 rounded-full border flex-row items-center"
-          style={{
+          accessibilityRole="button"
+          accessibilityState={{ selected }}
+          // No `className` on this Pressable, for the reason spelled out in
+          // components/attendance-page/StudentRow.tsx: NativeWind wraps a
+          // Pressable that has one and silently drops a function-valued
+          // `style`, which here would cost the pill its selected fill. The
+          // padding and radius that came from `px-3 py-2 rounded-full border`
+          // are in the style object below instead.
+          style={({ pressed }) => ({
+            flexDirection: "row",
+            alignItems: "center",
             gap: 6,
-            backgroundColor: selected ? "#2563EB" : "#FFFFFF",
-            borderColor: selected ? "#2563EB" : "#E5E7EB",
-          }}
+            paddingHorizontal: 12,
+            paddingVertical: 8,
+            borderRadius: 999,
+            borderWidth: 1,
+            // A selected pill darkens from the accent, an unselected one from
+            // white. #1D4ED8 is the token the Save button already uses.
+            backgroundColor: selected
+              ? pressed
+                ? "#1D4ED8"
+                : "#2563EB"
+              : pressed
+                ? "#E5E7EB"
+                : "#FFFFFF",
+            borderColor: selected
+              ? pressed
+                ? "#1D4ED8"
+                : "#2563EB"
+              : "#E5E7EB",
+          })}
         >
           <Text
             className="inter_medium text-sm"

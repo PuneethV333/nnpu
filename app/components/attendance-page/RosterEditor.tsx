@@ -95,12 +95,18 @@ const RosterEditor = ({
               key={opt.value}
               onPress={() => markAll(opt.value)}
               disabled={isLocked}
+              accessibilityRole="button"
               style={({ pressed }) => [
                 styles.chip,
                 {
-                  borderColor: opt.color + "55",
-                  backgroundColor: opt.color + "18",
-                  opacity: isLocked ? 0.5 : pressed ? 0.7 : 1,
+                  // Deepen the tint on press instead of fading the chip out.
+                  // These chips are already translucent, so a fade washed the
+                  // coloured label toward the page rather than reading as a hit.
+                  backgroundColor:
+                    pressed && !isLocked ? opt.color + "33" : opt.color + "18",
+                  borderColor:
+                    pressed && !isLocked ? opt.color + "77" : opt.color + "55",
+                  opacity: isLocked ? 0.5 : 1,
                 },
               ]}
             >
