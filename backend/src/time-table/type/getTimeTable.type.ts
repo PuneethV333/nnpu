@@ -12,6 +12,12 @@ export interface TimetableSlotType {
     teacher: string | null;
     language: string | null;
     combination: string | null;
+    /**
+     * The section the lesson is taught in, e.g. "1-SCI-A". Populated only on the
+     * teacher's own timetable, where the useful detail is *where* to go; it is
+     * `null` on the student view (they are already in that section).
+     */
+    section: string | null;
   }[];
 }
 

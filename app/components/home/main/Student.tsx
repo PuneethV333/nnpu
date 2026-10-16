@@ -18,6 +18,7 @@ import AnnouncementCard from "../Announcements";
 import AnnouncementsHeader from "../AnnouncementsHeader";
 import TimeTable from "../TimeTable";
 import ProgressCard from "@/components/attendance-page/ProgressCard";
+import { EmptyState } from "@/components/ui/Feedback";
 import { MONTH_LABELS } from "@/constants/months";
 import { DAY_CHIP_COLOR } from "@/constants/dayTypeColor";
 import {
@@ -123,6 +124,12 @@ const Student = () => {
 
           {timetableQuery.isLoading ? (
             <TimetableSkeleton />
+          ) : timetableQuery.isError ? (
+            <EmptyState
+              icon="alert-circle"
+              title="Couldn't load today's classes"
+              subtitle="Pull to refresh or check your connection."
+            />
           ) : todaySlots.length === 0 ? (
             <View style={styles.emptyBox}>
               <Text style={styles.emptyText}>

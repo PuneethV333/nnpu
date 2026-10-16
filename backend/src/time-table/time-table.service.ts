@@ -4,7 +4,7 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { Week } from '../generated/prisma';
+import { Role, Week } from '../generated/prisma';
 import { TimetableDayType } from './type/getTimeTable.type';
 import { zonedIsoWeekday } from '@/common/utils/date.util';
 
@@ -52,21 +52,44 @@ export class TimetableService {
     return date.toISOString().slice(11, 16);
   }
 
-  async getTimetable(authId: string): Promise<TimetableDayType[]> {
+  /**
+   * Resolves the caller's `User` row from their authId in a single query. The
+   * full row is returned (not just `{ userId, role }`) because the student path
+   * needs `sectionId` and `combinationId`; a second `user.findUnique` for fields
+   * already loaded here is the redundant-query bug this codebase has hit before.
+   */
+  private async resolveUser(authId: string) {
     const auth = await this.prisma.auth.findUnique({
       where: { authId },
-      include: {
-        user: true,
-      },
+      include: { user: true },
     });
 
     if (!auth) {
       throw new UnauthorizedException('user not found');
     }
 
-    const sectionId = auth.user.sectionId;
-    const studentCombinationId = auth.user.combinationId ?? null;
+    return auth.user;
+  }
 
+  async getTimetable(authId: string): Promise<TimetableDayType[]> {
+    const user = await this.resolveUser(authId);
+
+    // Teachers are not attached to a section the way a student is —
+    // `User.sectionId` is the "StudentSection" relation and is always null for
+    // staff, so the student path below threw `NotFoundException` for every
+    // teacher and their home page showed "no classes" permanently. A teacher's
+    // day is the set of slots they are *assigned to teach* instead.
+    if (user.role === Role.Teacher) {
+      return this.getTeacherTimetable(user.id);
+    }
+
+    return this.getStudentTimetable(user.sectionId, user.combinationId ?? null);
+  }
+
+  private async getStudentTimetable(
+    sectionId: string | null,
+    studentCombinationId: string | null,
+  ): Promise<TimetableDayType[]> {
     if (!sectionId) {
       throw new NotFoundException('user has no associated section');
     }
@@ -158,8 +181,8 @@ export class TimetableService {
         // Slots with no combination (i.e. not a split/elective period) are
         // common to everyone and always pass through. Slots tied to a
         // combination are narrowed down to this student's own combination.
-        // `auth.userId` is always present, so there is no "unknown student"
-        // case to fall back to.
+        // A student always has a combination here, so there is no "unknown
+        // student" case to fall back to.
         const filtered = candidates.filter(
           (s) => !s.combination || s.combination.id === studentCombinationId,
         );
@@ -179,9 +202,109 @@ export class TimetableService {
               null,
             language: s.language,
             combination: s.combination?.name ?? null,
+            // Always null on the student view: the section is implied.
+            section: null,
           })),
         };
       }),
+    }));
+  }
+
+  /**
+   * A teacher's weekly timetable: the slots they are actually assigned to teach.
+   *
+   * Ownership of a slot is resolved the same way the student view resolves the
+   * teacher shown next to a subject: `TimetableSlot.teacherId` is the explicit
+   * per-slot assignment, and when it is null the section's `SectionSubject` row
+   * (subject-level staffing) names the effective teacher. Without the fallback,
+   * a slot staffed only through `SectionSubject` would leave its teacher with an
+   * empty day.
+   *
+   * Unlike the student view, only periods the teacher teaches are returned —
+   * free periods and breaks are not "classes" for them.
+   */
+  private async getTeacherTimetable(
+    userId: string,
+  ): Promise<TimetableDayType[]> {
+    const assignments = await this.prisma.sectionSubject.findMany({
+      where: { teacherId: userId },
+      select: { sectionId: true, subjectId: true },
+    });
+
+    const assignedKeys = new Set(
+      assignments.map((a) => `${a.sectionId}:${a.subjectId}`),
+    );
+    const assignedSectionIds = [
+      ...new Set(assignments.map((a) => a.sectionId)),
+    ];
+
+    const [periods, slots] = await Promise.all([
+      this.prisma.period.findMany({ orderBy: { order: 'asc' } }),
+      this.prisma.timetableSlot.findMany({
+        where: {
+          OR: [
+            { teacherId: userId },
+            // Candidates for the subject-level fallback. Narrowed to the exact
+            // section *and* subject in JS below: Prisma cannot compare two
+            // columns inside a `some` filter, so a section-only match here
+            // would also pull in subjects this teacher does not teach.
+            { teacherId: null, sectionId: { in: assignedSectionIds } },
+          ],
+        },
+        include: {
+          subject: { select: { id: true, name: true } },
+          section: { select: { name: true } },
+          combination: { select: { id: true, name: true } },
+        },
+      }),
+    ]);
+
+    const mine = slots.filter(
+      (s) =>
+        s.teacherId === userId ||
+        assignedKeys.has(`${s.sectionId}:${s.subjectId}`),
+    );
+
+    const slotsByKey = new Map<string, typeof mine>();
+    for (const slot of mine) {
+      const key = `${slot.day}:${slot.periodId}`;
+      const arr = slotsByKey.get(key) ?? [];
+      arr.push(slot);
+      slotsByKey.set(key, arr);
+    }
+
+    return Object.values(Week).map((day) => ({
+      day,
+      slots: periods
+        .map((period) => {
+          const daySlots = slotsByKey.get(`${day}:${period.id}`) ?? [];
+          if (daySlots.length === 0) return null;
+
+          return {
+            periodId: period.id,
+            order: period.order,
+            startTime: this.formatTime(period.startTime),
+            endTime: this.formatTime(period.endTime),
+            isBreak: false,
+            label: null,
+            options: [...daySlots]
+              .sort(
+                (a, b) =>
+                  a.section.name.localeCompare(b.section.name) ||
+                  a.subject.name.localeCompare(b.subject.name),
+              )
+              .map((s) => ({
+                subject: s.subject.name,
+                // A teacher does not need to be told their own name; the
+                // useful detail is which class to walk into.
+                teacher: null,
+                language: s.language,
+                combination: s.combination?.name ?? null,
+                section: s.section.name,
+              })),
+          };
+        })
+        .filter((slot): slot is NonNullable<typeof slot> => slot !== null),
     }));
   }
 

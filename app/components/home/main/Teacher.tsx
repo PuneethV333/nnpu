@@ -72,6 +72,12 @@ const Teacher = () => {
 
           {timetableQuery.isLoading ? (
             <TimetableSkeleton />
+          ) : timetableQuery.isError ? (
+            <EmptyState
+              icon="alert-circle"
+              title="Couldn't load today's classes"
+              subtitle="Pull to refresh or check your connection."
+            />
           ) : todaySlots.length === 0 ? (
             <View style={styles.emptyBox}>
               <Text style={styles.emptyText}>

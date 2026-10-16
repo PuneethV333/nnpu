@@ -5,6 +5,10 @@ export const TimetableOptionSchema = z.object({
   teacher: z.string().nullable(),
   language: z.string().nullable(),
   combination: z.string().nullable(),
+  // Populated only on the teacher's own timetable (the section the lesson is
+  // taught in); null on the student view. Additive, so older payloads that
+  // omit it would fail parsing — the backend always emits it.
+  section: z.string().nullable(),
 });
 
 export const TimetableSlotSchema = z.object({

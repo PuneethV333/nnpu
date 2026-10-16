@@ -68,11 +68,11 @@ const TimeTable = ({
                 {opt.subject}
                 {opt.language ? ` (${opt.language})` : ''}
               </Text>
-              {opt.teacher && (
+              {opt.section || opt.teacher ? (
                 <Text className="text-[13px] text-gray-500 mt-0.5">
-                  {opt.teacher}
+                  {opt.section ?? opt.teacher}
                 </Text>
-              )}
+              ) : null}
             </View>
           ))
         )}
