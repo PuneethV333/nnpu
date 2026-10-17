@@ -24,6 +24,7 @@ import { MailModule } from './mail/mail.module';
 import { UsersModule } from './users/users.module';
 import { SectionsModule } from './sections/sections.module';
 import { DashboardModule } from './dashboard/dashboard.module';
+import { CombinationsModule } from './combinations/combinations.module';
 
 @Module({
   imports: [
@@ -121,6 +122,7 @@ import { DashboardModule } from './dashboard/dashboard.module';
     UsersModule,
     SectionsModule,
     DashboardModule,
+    CombinationsModule,
   ],
   controllers: [AppController],
   providers: [
