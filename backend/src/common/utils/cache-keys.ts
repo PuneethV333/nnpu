@@ -32,8 +32,24 @@ export const TEACHER_SECTIONS_CACHE_PREFIX = 'sections:teacher:*';
  */
 export const ALL_SECTIONS_CACHE_KEY = 'sections:all';
 
-/** Calendar day ranges, keyed by from/to dates. */
-export const CALENDAR_CACHE_PREFIX = 'range:*';
+/**
+ * Calendar day ranges, keyed by from/to dates.
+ *
+ * The key carries a version segment. A range entry is only invalidated by a
+ * write through `overrideDay`/`generateYear`; a *data* change that reaches the
+ * calendar without going through those — e.g. a backfill migration correcting
+ * `AcademicCalendarDay` rows — cannot clear Redis itself. Bumping this version
+ * orphans every pre-existing entry in one step, so a corrected calendar is
+ * served immediately instead of for up to the 1h TTL. (`saturday_is_a_working_day`
+ * had to be paired with a manual cache clear for exactly this reason: the live
+ * API kept returning the stale `Weekend` Saturday from `range:*`.)
+ */
+export const CALENDAR_CACHE_VERSION = 'v2';
+
+export const CALENDAR_CACHE_PREFIX = `calendar:range:${CALENDAR_CACHE_VERSION}:*`;
+
+export const calendarCacheKey = (from: string, to: string): string =>
+  `calendar:range:${CALENDAR_CACHE_VERSION}:${from}:${to}`;
 
 /**
  * Announcements. Two prefixes, singular and plural, because the keys are

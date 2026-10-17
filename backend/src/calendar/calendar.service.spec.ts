@@ -180,14 +180,14 @@ describe('CalendarService', () => {
     it('clears cached ranges after generateYear', async () => {
       await service.generateYear(dto());
 
-      expect(redis.delPattern).toHaveBeenCalledWith('range:*');
+      expect(redis.delPattern).toHaveBeenCalledWith('calendar:range:v2:*');
     });
 
     it('clears cached ranges after overrideDay', async () => {
       await service.overrideDay('2026-01-07', 'Holiday', 'Founder Day');
 
       // Without this the previous day stayed visible for up to an hour.
-      expect(redis.delPattern).toHaveBeenCalledWith('range:*');
+      expect(redis.delPattern).toHaveBeenCalledWith('calendar:range:v2:*');
     });
 
     it('does not fail the write when cache invalidation fails', async () => {
@@ -224,7 +224,9 @@ describe('CalendarService', () => {
         service.getRange('2026-06-01', '2027-05-31'),
       ).resolves.toBeDefined();
 
-      expect(redis.get).toHaveBeenCalledWith('range:2026-06-01:2027-05-31');
+      expect(redis.get).toHaveBeenCalledWith(
+        'calendar:range:v2:2026-06-01:2027-05-31',
+      );
     });
   });
 });

@@ -6,8 +6,12 @@ import { DayType } from '@/generated/prisma';
 import { range } from './types/range.type';
 import { RedisService } from '@/redis/redis.service';
 import { BadRequestException } from '@nestjs/common';
+import {
+  CALENDAR_CACHE_PREFIX,
+  calendarCacheKey,
+} from '@/common/utils/cache-keys';
 
-/** See getRange: bounds the `range:*` cache keyspace. */
+/** See getRange: bounds the calendar range cache keyspace. */
 const MAX_RANGE_DAYS = 732;
 
 @Injectable()
@@ -104,7 +108,7 @@ export class CalendarService {
       );
     }
 
-    const cacheKey = `range:${from}:${to}`;
+    const cacheKey = calendarCacheKey(from, to);
 
     const cached = await this.redis.get<range[]>(cacheKey);
 
@@ -154,7 +158,7 @@ export class CalendarService {
   }
 
   /**
-   * Drops every cached `range:*` entry.
+   * Drops every cached calendar range entry.
    *
    * getRange caches on the exact `from`/`to` pair the client asked for, so the
    * set of affected keys cannot be derived from a single write — they have to be
@@ -163,7 +167,7 @@ export class CalendarService {
    */
   private async invalidateRangeCache(): Promise<void> {
     try {
-      await this.redis.delPattern('range:*');
+      await this.redis.delPattern(CALENDAR_CACHE_PREFIX);
     } catch (err) {
       // Stale cache is preferable to a failed write.
       this.logger.warn(
