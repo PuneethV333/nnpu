@@ -176,8 +176,21 @@ const Announcements = () => {
         {isAdmin ? (
           <Pressable
             onPress={() => setCreating(true)}
-            className="flex-row items-center rounded-full bg-indigo-600 px-3.5 py-2"
-            style={{ gap: 6, backgroundColor: '#4F46E5' }}
+            accessibilityRole="button"
+            accessibilityLabel="New announcement"
+            // Geometry and fill both live in the style function: a
+            // function-valued `style` is dropped when `className` is present,
+            // so the indigo fill had to be forced through a static style and
+            // there was no press state at all.
+            style={({ pressed }) => ({
+              flexDirection: 'row',
+              alignItems: 'center',
+              borderRadius: 9999,
+              paddingHorizontal: 14,
+              paddingVertical: 8,
+              gap: 6,
+              backgroundColor: pressed ? '#4338CA' : '#4F46E5',
+            })}
           >
             <Feather name="plus" size={15} color="#FFFFFF" />
             <Text className="text-sm font-semibold text-white">New</Text>

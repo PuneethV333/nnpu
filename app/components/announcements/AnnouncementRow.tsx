@@ -21,15 +21,34 @@ const AnnouncementRow = ({ item, onPress, onEdit, onDelete, deleting }: Props) =
   return (
     <Pressable
       onPress={onPress}
-      className="mx-4 mb-3 bg-white rounded-2xl border border-gray-100 p-4"
-      style={{ opacity: deleting ? 0.5 : 1 }}
+      accessibilityRole="button"
+      // No `className`: NativeWind drops a function-valued `style` when the
+      // Pressable is className'd, so the press fill never reached the card.
+      // The mx-4 / mb-3 / p-4 / rounded-2xl / border geometry from the old class
+      // list is written out here instead.
+      style={({ pressed }) => ({
+        marginHorizontal: 16,
+        marginBottom: 12,
+        borderRadius: 16,
+        borderWidth: 1,
+        borderColor: '#F3F4F6',
+        padding: 16,
+        backgroundColor: pressed ? '#F3F4F6' : '#FFFFFF',
+        opacity: deleting ? 0.5 : 1,
+      })}
     >
       <View className="flex-row items-center justify-between mb-2">
         <Pill label={meta.label} color={meta.color} />
         {onEdit || onDelete ? (
           <View className="flex-row" style={{ gap: 14 }}>
             {onEdit ? (
-              <Pressable onPress={onEdit} hitSlop={10} accessibilityLabel="Edit announcement">
+              <Pressable
+                onPress={onEdit}
+                hitSlop={10}
+                accessibilityRole="button"
+                accessibilityLabel="Edit announcement"
+                style={({ pressed }) => ({ opacity: pressed ? 0.4 : 1 })}
+              >
                 <Feather name="edit-2" size={16} color="#6B7280" />
               </Pressable>
             ) : null}
@@ -38,7 +57,9 @@ const AnnouncementRow = ({ item, onPress, onEdit, onDelete, deleting }: Props) =
                 onPress={onDelete}
                 disabled={deleting}
                 hitSlop={10}
+                accessibilityRole="button"
                 accessibilityLabel="Delete announcement"
+                style={({ pressed }) => ({ opacity: pressed ? 0.4 : 1 })}
               >
                 {deleting ? (
                   <ActivityIndicator size="small" color="#DC2626" />
