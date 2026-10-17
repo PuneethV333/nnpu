@@ -55,6 +55,41 @@ export class UsersService {
   }
 
   /**
+   * Active teachers, for the staffing pickers.
+   *
+   * The pickers used to build their list out of section assignments, so a
+   * teacher who had not been staffed into any section could not be picked — and
+   * therefore could never be staffed at all. That is a deadlock as soon as
+   * teachers can be created, so the list comes from the accounts themselves.
+   *
+   * A teacher with no `PersonalDetails` row still appears, with a null name,
+   * rather than silently vanishing from the picker. Sorted here rather than with
+   * `orderBy: { details: { name: 'asc' } }` because the relation is optional,
+   * and where an account with no details sorts is then engine-defined.
+   */
+  async getTeachers() {
+    const teachers = await this.prisma.user.findMany({
+      where: { role: 'Teacher', isActive: true },
+      select: {
+        id: true,
+        details: { select: { name: true } },
+        subjectsTaught: { select: { subjectId: true } },
+      },
+    });
+
+    return teachers
+      .map((t) => ({
+        id: t.id,
+        name: t.details?.name ?? null,
+        // Carried so the picker can mark the teachers who were recorded as
+        // teaching the subject being staffed. Without this the subjects captured
+        // when a teacher is created would be write-only.
+        subjectIds: t.subjectsTaught.map((s) => s.subjectId),
+      }))
+      .sort((a, b) => (a.name ?? '').localeCompare(b.name ?? ''));
+  }
+
+  /**
    * Best-effort cache invalidation.
    *
    * A stale cache here is a display problem that self-heals on the next write,

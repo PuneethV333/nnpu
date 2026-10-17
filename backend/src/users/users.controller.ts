@@ -1,4 +1,4 @@
-import { Body, Controller, Param, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import { JwtAuthGuard } from '@/auth/guard/jwt-auth.guard';
@@ -14,6 +14,26 @@ import { PassOutStudentsDto, TransferStudentDto, UserIdParamDto } from './dto';
 @Controller('users')
 export class UsersController {
   constructor(private readonly usersService: UsersService) {}
+
+  /**
+   * The staffing pickers' list of teachers. Declared above the `:userId/*`
+   * routes for the same reason as `pass-out`: the literal path reads first,
+   * though there is no collision — the others all have a second segment.
+   *
+   * Admin-only, matching the staffing screens that consume it. It is not a
+   * directory: an id, a display name and the subject ids recorded against the
+   * teacher, and nothing else.
+   */
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('Admin')
+  @Get('teachers')
+  @ApiOperation({
+    summary:
+      'Active teachers (id + name) for the staffing pickers (admin only)',
+  })
+  getTeachers() {
+    return this.usersService.getTeachers();
+  }
 
   /**
    * Declared before the `:userId/*` routes, though it would not collide with

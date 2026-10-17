@@ -609,4 +609,42 @@ describe('UsersService', () => {
       );
     });
   });
+
+  describe('getTeachers', () => {
+    it('lists active teachers with their recorded subjects, sorted by name', async () => {
+      prisma.user.findMany.mockResolvedValue([
+        { id: 't2', details: { name: 'Zoya' }, subjectsTaught: [] },
+        {
+          id: 't1',
+          details: { name: 'Arun' },
+          subjectsTaught: [{ subjectId: 's1' }],
+        },
+      ]);
+
+      await expect(service.getTeachers()).resolves.toEqual([
+        { id: 't1', name: 'Arun', subjectIds: ['s1'] },
+        { id: 't2', name: 'Zoya', subjectIds: [] },
+      ]);
+
+      // Deactivated teachers are excluded at the query, not filtered afterwards.
+      expect(prisma.user.findMany).toHaveBeenCalledWith({
+        where: { role: 'Teacher', isActive: true },
+        select: {
+          id: true,
+          details: { select: { name: true } },
+          subjectsTaught: { select: { subjectId: true } },
+        },
+      });
+    });
+
+    it('keeps a teacher with no name rather than dropping them from the picker', async () => {
+      prisma.user.findMany.mockResolvedValue([
+        { id: 't1', details: null, subjectsTaught: [] },
+      ]);
+
+      await expect(service.getTeachers()).resolves.toEqual([
+        { id: 't1', name: null, subjectIds: [] },
+      ]);
+    });
+  });
 });
