@@ -105,9 +105,14 @@ export class TimetableService {
 
     // The stream comes from the caller's own combination. It used to be inferred
     // from `section.students take: 1` with no ordering — i.e. whichever student
-    // the database happened to return first. A section holds both Science and
-    // Commerce students (that is what Combination exists for), so the periods
-    // shown depended on non-deterministic row order.
+    // the database happened to return first — so the period grid depended on
+    // non-deterministic row order.
+    //
+    // A section is single-stream, never mixed: `Section.session` is
+    // stream-prefixed ("SCI-A" / "COM-A") by `sectionSessionKey`, and both
+    // student entry paths reject a stream that disagrees with it. What a section
+    // *can* hold is several combinations of that one stream (PCMB and PCMC
+    // together), which is what `Combination` is for.
     const combination = studentCombinationId
       ? await this.prisma.combination.findUnique({
           where: { id: studentCombinationId },
