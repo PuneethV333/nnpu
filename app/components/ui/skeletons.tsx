@@ -370,6 +370,51 @@ export const RosterRowsSkeleton = ({
 );
 
 /**
+ * Matches a student row in `components/school-page/StudentsTab.tsx`: the 32px
+ * avatar circle, the name, and the three-dot affordance, in the same white
+ * card shell the real list uses. The generic `SkeletonList` it replaces drew
+ * text bars with no avatar, so the section-selected state reflowed when the
+ * rows landed.
+ */
+export const StudentListSkeleton = ({ count = 6 }: { count?: number }) => (
+  <View
+    style={{
+      marginHorizontal: 16,
+      backgroundColor: '#FFFFFF',
+      borderRadius: RADIUS.xl,
+      borderWidth: 1,
+      borderColor: '#F3F4F6',
+      overflow: 'hidden',
+    }}
+  >
+    {Array.from({ length: count }).map((_, i) => (
+      <View
+        key={i}
+        style={{
+          flexDirection: 'row',
+          alignItems: 'center',
+          paddingHorizontal: 16,
+          paddingVertical: 12,
+          borderTopWidth: i === 0 ? 0 : 1,
+          borderTopColor: '#F3F4F6',
+        }}
+      >
+        <Skeleton width={32} height={32} radius="full" phase={i} />
+        <Skeleton
+          width={140}
+          height={13}
+          radius="sm"
+          phase={i}
+          style={{ marginLeft: 12 }}
+        />
+        <View style={{ flex: 1 }} />
+        <Skeleton width={18} height={18} radius="sm" phase={i} />
+      </View>
+    ))}
+  </View>
+);
+
+/**
  * Matches `components/attendance-page/RosterEditor.tsx` in full: the status
  * banner, the "All P/A/L" row, the roster card and the save button.
  *

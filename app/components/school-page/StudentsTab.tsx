@@ -4,7 +4,7 @@ import { Feather } from '@expo/vector-icons';
 import { useGetAllSections } from '@/src/hooks/useSections';
 import { useGetStudents } from '@/src/hooks/useStudents';
 import { EmptyState, ErrorState } from '@/components/ui/Feedback';
-import { SkeletonList } from '@/components/ui/skeletons';
+import { SkeletonList, StudentListSkeleton } from '@/components/ui/skeletons';
 import { Card, FieldLabel, Pill, SectionTitle } from '@/components/ui/Primitives';
 import SectionChips from '@/components/ui/SectionChips';
 import ImportCard from './ImportCard';
@@ -92,9 +92,7 @@ const StudentsTab = () => {
           </View>
 
           {studentsLoading ? (
-            <View>
-              <SkeletonList count={6} lastWidth="55%" />
-            </View>
+            <StudentListSkeleton count={6} />
           ) : studentsError ? (
             <ErrorState
               title="Couldn't load students"
@@ -116,31 +114,47 @@ const StudentsTab = () => {
                   <Pressable
                     key={s.id}
                     onPress={() => setActive(s)}
-                    className={`flex-row items-center px-4 py-3 ${
-                      idx !== filtered.length - 1 ? 'border-b border-gray-100' : ''
-                    }`}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Manage ${s.name ?? s.id}`}
+                    // No `className`: NativeWind drops a function-valued `style`
+                    // when a `className` is also present, so this row's `#F9FAFB`
+                    // press fill was computed on every tap and discarded — the
+                    // three-dot affordance looked inert. Geometry from the old
+                    // class list lives in the style function instead, and the
+                    // dots are painted from the render-prop so the tap target
+                    // itself visibly reacts. Same fix as SettingsSection.
                     style={({ pressed }) => ({
-                      backgroundColor: pressed ? '#F9FAFB' : 'transparent',
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      paddingHorizontal: 16,
+                      paddingVertical: 12,
+                      borderBottomWidth: idx !== filtered.length - 1 ? 1 : 0,
+                      borderBottomColor: '#F3F4F6',
+                      backgroundColor: pressed ? '#F3F4F6' : 'transparent',
                     })}
                   >
-                    <View className="w-8 h-8 rounded-full bg-gray-100 items-center justify-center">
-                      <Text className="text-xs font-bold text-gray-600">
-                        {(s.name ?? s.id).charAt(0).toUpperCase()}
-                      </Text>
-                    </View>
-                    <Text
-                      className="text-[15px] font-medium text-gray-900 ml-3 flex-1"
-                      numberOfLines={1}
-                    >
-                      {s.name ?? s.id}
-                    </Text>
-                    {known === false ? <Pill label="Deactivated" color="#DC2626" /> : null}
-                    <Feather
-                      name="more-horizontal"
-                      size={18}
-                      color="#9CA3AF"
-                      style={{ marginLeft: 8 }}
-                    />
+                    {({ pressed }) => (
+                      <>
+                        <View className="w-8 h-8 rounded-full bg-gray-100 items-center justify-center">
+                          <Text className="text-xs font-bold text-gray-600">
+                            {(s.name ?? s.id).charAt(0).toUpperCase()}
+                          </Text>
+                        </View>
+                        <Text
+                          className="text-[15px] font-medium text-gray-900 ml-3 flex-1"
+                          numberOfLines={1}
+                        >
+                          {s.name ?? s.id}
+                        </Text>
+                        {known === false ? <Pill label="Deactivated" color="#DC2626" /> : null}
+                        <Feather
+                          name="more-horizontal"
+                          size={18}
+                          color={pressed ? '#4B5563' : '#9CA3AF'}
+                          style={{ marginLeft: 8 }}
+                        />
+                      </>
+                    )}
                   </Pressable>
                 );
               })}
