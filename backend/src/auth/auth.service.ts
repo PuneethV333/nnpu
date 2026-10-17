@@ -313,10 +313,16 @@ export class AuthService {
             classTeacher: { include: { details: true } },
           },
         },
-        teachingSubjects: {
-          include: {
-            subject: true,
-            section: { include: { class: true } },
+        teachingAssignments: {
+          select: {
+            sectionSubject: {
+              select: {
+                subject: { select: { name: true } },
+                section: {
+                  select: { name: true, class: { select: { name: true } } },
+                },
+              },
+            },
           },
         },
         classTeacherOf: { include: { class: true } },
@@ -375,11 +381,17 @@ export class AuthService {
           }
         : null,
       language: user.language,
-      teachingSubjects: user.teachingSubjects.map((ts) => ({
-        subject: { name: ts.subject.name },
+      // The wire key stays `teachingSubjects` — that is what the teacher profile
+      // renders — but it is assembled from the join rows now. One subject cannot
+      // appear twice for a teacher because the rows are unique on
+      // [sectionSubjectId, teacherId].
+      teachingSubjects: user.teachingAssignments.map((a) => ({
+        subject: { name: a.sectionSubject.subject.name },
         section: {
-          name: ts.section.name,
-          class: ts.section.class ? { name: ts.section.class.name } : null,
+          name: a.sectionSubject.section.name,
+          class: a.sectionSubject.section.class
+            ? { name: a.sectionSubject.section.class.name }
+            : null,
         },
       })),
       classTeacherOf: user.classTeacherOf
@@ -513,11 +525,15 @@ export class AuthService {
         role: true,
         details: { select: { name: true, profilePic: true } },
         school: { select: { name: true } },
-        teachingSubjects: {
+        teachingAssignments: {
           select: {
-            subject: { select: { name: true } },
-            section: {
-              select: { name: true, class: { select: { name: true } } },
+            sectionSubject: {
+              select: {
+                subject: { select: { name: true } },
+                section: {
+                  select: { name: true, class: { select: { name: true } } },
+                },
+              },
             },
           },
         },
@@ -528,7 +544,17 @@ export class AuthService {
     });
 
     if (!user) throw new NotFoundException('profile not found');
-    return user;
+
+    // Keep the flat `teachingSubjects` shape this method has always returned,
+    // even though the rows now come from the join table.
+    const { teachingAssignments, ...rest } = user;
+    return {
+      ...rest,
+      teachingSubjects: teachingAssignments.map((a) => ({
+        subject: a.sectionSubject.subject,
+        section: a.sectionSubject.section,
+      })),
+    };
   }
 
   async getAdminProfile(authId: string) {

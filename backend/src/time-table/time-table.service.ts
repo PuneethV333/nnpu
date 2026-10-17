@@ -142,16 +142,30 @@ export class TimetableService {
       }),
       this.prisma.sectionSubject.findMany({
         where: { sectionId },
-        include: {
-          teacher: { select: { details: { select: { name: true } } } },
+        select: {
+          subjectId: true,
+          teachers: {
+            select: {
+              teacher: { select: { details: { select: { name: true } } } },
+            },
+          },
         },
       }),
     ]);
 
+    /**
+     * Subject -> a teacher name, used only when a slot carries no explicit
+     * `teacherId`. A subject can now have several teachers and this map holds
+     * one, so it takes the first by name: deterministic, rather than whatever
+     * order the join rows happened to come back in.
+     */
     const defaultTeacherBySubject = new Map<string, string | null>(
       sectionSubjects.map((ss) => [
         ss.subjectId,
-        ss.teacher?.details?.name ?? null,
+        ss.teachers
+          .map((t) => t.teacher.details?.name)
+          .filter((n): n is string => !!n)
+          .sort((a, b) => a.localeCompare(b))[0] ?? null,
       ]),
     );
 
@@ -220,10 +234,10 @@ export class TimetableService {
    *
    * Ownership of a slot is resolved the same way the student view resolves the
    * teacher shown next to a subject: `TimetableSlot.teacherId` is the explicit
-   * per-slot assignment, and when it is null the section's `SectionSubject` row
-   * (subject-level staffing) names the effective teacher. Without the fallback,
-   * a slot staffed only through `SectionSubject` would leave its teacher with an
-   * empty day.
+   * per-slot assignment, and when it is null the section's subject staffing
+   * (`SectionSubjectTeacher`) names the effective teacher. Without the fallback,
+   * a slot staffed only through the subject's teacher set would leave its teacher
+   * with an empty day.
    *
    * Unlike the student view, only periods the teacher teaches are returned —
    * free periods and breaks are not "classes" for them.
@@ -231,16 +245,20 @@ export class TimetableService {
   private async getTeacherTimetable(
     userId: string,
   ): Promise<TimetableDayType[]> {
-    const assignments = await this.prisma.sectionSubject.findMany({
+    const assignments = await this.prisma.sectionSubjectTeacher.findMany({
       where: { teacherId: userId },
-      select: { sectionId: true, subjectId: true },
+      select: {
+        sectionSubject: { select: { sectionId: true, subjectId: true } },
+      },
     });
 
     const assignedKeys = new Set(
-      assignments.map((a) => `${a.sectionId}:${a.subjectId}`),
+      assignments.map(
+        (a) => `${a.sectionSubject.sectionId}:${a.sectionSubject.subjectId}`,
+      ),
     );
     const assignedSectionIds = [
-      ...new Set(assignments.map((a) => a.sectionId)),
+      ...new Set(assignments.map((a) => a.sectionSubject.sectionId)),
     ];
 
     const [periods, slots] = await Promise.all([

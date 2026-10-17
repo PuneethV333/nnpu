@@ -130,7 +130,7 @@ export const assertSectionAccess = async (
       id: sectionId,
       OR: [
         { classTeacherId: userId },
-        { subjects: { some: { teacherId: userId } } },
+        { subjects: { some: { teachers: { some: { teacherId: userId } } } } },
       ],
     },
     select: { id: true },

@@ -40,8 +40,8 @@ export class AnnouncementService {
    * including ones deliberately targeted at a single section.
    *
    * Note `User.sectionId` is only populated for students; a teacher belongs to
-   * sections through `SectionSubject`, so their visibility is derived from their
-   * teaching assignments rather than their (null) own section.
+   * sections through `SectionSubjectTeacher`, so their visibility is derived from
+   * their teaching assignments rather than their (null) own section.
    */
   private async resolveAudience(authId: string): Promise<Audience> {
     const auth = await this.prisma.auth.findUnique({
@@ -65,12 +65,19 @@ export class AnnouncementService {
     }
 
     if (role === 'Teacher') {
-      const assignments = await this.prisma.sectionSubject.findMany({
+      // Through the join table, and deduped: a teacher on two subjects in one
+      // section would otherwise return that section twice.
+      const assignments = await this.prisma.sectionSubjectTeacher.findMany({
         where: { teacherId: auth.userId },
-        select: { sectionId: true },
+        select: { sectionSubject: { select: { sectionId: true } } },
       });
 
-      return { schoolId, sectionIds: assignments.map((a) => a.sectionId) };
+      return {
+        schoolId,
+        sectionIds: [
+          ...new Set(assignments.map((a) => a.sectionSubject.sectionId)),
+        ],
+      };
     }
 
     return { schoolId, sectionIds: sectionId ? [sectionId] : [] };

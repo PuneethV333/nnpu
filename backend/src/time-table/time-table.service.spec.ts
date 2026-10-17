@@ -7,7 +7,8 @@ import { PrismaService } from '@/prisma/prisma.service';
  * Regression coverage for the teacher home page bug: `getTimetable` assumed a
  * student (`User.sectionId` + `User.combinationId`) and threw NotFoundException
  * for every teacher, so the app rendered "No classes scheduled for today."
- * Keyed off `TimetableSlot.teacherId` / `SectionSubject.teacherId` instead.
+ * Keyed off `TimetableSlot.teacherId` / `SectionSubjectTeacher.teacherId`
+ * instead.
  */
 describe('TimetableService', () => {
   let service: TimetableService;
@@ -18,6 +19,7 @@ describe('TimetableService', () => {
     period: { findMany: jest.Mock };
     timetableSlot: { findMany: jest.Mock };
     sectionSubject: { findMany: jest.Mock };
+    sectionSubjectTeacher: { findMany: jest.Mock };
   };
 
   const time = (hhmm: string) => new Date(`1970-01-01T${hhmm}:00.000Z`);
@@ -30,6 +32,7 @@ describe('TimetableService', () => {
       period: { findMany: jest.fn().mockResolvedValue([]) },
       timetableSlot: { findMany: jest.fn().mockResolvedValue([]) },
       sectionSubject: { findMany: jest.fn().mockResolvedValue([]) },
+      sectionSubjectTeacher: { findMany: jest.fn().mockResolvedValue([]) },
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -102,8 +105,8 @@ describe('TimetableService', () => {
   it('credits a slot with no teacherId to the section-subject staffer', async () => {
     asUser({ id: 't1', role: 'Teacher', sectionId: null, combinationId: null });
     prisma.period.findMany.mockResolvedValue([period]);
-    prisma.sectionSubject.findMany.mockResolvedValue([
-      { sectionId: 'sec-1', subjectId: 'sub-1' },
+    prisma.sectionSubjectTeacher.findMany.mockResolvedValue([
+      { sectionSubject: { sectionId: 'sec-1', subjectId: 'sub-1' } },
     ]);
     prisma.timetableSlot.findMany.mockResolvedValue([
       slot({ teacherId: null }),

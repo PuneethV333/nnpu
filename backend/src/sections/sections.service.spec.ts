@@ -21,6 +21,7 @@ describe('SectionsService assignments', () => {
     subject: { findMany: jest.Mock };
     user: { findMany: jest.Mock };
     sectionSubject: { findMany: jest.Mock; upsert: jest.Mock };
+    sectionSubjectTeacher: { deleteMany: jest.Mock; createMany: jest.Mock };
     $transaction: jest.Mock;
   };
   let redis: { delPattern: jest.Mock; del: jest.Mock };
@@ -31,12 +32,15 @@ describe('SectionsService assignments', () => {
       subject: { findMany: jest.fn() },
       user: { findMany: jest.fn() },
       sectionSubject: { findMany: jest.fn(), upsert: jest.fn() },
-      $transaction: jest
-        .fn()
-        .mockImplementation((ops: unknown) =>
-          Promise.all(ops as Promise<unknown>[]),
-        ),
+      sectionSubjectTeacher: { deleteMany: jest.fn(), createMany: jest.fn() },
+      $transaction: jest.fn(),
     };
+    // `assignSubjects` now uses the interactive form because it needs the
+    // upserted row's id to address its teacher rows. Hand the callback the same
+    // mock client as the "tx".
+    prisma.$transaction.mockImplementation(
+      (cb: (t: typeof prisma) => unknown) => cb(prisma),
+    );
     redis = {
       delPattern: jest.fn().mockResolvedValue(1),
       del: jest.fn().mockResolvedValue(true),
@@ -180,12 +184,12 @@ describe('SectionsService assignments', () => {
   });
 
   describe('assignSubjects', () => {
-    const dto = {
+    const dto: AssignSubjectsDto = {
       assignments: [
-        { subjectId: 'sub-1', teacherId: 'teacher-1' },
-        { subjectId: 'sub-2', teacherId: 'teacher-2' },
+        { subjectId: 'sub-1', teacherIds: ['teacher-1'] },
+        { subjectId: 'sub-2', teacherIds: ['teacher-2'] },
       ],
-    } as AssignSubjectsDto;
+    };
 
     beforeEach(() => {
       prisma.section.findUnique.mockResolvedValue({ id: 'section-1' });
@@ -198,7 +202,10 @@ describe('SectionsService assignments', () => {
         teacher('teacher-2'),
       ]);
       prisma.sectionSubject.findMany.mockResolvedValue([]);
-      prisma.sectionSubject.upsert.mockResolvedValue({});
+      // The service reads `row.id` off the upsert to address its teacher rows.
+      prisma.sectionSubject.upsert.mockResolvedValue({ id: 'ss-1' });
+      prisma.sectionSubjectTeacher.createMany.mockResolvedValue({ count: 1 });
+      prisma.sectionSubjectTeacher.deleteMany.mockResolvedValue({ count: 0 });
       prisma.section.findUnique.mockResolvedValue({
         id: 'section-1',
         name: 'A',
@@ -208,22 +215,52 @@ describe('SectionsService assignments', () => {
       });
     });
 
-    it('upserts one row per subject', async () => {
+    it('keeps one row per subject and writes its teachers as a set', async () => {
       await service.assignSubjects('section-1', dto);
 
       expect(prisma.sectionSubject.upsert).toHaveBeenCalledTimes(2);
+      // The row no longer carries a teacher; the set lives beside it.
       expect(prisma.sectionSubject.upsert).toHaveBeenCalledWith(
         expect.objectContaining({
           where: {
             sectionId_subjectId: { sectionId: 'section-1', subjectId: 'sub-1' },
           },
-          create: {
-            sectionId: 'section-1',
-            subjectId: 'sub-1',
-            teacherId: 'teacher-1',
-          },
+          update: {},
+          create: { sectionId: 'section-1', subjectId: 'sub-1' },
         }),
       );
+      expect(prisma.sectionSubjectTeacher.createMany).toHaveBeenCalledWith({
+        data: [{ sectionSubjectId: 'ss-1', teacherId: 'teacher-1' }],
+      });
+    });
+
+    it('assigns more than one teacher to a subject', async () => {
+      await service.assignSubjects('section-1', {
+        assignments: [
+          { subjectId: 'sub-1', teacherIds: ['teacher-1', 'teacher-2'] },
+        ],
+      });
+
+      expect(prisma.sectionSubjectTeacher.createMany).toHaveBeenCalledWith({
+        data: [
+          { sectionSubjectId: 'ss-1', teacherId: 'teacher-1' },
+          { sectionSubjectId: 'ss-1', teacherId: 'teacher-2' },
+        ],
+      });
+    });
+
+    it('dedupes a teacher listed twice for one subject', async () => {
+      // [sectionSubjectId, teacherId] is unique, so a duplicate would abort the
+      // transaction on P2002.
+      await service.assignSubjects('section-1', {
+        assignments: [
+          { subjectId: 'sub-1', teacherIds: ['teacher-1', 'teacher-1'] },
+        ],
+      });
+
+      expect(prisma.sectionSubjectTeacher.createMany).toHaveBeenCalledWith({
+        data: [{ sectionSubjectId: 'ss-1', teacherId: 'teacher-1' }],
+      });
     });
 
     it('rejects a duplicate subject in the same request', async () => {
@@ -231,8 +268,8 @@ describe('SectionsService assignments', () => {
       await expect(
         service.assignSubjects('section-1', {
           assignments: [
-            { subjectId: 'sub-1', teacherId: 'teacher-1' },
-            { subjectId: 'sub-1', teacherId: 'teacher-2' },
+            { subjectId: 'sub-1', teacherIds: ['teacher-1'] },
+            { subjectId: 'sub-1', teacherIds: ['teacher-2'] },
           ],
         }),
       ).rejects.toBeInstanceOf(BadRequestException);
@@ -255,14 +292,14 @@ describe('SectionsService assignments', () => {
 
       await expect(
         service.assignSubjects('section-1', {
-          assignments: [{ subjectId: 'sub-1', teacherId: 'admin-1' }],
+          assignments: [{ subjectId: 'sub-1', teacherIds: ['admin-1'] }],
         }),
       ).rejects.toBeInstanceOf(BadRequestException);
     });
 
     it('invalidates the previous holder when a subject is reassigned', async () => {
       prisma.sectionSubject.findMany.mockResolvedValue([
-        { subjectId: 'sub-1', teacherId: 'teacher-old' },
+        { subjectId: 'sub-1', teachers: [{ teacherId: 'teacher-old' }] },
       ]);
 
       await service.assignSubjects('section-1', dto);
@@ -272,18 +309,21 @@ describe('SectionsService assignments', () => {
       expect(redis.del).toHaveBeenCalledWith('sections:all');
     });
 
-    it('allows unassigning a subject with teacherId null', async () => {
+    it('keeps the subject and clears its teachers when teacherIds is empty', async () => {
       prisma.user.findMany.mockResolvedValue([]);
 
       await service.assignSubjects('section-1', {
-        assignments: [{ subjectId: 'sub-1', teacherId: null }],
+        assignments: [{ subjectId: 'sub-1', teacherIds: [] }],
       });
 
       expect(prisma.sectionSubject.upsert).toHaveBeenCalledWith(
-        expect.objectContaining({
-          update: { teacherId: null },
-        }),
+        expect.objectContaining({ update: {} }),
       );
+      // Unstaffed means the row survives with no teacher rows.
+      expect(prisma.sectionSubjectTeacher.deleteMany).toHaveBeenCalledWith({
+        where: { sectionSubjectId: 'ss-1' },
+      });
+      expect(prisma.sectionSubjectTeacher.createMany).not.toHaveBeenCalled();
     });
 
     it('does not fail the write when cache invalidation throws', async () => {

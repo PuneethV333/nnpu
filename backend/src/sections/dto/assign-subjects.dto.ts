@@ -1,34 +1,59 @@
 import { ApiProperty } from '@nestjs/swagger';
 import {
+  ArrayMaxSize,
   ArrayMinSize,
   IsArray,
-  IsDefined,
-  ValidateIf,
+  IsNotEmpty,
+  IsString,
+  MaxLength,
   ValidateNested,
 } from 'class-validator';
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import { IsBoundedId } from '@/common/decorators/is-bounded-id.decorator';
+
+/**
+ * Trim strings inside an array, mirroring `IsBoundedId`'s scalar trim.
+ *
+ * Its own function with an `unknown` return so the array branch never surfaces
+ * as `any` to `@typescript-eslint/no-unsafe-return`.
+ */
+const trimEach = (value: unknown): unknown => {
+  if (!Array.isArray(value)) return value;
+  return (value as unknown[]).map((v) =>
+    typeof v === 'string' ? v.trim() : v,
+  );
+};
 
 export class SubjectAssignmentDto {
   @ApiProperty({ example: 'clx1122334455abcdefghijk' })
   @IsBoundedId()
   subjectId!: string;
 
-  // `SectionSubject.teacherId` is nullable, so unassigning a subject is a real
-  // operation. `@IsDefined()` forces the key to be present (an absent key would
-  // reach Prisma as `undefined`, which means "leave unchanged" on update and
-  // "null" on create — ambiguous), while `@ValidateIf` lets an explicit `null`
-  // through without running the string/bounds validators on it.
+  /**
+   * Every teacher for this subject; an empty array leaves it unstaffed.
+   *
+   * Spelled out rather than `@IsBoundedId({ each: true })` because that helper is
+   * built from the plain (non-`each`) class-validator decorators, so it cannot
+   * validate the elements of an array. The trim transform is reproduced here for
+   * the same reason it exists on the scalar id: a padded id would reach Prisma and
+   * simply not match.
+   *
+   * An empty array is valid and means "not staffed yet" — `SectionSubject`
+   * survives with no teacher rows, which is the normal pre-term state.
+   */
   @ApiProperty({
-    example: 'clx1234567890abcdefghijk',
-    description: 'Teacher to assign. Pass null to unassign the subject.',
-    nullable: true,
-    type: String,
+    example: ['clx1234567890abcdefghijk'],
+    description:
+      'Teachers to assign. An empty array leaves the subject unstaffed.',
+    type: [String],
   })
-  @IsDefined()
-  @ValidateIf((_o, value: unknown) => value !== null)
-  @IsBoundedId()
-  teacherId!: string | null;
+  @IsArray()
+  @ArrayMaxSize(20)
+  @Transform(({ value }: { value: unknown }) => trimEach(value))
+  @IsString({ each: true })
+  @IsNotEmpty({ each: true })
+  @MaxLength(64, { each: true })
+  teacherIds!: string[];
 }
 
 /**
@@ -36,7 +61,8 @@ export class SubjectAssignmentDto {
  *
  * Applied as a set rather than one-at-a-time because a section normally has a
  * whole subject list to staff in a single pass, and each `SectionSubject` row
- * is keyed [sectionId, subjectId] — so this is an upsert per pair.
+ * is keyed [sectionId, subjectId] — so this is an upsert per pair, followed by a
+ * rewrite of that pair's `SectionSubjectTeacher` rows.
  */
 export class AssignSubjectsDto {
   @ApiProperty({ type: [SubjectAssignmentDto] })

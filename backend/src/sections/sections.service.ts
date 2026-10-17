@@ -40,7 +40,13 @@ export class SectionsService {
       where: {
         OR: [
           { classTeacherId: auth.userId },
-          { subjects: { some: { teacherId: auth.userId } } },
+          // Teachers now hold a subject through the `SectionSubjectTeacher` join
+          // rows, not a single column, so this is a `some` through `teachers`.
+          {
+            subjects: {
+              some: { teachers: { some: { teacherId: auth.userId } } },
+            },
+          },
         ],
       },
       include: { class: true, academicYear: true },
@@ -99,7 +105,7 @@ export class SectionsService {
    * Verifies the ids exist and are usable as staff.
    *
    * `role: 'Teacher'` matters: `Section.classTeacherId` and
-   * `SectionSubject.teacherId` both point at `User`, and both are used as
+   * `SectionSubjectTeacher.teacherId` both point at `User`, and both are used as
    * "who marks attendance here", so a Student or Admin id would silently
    * create an assignment that no attendance path honours.
    */
@@ -246,40 +252,61 @@ export class SectionsService {
       );
     }
 
-    await this.assertAssignableTeachers(
-      dto.assignments.map((a) => a.teacherId),
+    await this.assertAssignableTeachers([
+      ...new Set(dto.assignments.flatMap((a) => a.teacherIds)),
+    ]);
+
+    // Dedupe per subject. The join table is unique on [sectionSubjectId,
+    // teacherId], so the same teacher sent twice for one subject would abort the
+    // whole transaction on P2002 — and it cannot mean anything different.
+    const teacherIdsBySubject = new Map(
+      dto.assignments.map((a) => [a.subjectId, [...new Set(a.teacherIds)]]),
     );
 
-    // Capture the outgoing teachers before the upsert, so a reassignment
+    // Capture the outgoing teachers before the rewrite, so a reassignment
     // invalidates the cache of whoever used to hold the subject too.
     const existing = await this.prisma.sectionSubject.findMany({
       where: { sectionId, subjectId: { in: subjectIds } },
-      select: { subjectId: true, teacherId: true },
+      select: { subjectId: true, teachers: { select: { teacherId: true } } },
     });
-    const previousTeachers = existing.map((e) => e.teacherId);
-
-    await this.prisma.$transaction(
-      dto.assignments.map((a) =>
-        this.prisma.sectionSubject.upsert({
-          where: {
-            sectionId_subjectId: {
-              sectionId,
-              subjectId: a.subjectId,
-            },
-          },
-          update: { teacherId: a.teacherId },
-          create: {
-            sectionId,
-            subjectId: a.subjectId,
-            teacherId: a.teacherId,
-          },
-        }),
-      ),
+    const previousTeachers = existing.flatMap((e) =>
+      e.teachers.map((t) => t.teacherId),
     );
+
+    await this.prisma.$transaction(async (tx) => {
+      for (const a of dto.assignments) {
+        const row = await tx.sectionSubject.upsert({
+          where: {
+            sectionId_subjectId: { sectionId, subjectId: a.subjectId },
+          },
+          // The row's existence is the assignment; its teachers live in the join
+          // table, so there is nothing to update on the row itself.
+          update: {},
+          create: { sectionId, subjectId: a.subjectId },
+          select: { id: true },
+        });
+
+        // Replace, not merge: the request is the complete teacher set for this
+        // subject, so a teacher dropped from the picker has to disappear.
+        await tx.sectionSubjectTeacher.deleteMany({
+          where: { sectionSubjectId: row.id },
+        });
+
+        const teacherIds = teacherIdsBySubject.get(a.subjectId) ?? [];
+        if (teacherIds.length > 0) {
+          await tx.sectionSubjectTeacher.createMany({
+            data: teacherIds.map((teacherId) => ({
+              sectionSubjectId: row.id,
+              teacherId,
+            })),
+          });
+        }
+      }
+    });
 
     await this.invalidateTeacherSectionCache(
       ...previousTeachers,
-      ...dto.assignments.map((a) => a.teacherId),
+      ...[...teacherIdsBySubject.values()].flat(),
     );
 
     return this.getSectionAssignments(sectionId);
@@ -302,10 +329,13 @@ export class SectionsService {
         subjects: {
           select: {
             subjectId: true,
-            teacherId: true,
             subject: { select: { name: true, hasPractical: true } },
-            teacher: {
-              select: { id: true, details: { select: { name: true } } },
+            teachers: {
+              select: {
+                teacher: {
+                  select: { id: true, details: { select: { name: true } } },
+                },
+              },
             },
           },
           orderBy: { subject: { name: 'asc' } },
@@ -331,8 +361,14 @@ export class SectionsService {
         subjectId: s.subjectId,
         subjectName: s.subject.name,
         hasPractical: s.subject.hasPractical,
-        teacherId: s.teacherId,
-        teacherName: s.teacher?.details?.name ?? null,
+        // Sorted by name so the UI order is stable rather than following the
+        // database's insertion order for the join rows.
+        teachers: s.teachers
+          .map((t) => ({
+            id: t.teacher.id,
+            name: t.teacher.details?.name ?? null,
+          }))
+          .sort((a, b) => (a.name ?? '').localeCompare(b.name ?? '')),
       })),
     };
   }

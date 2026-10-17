@@ -45,11 +45,14 @@ export class MarksService {
   ): Promise<void> {
     if (role === 'Admin') return;
 
-    const sectionSubject = await this.prisma.sectionSubject.findUnique({
-      where: { sectionId_subjectId: { sectionId, subjectId } },
+    // "Assigned" is membership of the teacher set now, not equality with a
+    // single column — any one of a subject's teachers may enter its marks.
+    const assignment = await this.prisma.sectionSubjectTeacher.findFirst({
+      where: { teacherId: userId, sectionSubject: { sectionId, subjectId } },
+      select: { id: true },
     });
 
-    if (!sectionSubject || sectionSubject.teacherId !== userId) {
+    if (!assignment) {
       throw new ForbiddenException(
         'You are not the assigned teacher for this subject',
       );
@@ -68,8 +71,8 @@ export class MarksService {
   ): Promise<void> {
     if (role === 'Admin') return;
 
-    const assignment = await this.prisma.sectionSubject.findFirst({
-      where: { sectionId, teacherId: userId },
+    const assignment = await this.prisma.sectionSubjectTeacher.findFirst({
+      where: { teacherId: userId, sectionSubject: { sectionId } },
       select: { id: true },
     });
 
@@ -384,8 +387,10 @@ export class MarksService {
       where: {
         sectionId,
         // Admins can see every subject taught in the section (e.g. for
-        // oversight); teachers only see their own assigned subjects.
-        ...(role === 'Teacher' ? { teacherId: userId } : {}),
+        // oversight); teachers only see subjects they are actually on.
+        ...(role === 'Teacher'
+          ? { teachers: { some: { teacherId: userId } } }
+          : {}),
       },
       select: {
         subjectId: true,

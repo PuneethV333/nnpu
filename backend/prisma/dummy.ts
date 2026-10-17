@@ -558,10 +558,22 @@ async function main() {
       const subjectId = subjectMap[subName];
       const teacherId = teacherIds[plan.teacherOffset + (j % 5)]; // 5 teachers per section
 
-      await prisma.sectionSubject.upsert({
+      const sectionSubject = await prisma.sectionSubject.upsert({
         where: { sectionId_subjectId: { sectionId, subjectId } },
-        update: { teacherId },
-        create: { sectionId, subjectId, teacherId },
+        update: {},
+        create: { sectionId, subjectId },
+        select: { id: true },
+      });
+
+      await prisma.sectionSubjectTeacher.upsert({
+        where: {
+          sectionSubjectId_teacherId: {
+            sectionSubjectId: sectionSubject.id,
+            teacherId,
+          },
+        },
+        update: {},
+        create: { sectionSubjectId: sectionSubject.id, teacherId },
       });
     }
   }

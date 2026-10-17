@@ -37,7 +37,12 @@ describe('MarksService', () => {
               findMany: jest.fn(),
               create: jest.fn(),
             },
-            sectionSubject: { findUnique: jest.fn(), findFirst: jest.fn() },
+            sectionSubject: {
+              findUnique: jest.fn(),
+              findFirst: jest.fn(),
+              findMany: jest.fn(),
+            },
+            sectionSubjectTeacher: { findFirst: jest.fn() },
             subject: { findUnique: jest.fn() },
             mark: { findMany: jest.fn(), upsert: jest.fn() },
             $transaction: jest.fn(),
@@ -210,7 +215,9 @@ describe('MarksService', () => {
       // skipped entirely, so any logged-in user could list every assessment in
       // the school.
       asTeacher();
-      (prisma.sectionSubject.findFirst as jest.Mock).mockResolvedValue(null);
+      (prisma.sectionSubjectTeacher.findFirst as jest.Mock).mockResolvedValue(
+        null,
+      );
 
       await expect(
         service.listAssessments('section-1', undefined, 'teacher-auth'),
@@ -221,7 +228,7 @@ describe('MarksService', () => {
 
     it('allows a teacher assigned to the section', async () => {
       asTeacher();
-      (prisma.sectionSubject.findFirst as jest.Mock).mockResolvedValue({
+      (prisma.sectionSubjectTeacher.findFirst as jest.Mock).mockResolvedValue({
         id: 'ss-1',
       });
       (prisma.assessment.findMany as jest.Mock).mockResolvedValue([]);
@@ -238,7 +245,9 @@ describe('MarksService', () => {
 
     it('uses the stricter subject check when subjectId is supplied', async () => {
       asTeacher();
-      (prisma.sectionSubject.findUnique as jest.Mock).mockResolvedValue(null);
+      (prisma.sectionSubjectTeacher.findFirst as jest.Mock).mockResolvedValue(
+        null,
+      );
       (prisma.assessment.findMany as jest.Mock).mockResolvedValue([]);
 
       await expect(
@@ -267,7 +276,9 @@ describe('MarksService', () => {
       (prisma.user.findUnique as jest.Mock).mockResolvedValue({
         sectionId: 'section-9',
       });
-      (prisma.sectionSubject.findUnique as jest.Mock).mockResolvedValue(null);
+      (prisma.sectionSubjectTeacher.findFirst as jest.Mock).mockResolvedValue(
+        null,
+      );
 
       await expect(
         service.getFinalReport('student-9', 'subject-1', 'teacher-auth'),
@@ -284,10 +295,8 @@ describe('MarksService', () => {
       (prisma.user.findUnique as jest.Mock).mockResolvedValue({
         sectionId: 'section-1',
       });
-      (prisma.sectionSubject.findUnique as jest.Mock).mockResolvedValue({
-        sectionId: 'section-1',
-        subjectId: 'subject-1',
-        teacherId: 'teacher-1',
+      (prisma.sectionSubjectTeacher.findFirst as jest.Mock).mockResolvedValue({
+        id: 'ss-1',
       });
       (prisma.mark.findMany as jest.Mock).mockResolvedValue([]);
 

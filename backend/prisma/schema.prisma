@@ -63,7 +63,7 @@ model User {
 
   auth               Auth?
   details            PersonalDetails?
-  teachingSubjects   SectionSubject[] @relation("TeacherSubjects")
+  teachingAssignments SectionSubjectTeacher[] @relation("TeacherAssignments")
   studentAttendances Attendance[]     @relation("StudentAttendance")
   markedAttendances  Attendance[]     @relation("MarkedByTeacher")
   classTeacherOf     Section?         @relation("ClassTeacherOf")
@@ -273,13 +273,39 @@ model SectionSubject {
   sectionId String
   subject   Subject @relation(fields: [subjectId], references: [id])
   subjectId String
-  teacher   User?   @relation("TeacherSubjects", fields: [teacherId], references: [id])
-  teacherId String?
+
+  /// Teachers on this subject in this section. More than one is allowed
+  /// (co-teaching) and they are equal — every reader treats "is any member
+  /// this user" as the assignment check.
+  teachers SectionSubjectTeacher[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@unique([sectionId, subjectId])
+}
+
+/// One teacher on one `SectionSubject`.
+///
+/// This was a singular, nullable `SectionSubject.teacherId`. A subject can be
+/// taught by more than one teacher, so it became its own row rather than
+/// multiple `SectionSubject` rows per subject — which would have broken the
+/// `[sectionId, subjectId]` unique that makes "the subject list of a section"
+/// well-defined at all.
+model SectionSubjectTeacher {
+  id               String         @id @default(cuid())
+  sectionSubject   SectionSubject @relation(fields: [sectionSubjectId], references: [id], onDelete: Cascade)
+  sectionSubjectId String
+  teacher          User           @relation("TeacherAssignments", fields: [teacherId], references: [id])
+  teacherId        String
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([sectionSubjectId, teacherId])
+  /// The hot lookup: "every section-subject this teacher is on" (timetable,
+  /// teacher announcements, `/auth/me`) filters on this column alone.
+  @@index([teacherId])
 }
 
 model AcademicCalendarDay {
