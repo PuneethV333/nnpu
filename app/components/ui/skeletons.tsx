@@ -538,5 +538,91 @@ export const SectionTitleSkeleton = ({
   <Skeleton width={width} height={13} radius="sm" style={{ marginBottom: 12 }} />
 );
 
+/**
+ * Matches the shell shared by all three role profile pages
+ * (`components/profile-page/main/Student|Teacher|Admin.tsx`): the centred header
+ * block, one full-width info card, then the settings card.
+ *
+ * One shape covers all three because they read the same `/auth/me` payload and
+ * render the same three things; only the bits between the header and the
+ * settings card are role-specific (Teacher's class-teacher banner and subject
+ * list, Admin's stat cards), and those are conditional, so standing in for them
+ * would misrepresent two of the three pages.
+ *
+ * Geometry is transcribed from `ProfileHeader`, `Student`'s `InfoRow` and
+ * `SettingsSection` rather than approximated, so the swap to real content does
+ * not reflow.
+ */
+export const ProfileSkeleton = ({ rows = 4 }: { rows?: number }) => (
+  <View>
+    {/* ProfileHeader: items-center pt-6 pb-8. */}
+    <View style={{ alignItems: 'center', paddingTop: 24, paddingBottom: 32 }}>
+      <SkeletonCircle size={96} />
+      <Skeleton width={140} height={20} radius="sm" style={{ marginTop: 12 }} />
+      <Skeleton width={64} height={22} radius="full" style={{ marginTop: 4 }} />
+      <Skeleton width={180} height={13} radius="sm" style={{ marginTop: 8 }} />
+    </View>
+
+    {/* The info card. Rows are px-4 py-3 with a divider between them; the label
+        widths alternate only so the block does not read as a printed grid. */}
+    <View style={profileCard}>
+      {Array.from({ length: rows }).map((_, i) => (
+        <View
+          key={i}
+          style={{
+            paddingHorizontal: 16,
+            paddingVertical: 12,
+            borderBottomWidth: i === rows - 1 ? 0 : 1,
+            borderBottomColor: '#F3F4F6',
+          }}
+        >
+          <SkeletonRow
+            labelWidth={i % 2 === 0 ? 88 : 104}
+            valueWidth={64}
+            phase={i}
+          />
+        </View>
+      ))}
+    </View>
+
+    {/* SettingsSection: mt-6 mx-4, two rows of px-4 py-4 — an icon and a label,
+        the second row being the shorter "Logout". */}
+    <View style={[profileCard, { marginTop: 24 }]}>
+      {['change-password', 'logout'].map((key, i) => (
+        <View
+          key={key}
+          style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            paddingHorizontal: 16,
+            paddingVertical: 16,
+            borderBottomWidth: i === 1 ? 0 : 1,
+            borderBottomColor: '#F3F4F6',
+          }}
+        >
+          <Skeleton width={18} height={18} radius="sm" phase={i} />
+          <Skeleton
+            width={i === 0 ? 128 : 64}
+            height={14}
+            radius="sm"
+            phase={i}
+            style={{ marginLeft: 12 }}
+          />
+        </View>
+      ))}
+    </View>
+  </View>
+);
+
+/** `mx-4 bg-white rounded-2xl border border-gray-100` — the profile cards. */
+const profileCard: ViewStyle = {
+  marginHorizontal: 16,
+  backgroundColor: '#FFFFFF',
+  borderRadius: 16,
+  borderWidth: 1,
+  borderColor: '#F3F4F6',
+  overflow: 'hidden',
+};
+
 // Re-exported so screens can pull every skeleton from one module.
 export { SkeletonList, SkeletonStatRow, Skeleton, SkeletonCard, SkeletonCircle, SkeletonText, RADIUS };

@@ -3,6 +3,7 @@ import { View, Text, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import ProfileHeader from '../ProfileHeader';
 import SettingsSection from '../SettingsSection';
+import { ProfileLoading, ProfileUnavailable } from '../ProfileStates';
 import { useAuth } from '$/hooks/useAuth';
 
 const getAcronym = (name: string) =>
@@ -20,10 +21,16 @@ const InfoRow = ({ label, value }: { label: string; value: string }) => (
 );
 
 const Student = () => {
-  const { user } = useAuth();
-  if (!user) return null;
+  const { user, isLoading, refreshUser } = useAuth();
+
+  // Both of these were `return null`, which is a blank grey screen: for the
+  // whole of `/auth/me` on the way in, and permanently if the session died
+  // while this tab was already open - nothing guards the (tabs) group.
+  if (isLoading) return <ProfileLoading />;
+  if (!user) return <ProfileUnavailable onRetry={() => void refreshUser()} />;
+
   const data = user;
-  
+
 
   return (
     <SafeAreaView className="flex-1 bg-gray-50" edges={['top']}>

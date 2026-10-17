@@ -3,11 +3,18 @@ import { View, Text, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import ProfileHeader from '../ProfileHeader';
 import SettingsSection from '../SettingsSection';
+import { ProfileLoading, ProfileUnavailable } from '../ProfileStates';
 import { useAuth } from '$/hooks/useAuth';
 
 const Teacher = () => {
-  const { user } = useAuth();
-  if (!user) return null;
+  const { user, isLoading, refreshUser } = useAuth();
+
+  // Was `return null`: a blank screen for the whole of `/auth/me`, and a
+  // permanently blank one if the session died with this tab already open, since
+  // nothing guards the (tabs) group.
+  if (isLoading) return <ProfileLoading />;
+  if (!user) return <ProfileUnavailable onRetry={() => void refreshUser()} />;
+
   const data = user;
 
   return (
