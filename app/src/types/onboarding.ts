@@ -19,6 +19,13 @@ export const createStudentSchema = z.object({
   subjectCode: z.string().min(1),
   language: z.enum(['Kannada', 'Hindi', 'Sanskrit']),
   session: z.string().min(1),
+  /**
+   * Required by the server (`CreateStudentDto`), which looks the combination up
+   * by `[idCode, stream]` so a Science code can never resolve in a Commerce
+   * section. The schema omitted it, so any call built from this type would have
+   * failed validation.
+   */
+  stream: z.enum(['Science', 'Commerce']),
 });
 
 export const createStaffSchema = z.object({

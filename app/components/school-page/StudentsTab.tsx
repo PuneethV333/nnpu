@@ -7,7 +7,7 @@ import { EmptyState, ErrorState } from '@/components/ui/Feedback';
 import { SkeletonList, StudentListSkeleton } from '@/components/ui/skeletons';
 import { Card, FieldLabel, Pill, SectionTitle } from '@/components/ui/Primitives';
 import SectionChips from '@/components/ui/SectionChips';
-import ImportCard from './ImportCard';
+import AddStudentsCard from './AddStudentsCard';
 import StudentActionsSheet from './StudentActionsSheet';
 
 type Student = { id: string; name: string | null };
@@ -164,7 +164,7 @@ const StudentsTab = () => {
       ) : null}
 
       <SectionTitle title="Adding students" />
-      <ImportCard />
+      <AddStudentsCard />
 
       {active && section ? (
         <StudentActionsSheet

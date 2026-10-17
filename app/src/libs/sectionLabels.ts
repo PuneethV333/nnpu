@@ -8,18 +8,39 @@
  * section two different ways.
  */
 
-const STREAM_LABEL: Record<string, string> = {
-  SCI: 'Science',
-  COM: 'Commerce',
-};
-
 /** Order the streams are listed in; anything unknown sorts after these. */
 const STREAM_ORDER = ['Science', 'Commerce'];
 
-/** "SCI-A" -> "Science". A session with no known prefix reads "General". */
-export const sectionStreamLabel = (session: string): string => {
+/**
+ * "SCI-A" -> "Science", "COM-A" -> "Commerce", anything else -> null.
+ *
+ * The null case matters for the create-student form: the DTO requires a real
+ * `Stream`, so a section whose session carries no recognised prefix cannot be
+ * used to create a student and the form has to say so rather than guess.
+ */
+export const sectionStreamValue = (
+  session: string,
+): 'Science' | 'Commerce' | null => {
   const prefix = session.split('-')[0]?.toUpperCase() ?? '';
-  return STREAM_LABEL[prefix] ?? 'General';
+  if (prefix === 'SCI') return 'Science';
+  if (prefix === 'COM') return 'Commerce';
+  return null;
+};
+
+/** "SCI-A" -> "Science". A session with no known prefix reads "General". */
+export const sectionStreamLabel = (session: string): string =>
+  sectionStreamValue(session) ?? 'General';
+
+/**
+ * "SCI-A" -> "A". Mirrors the backend's `sectionDisplayName`.
+ *
+ * The create-student DTO wants this plain label for `session` and re-derives the
+ * stored `SCI-`/`COM-` key itself; sending the key would look up a section that
+ * does not exist.
+ */
+export const sectionSessionLabel = (session: string): string => {
+  const match = /^(?:SCI|COM)-(.+)$/.exec(session);
+  return match ? match[1] : session;
 };
 
 /** Keeps Science before Commerce, then anything else alphabetically. */

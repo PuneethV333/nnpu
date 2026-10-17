@@ -27,6 +27,14 @@ const ProfileDetailsSchema = z.object({
 });
 
 const ProfileSchoolSchema = z.object({
+  /**
+   * Optional on purpose. It is what the manual create-student form sends as
+   * `schoolId`, but making it required would fail this parse against a backend
+   * that predates the field — and a failed `/auth/me` clears the session, so an
+   * app built ahead of its server would log everyone out. The form instead
+   * treats a missing id as "cannot submit yet".
+   */
+  id: z.string().optional(),
   name: z.string(),
   noOfStudents: z.number().optional(),
   noOfTeacher: z.number().optional(),
