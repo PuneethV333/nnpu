@@ -16,7 +16,7 @@
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
-        "backgroundColor": "#081126"
+        "backgroundColor": "#2D289C"
       },
       "package": "com.nnpu.app",
       "googleServicesFile": "./google-services.json"
@@ -35,7 +35,7 @@
         {
           "image": "./assets/images/splash-icon.png",
           "resizeMode": "contain",
-          "backgroundColor": "#081126"
+          "backgroundColor": "#332B92"
         }
       ],
       "expo-font",
