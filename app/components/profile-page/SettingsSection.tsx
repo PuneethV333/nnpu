@@ -63,11 +63,26 @@ const SettingsSection = () => {
             key={item.label}
             onPress={item.onPress}
             disabled={disabled}
-            className={`flex-row items-center px-4 py-4 ${
-              idx !== items.length - 1 ? "border-b border-gray-100" : ""
-            }`}
+            accessibilityRole="button"
+            accessibilityState={{ disabled }}
+            // No `className`, and that is the whole fix: NativeWind wraps a
+            // className'd Pressable and drops a function-valued `style`, so the
+            // press fill below had never been applied once — `pressed` was
+            // computed on every press and then discarded. The geometry from the
+            // old class list (flex-row / items-center / px-4 / py-4, and the
+            // divider between rows) lives in the style object instead.
             style={({ pressed }) => ({
-              backgroundColor: pressed ? "#F9FAFB" : "transparent",
+              flexDirection: "row",
+              alignItems: "center",
+              paddingHorizontal: 16,
+              paddingVertical: 16,
+              borderBottomWidth: idx !== items.length - 1 ? 1 : 0,
+              borderBottomColor: "#F3F4F6",
+              // `#F9FAFB` was the old value and it is the page background, so
+              // even once it started applying it would have been one step off
+              // the card's white and invisible. `disabled` suppresses `pressed`,
+              // so the fill and the 50% opacity can never both be in play.
+              backgroundColor: pressed ? "#E5E7EB" : "transparent",
               opacity: disabled ? 0.5 : 1,
             })}
           >
