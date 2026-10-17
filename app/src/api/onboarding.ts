@@ -5,6 +5,9 @@ import {
   CreatedUser,
   createdUserSchema,
   CreateStaffType,
+  CreateTeacherType,
+  CreatedTeacher,
+  createdTeacherSchema,
   CreateAcademicYearType,
   AcademicYear,
   academicYearSchema,
@@ -25,8 +28,8 @@ export const createStudent = async (body: CreateStudentType): Promise<CreatedUse
   return createdUserSchema.parse((await api.post('/onboarding/create-student', body)).data);
 };
 
-export const createTeacher = async (body: CreateStaffType): Promise<CreatedUser> => {
-  return createdUserSchema.parse((await api.post('/onboarding/create-teacher', body)).data);
+export const createTeacher = async (body: CreateTeacherType): Promise<CreatedTeacher> => {
+  return createdTeacherSchema.parse((await api.post('/onboarding/create-teacher', body)).data);
 };
 
 export const createAdmin = async (body: CreateStaffType): Promise<CreatedUser> => {

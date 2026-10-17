@@ -1,4 +1,4 @@
-import { useMutation } from '@tanstack/react-query';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from './useAuth';
 import {
   createSchool,
@@ -30,10 +30,16 @@ export const useCreateStudent = () => {
 
 export const useCreateTeacher = () => {
   const { isAuthenticated, role } = useAuth();
+  const queryClient = useQueryClient();
 
   return useMutation({
     mutationFn: createTeacher,
     meta: { guarded: isAuthenticated && role === 'Admin' },
+    onSuccess: () => {
+      // The staffing pickers are fed by `['teachers']`, so a teacher created a
+      // moment ago has to appear there or they cannot be staffed at all.
+      queryClient.invalidateQueries({ queryKey: ['teachers'] });
+    },
   });
 };
 
