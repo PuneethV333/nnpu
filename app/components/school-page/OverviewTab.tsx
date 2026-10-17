@@ -9,6 +9,12 @@ import { DAY_CHIP_COLOR } from '@/constants/dayTypeColor';
 import { EmptyState, ErrorState } from '@/components/ui/Feedback';
 import { MetricCardSkeleton, SkeletonList } from '@/components/ui/skeletons';
 import { Card, SectionTitle } from '@/components/ui/Primitives';
+import {
+  comparePuYears,
+  compareStreams,
+  sectionPuLabel,
+  sectionStreamLabel,
+} from '@/src/libs/sectionLabels';
 
 const Metric = ({
   label,
@@ -35,12 +41,24 @@ const OverviewTab = () => {
 
   const events = useMemo(() => dashboard?.upcomingEvents ?? [], [dashboard]);
 
-  const byClass = useMemo(() => {
-    const groups = new Map<string, number>();
+  // Grouped stream-first, then PU year. Grouping by class alone merged Science
+  // "1-SCI-A" with Commerce "1-COM-A" into one "Class 1" row, so a two-stream
+  // school could not see that the streams exist, let alone their sizes.
+  const sectionGroups = useMemo(() => {
+    const streams = new Map<string, Map<string, number>>();
     (sections ?? []).forEach((s) => {
-      groups.set(s.className, (groups.get(s.className) ?? 0) + 1);
+      const stream = sectionStreamLabel(s.session);
+      const years = streams.get(stream) ?? new Map<string, number>();
+      years.set(s.className, (years.get(s.className) ?? 0) + 1);
+      streams.set(stream, years);
     });
-    return Array.from(groups.entries()).sort((a, b) => a[0].localeCompare(b[0]));
+
+    return Array.from(streams.entries())
+      .sort((a, b) => compareStreams(a[0], b[0]))
+      .map(([stream, years]) => ({
+        stream,
+        years: Array.from(years.entries()).sort((a, b) => comparePuYears(a[0], b[0])),
+      }));
   }, [sections]);
 
   if (isLoading) {
@@ -113,17 +131,32 @@ const OverviewTab = () => {
         </View>
       ) : (
         <Card className="overflow-hidden">
-          {byClass.map(([className, count], idx) => (
-            <View
-              key={className}
-              className={`flex-row items-center justify-between px-4 py-3 ${
-                idx !== byClass.length - 1 ? 'border-b border-gray-100' : ''
-              }`}
-            >
-              <Text className="text-[15px] font-medium text-gray-900">Class {className}</Text>
-              <Text className="text-sm text-gray-500">
-                {count} section{count > 1 ? 's' : ''}
-              </Text>
+          {sectionGroups.map(({ stream, years }, streamIdx) => (
+            <View key={stream}>
+              <View
+                className={`px-4 py-2 bg-gray-50 ${
+                  streamIdx > 0 ? 'border-t border-gray-100' : ''
+                }`}
+              >
+                <Text className="text-xs font-semibold text-gray-500 tracking-wide">
+                  {stream.toUpperCase()}
+                </Text>
+              </View>
+              {years.map(([className, count], yearIdx) => (
+                <View
+                  key={className}
+                  className={`flex-row items-center justify-between px-4 py-3 ${
+                    yearIdx !== years.length - 1 ? 'border-b border-gray-100' : ''
+                  }`}
+                >
+                  <Text className="text-[15px] font-medium text-gray-900">
+                    {sectionPuLabel(className)}
+                  </Text>
+                  <Text className="text-sm text-gray-500">
+                    {count} section{count > 1 ? 's' : ''}
+                  </Text>
+                </View>
+              ))}
             </View>
           ))}
         </Card>
@@ -133,8 +166,20 @@ const OverviewTab = () => {
       <Card className="overflow-hidden">
         <Pressable
           onPress={() => router.push('/announcements')}
-          className="flex-row items-center px-4 py-4"
-          style={({ pressed }) => ({ backgroundColor: pressed ? '#F9FAFB' : 'transparent' })}
+          accessibilityRole="button"
+          // No `className`, and that is the fix: NativeWind drops a
+          // function-valued `style` on a className'd Pressable, so the
+          // `#F9FAFB` press fill was computed on every tap and discarded (and
+          // `#F9FAFB` is the page background, so it would have been invisible
+          // anyway). Geometry from the old class list lives in the style
+          // instead. Same treatment as PrimaryButton and SettingsSection.
+          style={({ pressed }) => ({
+            flexDirection: 'row',
+            alignItems: 'center',
+            paddingHorizontal: 16,
+            paddingVertical: 16,
+            backgroundColor: pressed ? '#E5E7EB' : 'transparent',
+          })}
         >
           <Feather name="volume-2" size={18} color="#374151" />
           <Text className="ml-3 text-[15px] font-medium text-gray-800 flex-1">
