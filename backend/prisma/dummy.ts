@@ -1103,7 +1103,14 @@ async function main() {
       const d = new Date(Date.UTC(2026, month, day));
       const key = d.toISOString().split('T')[0];
       const dow = d.getUTCDay(); // 0=Sun, 6=Sat
-      const isWeekend = dow === 0 || dow === 6;
+      // Saturday is a working day: the school week, the `Week` enum, the
+      // timetable and the attendance-reminder cron (Mon-Sat) all include it.
+      // Only Sunday is a weekend. This is the same rule as
+      // CalendarService.generateYear(); the seed had drifted from it and wrote
+      // Weekend Saturdays straight over the `saturday_is_a_working_day`
+      // migration (which had already run before the seed), so attendance could
+      // not be marked on any Saturday.
+      const isWeekend = dow === 0;
       const override = overrideMap.get(key);
       calDays.push({
         date: d,
