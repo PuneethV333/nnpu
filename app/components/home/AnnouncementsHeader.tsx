@@ -14,11 +14,23 @@ const AnnouncementsHeader = ({
       onPress={() => router.push("/announcements")}
       hitSlop={10}
       accessibilityRole="button"
-      // Opacity only: there is no shape here to shrink, and scaling the glyphs
-      // under the finger makes a text link look like it is jumping.
-      style={({ pressed }) => (pressed ? { opacity: 0.5 } : null)}
     >
-      <Text className="text-sm font-semibold text-blue-600">See all</Text>
+      {({ pressed }) => (
+        // The pressed flag reaches the glyphs through function children, not a
+        // function `style`: a Pressable's style cannot recolour a Text child,
+        // and this link has no shape of its own to fill.
+        //
+        // The colour is in `style` and deliberately not in the className. A
+        // className colour beats an object style colour in NativeWind's merge,
+        // so keeping `text-blue-600` here would pin the link blue at rest and
+        // under the finger both, and the press would be invisible.
+        <Text
+          className="text-sm font-semibold"
+          style={{ color: pressed ? "#1D4ED8" : "#2563EB" }}
+        >
+          See all
+        </Text>
+      )}
     </Pressable>
   </View>
 );

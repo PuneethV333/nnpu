@@ -59,4 +59,10 @@ export const styles = StyleSheet.create({
     paddingHorizontal: 16,
     alignItems: "stretch",
   },
+  // Same darkening as the QuickActions and SectionStatusCard cards, including
+  // the border so it is never lighter than the fill it outlines.
+  myClassCardPressed: {
+    backgroundColor: "#E5E7EB",
+    borderColor: "#E5E7EB",
+  },
 });

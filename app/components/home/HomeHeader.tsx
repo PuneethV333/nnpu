@@ -39,8 +39,12 @@ const HomeHeader = ({ hasNotifications }: Props) => {
       </View>
 
       <Pressable
-        style={styles.bellButton}
+        style={({ pressed }) => [
+          styles.bellButton,
+          pressed && styles.bellButtonPressed,
+        ]}
         onPress={() => router.push("/notification")}
+        accessibilityRole="button"
         accessibilityLabel="Notifications"
         hitSlop={12}
       >

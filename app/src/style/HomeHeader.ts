@@ -49,6 +49,13 @@ export const styles = StyleSheet.create({
     justifyContent: "center",
     backgroundColor: "#F3F4F6",
   },
+  // Darkens rather than scaling, matching the card press states elsewhere.
+  // gray-300 rather than the app's usual gray-200 press fill: this button is
+  // already gray-100 at rest, so gray-200 would be a one-step change on a 40px
+  // circle and the press would barely register.
+  bellButtonPressed: {
+    backgroundColor: "#D1D5DB",
+  },
   notificationDot: {
     position: "absolute",
     top: 8,

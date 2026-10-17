@@ -88,7 +88,12 @@ const Student = () => {
         {sectionLabel ? (
           <Pressable
             onPress={() => router.push("/profile")}
-            style={[styles.emptyBox, styles.myClassCard]}
+            accessibilityRole="button"
+            style={({ pressed }) => [
+              styles.emptyBox,
+              styles.myClassCard,
+              pressed && styles.myClassCardPressed,
+            ]}
           >
             <View className="flex-row items-center justify-between">
               <View>
