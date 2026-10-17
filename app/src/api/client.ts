@@ -55,14 +55,26 @@ api.interceptors.response.use(
     const originalRequest = error.config as | (InternalAxiosRequestConfig & { _retried?: boolean }) | null;
     const is401 = error.response?.status === 401;
 
-    // A 401 from these endpoints means the credentials are wrong, not that the
-    // session expired. Running them through the refresh path made a mistyped
+    // Only the credential endpoints are exempt from the refresh path.
+    //
+    // `/auth/login` must be: a 401 there means the password is wrong, not that
+    // the session expired. Running it through the refresh path made a mistyped
     // password do two harmful things: `refreshAccessToken` found no refresh
     // token and threw, so the caller received `Error('no refresh token
     // available')` instead of the AxiosError with its 401 — which is why the
     // login screen reported "Couldn't reach the server" for a wrong password —
     // and `clearSession()` fired, wiping any tokens the user still had.
-    const isAuthEndpoint = !!originalRequest?.url?.includes('/auth/');
+    // `/auth/refresh` is exempt because it is the refresh itself.
+    //
+    // `/auth/me` must NOT be exempt. It is the first request of every cold
+    // start, so the previous blanket `includes('/auth/')` check meant an app
+    // reopened after the 30-minute access-token lifetime got a 401, skipped the
+    // refresh, and had its session cleared — the user was silently logged out
+    // and had to sign in again. `/auth/logout` and `/auth/change-password`
+    // carry the access token too, and must refresh like any other call.
+    const url = originalRequest?.url ?? '';
+    const isAuthEndpoint =
+      url.includes('/auth/login') || url.includes('/auth/refresh');
 
     if (!is401 || !originalRequest || originalRequest._retried || isAuthEndpoint) {
       return Promise.reject(error);
