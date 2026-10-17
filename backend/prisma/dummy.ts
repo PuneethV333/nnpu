@@ -575,6 +575,15 @@ async function main() {
         update: {},
         create: { sectionSubjectId: sectionSubject.id, teacherId },
       });
+
+      // The same fact recorded on the teacher, with no section attached — what
+      // the `teacher_subjects` migration derives from the rows above on a real
+      // database, so a freshly seeded one matches a migrated one.
+      await prisma.teacherSubject.upsert({
+        where: { teacherId_subjectId: { teacherId, subjectId } },
+        update: {},
+        create: { teacherId, subjectId },
+      });
     }
   }
   console.log(`✅ Class teachers & section-subjects assigned`);

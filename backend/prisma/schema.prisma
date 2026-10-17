@@ -64,6 +64,9 @@ model User {
   auth               Auth?
   details            PersonalDetails?
   teachingAssignments SectionSubjectTeacher[] @relation("TeacherAssignments")
+  /// Subjects this teacher teaches, as a fact about the teacher rather than an
+  /// assignment to a section. Distinct from `teachingAssignments`.
+  subjectsTaught     TeacherSubject[]
   studentAttendances Attendance[]     @relation("StudentAttendance")
   markedAttendances  Attendance[]     @relation("MarkedByTeacher")
   classTeacherOf     Section?         @relation("ClassTeacherOf")
@@ -261,6 +264,8 @@ model Subject {
 
   sections    SectionSubject[]
   assessments Assessment[]
+  /// Teachers who teach this subject, independent of any section.
+  teachers    TeacherSubject[]
 
   createdAt      DateTime        @default(now())
   updatedAt      DateTime        @updatedAt
@@ -283,6 +288,28 @@ model SectionSubject {
   updatedAt DateTime @updatedAt
 
   @@unique([sectionId, subjectId])
+}
+
+/// A subject a teacher teaches — a fact about the teacher, not an assignment.
+///
+/// Deliberately separate from `SectionSubjectTeacher`, which records which
+/// teacher takes a subject *in one section*, and deliberately not tied to a
+/// session. A teacher is created before they are staffed anywhere, and the
+/// staffing pickers have to be able to offer them before they hold any section
+/// assignment; nothing here decides who marks whose marks.
+model TeacherSubject {
+  id        String  @id @default(cuid())
+  teacher   User    @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+  teacherId String
+  subject   Subject @relation(fields: [subjectId], references: [id])
+  subjectId String
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([teacherId, subjectId])
+  /// "Who teaches this subject?" — the lookup the staffing pickers make.
+  @@index([subjectId])
 }
 
 /// One teacher on one `SectionSubject`.
