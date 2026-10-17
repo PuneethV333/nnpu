@@ -25,6 +25,7 @@ import { UsersModule } from './users/users.module';
 import { SectionsModule } from './sections/sections.module';
 import { DashboardModule } from './dashboard/dashboard.module';
 import { CombinationsModule } from './combinations/combinations.module';
+import { SubjectsModule } from './subjects/subjects.module';
 
 @Module({
   imports: [
@@ -123,6 +124,7 @@ import { CombinationsModule } from './combinations/combinations.module';
     SectionsModule,
     DashboardModule,
     CombinationsModule,
+    SubjectsModule,
   ],
   controllers: [AppController],
   providers: [
