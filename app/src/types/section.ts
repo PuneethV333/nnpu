@@ -31,24 +31,33 @@ export type Section = z.infer<typeof sectionSchema>;
 export type SectionArray = z.infer<typeof sectionArraySchema>;
 
 /**
- * Who teaches a subject in this section, and who is class teacher.
+ * A staff member as the staffing payload names them.
  *
- * `teacherId`/`teacherName` are nullable: a subject can be in a section with
- * nobody staffed to it yet, which is the normal state before a term starts and
- * not an error.
+ * `name` is nullable because it lives on the separate `PersonalDetails` row —
+ * a user can exist without one, and the UI shows a placeholder rather than a
+ * blank line.
+ */
+export const sectionStaffRefSchema = z.object({
+  id: z.string(),
+  name: z.string().nullable(),
+});
+
+/**
+ * Who teaches a subject in this section.
+ *
+ * `teachers` is a set, not a single teacher: a subject can be co-taught, and the
+ * teachers are equal — any of them can enter that subject's marks. An empty
+ * array means the subject is in the section with nobody staffed to it yet, which
+ * is the normal state before a term starts and not an error.
  */
 export const sectionSubjectAssignmentSchema = z.object({
   subjectId: z.string(),
   subjectName: z.string(),
   hasPractical: z.boolean(),
-  teacherId: z.string().nullable(),
-  teacherName: z.string().nullable(),
+  teachers: z.array(sectionStaffRefSchema),
 });
 
-export const sectionClassTeacherSchema = z.object({
-  id: z.string(),
-  name: z.string().nullable(),
-});
+export const sectionClassTeacherSchema = sectionStaffRefSchema;
 
 export const sectionAssignmentsSchema = z.object({
   sectionId: z.string(),
@@ -89,11 +98,14 @@ export interface SetClassTeacherBody {
  * This is a replace, not a merge — the server upserts each `subjectId` and does
  * not clear subjects absent from the list. Send the complete set the section
  * should have.
+ *
+ * For each subject, `teacherIds` is likewise the complete set: a teacher dropped
+ * from it is unassigned, and an empty array keeps the subject in the section
+ * with nobody teaching it.
  */
 export interface AssignSubjectsBody {
   assignments: {
     subjectId: string;
-    /** `null` keeps the subject in the section with nobody teaching it. */
-    teacherId: string | null;
+    teacherIds: string[];
   }[];
 }

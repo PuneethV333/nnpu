@@ -119,7 +119,9 @@ const combineTeacherPool = (
     if (!d) return;
     if (d.classTeacher?.name) byId.set(d.classTeacher.id, d.classTeacher.name);
     d.subjects.forEach((s) => {
-      if (s.teacherId && s.teacherName) byId.set(s.teacherId, s.teacherName);
+      s.teachers.forEach((t) => {
+        if (t.name) byId.set(t.id, t.name);
+      });
     });
   });
 

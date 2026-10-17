@@ -8,22 +8,71 @@ type Props = {
   title: string;
   subtitle?: string;
   teachers: TeacherOption[];
-  currentId: string | null;
+  /** Ids currently assigned. For the class-teacher picker this holds at most one. */
+  selectedIds: string[];
   /** Label of the "nobody" row, e.g. "Leave unstaffed". */
   noneLabel: string;
+  /**
+   * Taps toggle instead of picking-and-closing, so the sheet stays open while
+   * several teachers are added to one subject. The caller closes it.
+   */
+  multiple?: boolean;
   isLoading?: boolean;
-  onPick: (teacherId: string | null) => void;
+  onToggle: (teacherId: string | null) => void;
   onClose: () => void;
 };
+
+/**
+ * One row of the sheet.
+ *
+ * `className` is deliberately absent: NativeWind wraps a className'd Pressable
+ * and drops a function-valued `style`, which is exactly the press feedback this
+ * row needs. The geometry lives in the style function instead.
+ */
+const PickerRow = ({
+  label,
+  selected,
+  icon,
+  onPress,
+}: {
+  label: string;
+  selected: boolean;
+  icon: React.ReactNode;
+  onPress: () => void;
+}) => (
+  <Pressable
+    onPress={onPress}
+    accessibilityRole="button"
+    accessibilityState={{ selected }}
+    style={({ pressed }) => ({
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingVertical: 12,
+      paddingHorizontal: 8,
+      marginHorizontal: -8,
+      borderRadius: 12,
+      borderBottomWidth: 1,
+      borderBottomColor: '#F3F4F6',
+      backgroundColor: pressed ? '#F3F4F6' : 'transparent',
+    })}
+  >
+    {icon}
+    <Text style={{ marginLeft: 12, flex: 1, fontSize: 15, fontWeight: '500' }} className="text-gray-900">
+      {label}
+    </Text>
+    {selected ? <Feather name="check" size={18} color="#4F46E5" /> : null}
+  </Pressable>
+);
 
 const TeacherPickerSheet = ({
   title,
   subtitle,
   teachers,
-  currentId,
+  selectedIds,
   noneLabel,
+  multiple = false,
   isLoading,
-  onPick,
+  onToggle,
   onClose,
 }: Props) => {
   const [query, setQuery] = useState('');
@@ -32,6 +81,8 @@ const TeacherPickerSheet = ({
     const q = query.trim().toLowerCase();
     return q ? teachers.filter((t) => t.name.toLowerCase().includes(q)) : teachers;
   }, [teachers, query]);
+
+  const isSelected = (id: string) => selectedIds.includes(id);
 
   return (
     <BottomSheet title={title} subtitle={subtitle} onClose={onClose}>
@@ -48,31 +99,31 @@ const TeacherPickerSheet = ({
         </View>
       ) : null}
 
-      <Pressable
-        onPress={() => onPick(null)}
-        className="flex-row items-center py-3.5 border-b border-gray-100"
-      >
-        <View className="w-9 h-9 rounded-full bg-gray-100 items-center justify-center">
-          <Feather name="slash" size={15} color="#6B7280" />
-        </View>
-        <Text className="text-[15px] font-medium text-gray-700 ml-3 flex-1">{noneLabel}</Text>
-        {currentId === null ? <Feather name="check" size={18} color="#4F46E5" /> : null}
-      </Pressable>
+      <PickerRow
+        label={noneLabel}
+        selected={selectedIds.length === 0}
+        onPress={() => onToggle(null)}
+        icon={
+          <View className="w-9 h-9 rounded-full bg-gray-100 items-center justify-center">
+            <Feather name="slash" size={15} color="#6B7280" />
+          </View>
+        }
+      />
 
       {shown.map((t) => (
-        <Pressable
+        <PickerRow
           key={t.id}
-          onPress={() => onPick(t.id)}
-          className="flex-row items-center py-3.5 border-b border-gray-100"
-        >
-          <View className="w-9 h-9 rounded-full bg-indigo-50 items-center justify-center">
-            <Text className="text-xs font-bold text-indigo-700">
-              {t.name.charAt(0).toUpperCase()}
-            </Text>
-          </View>
-          <Text className="text-[15px] font-medium text-gray-900 ml-3 flex-1">{t.name}</Text>
-          {currentId === t.id ? <Feather name="check" size={18} color="#4F46E5" /> : null}
-        </Pressable>
+          label={t.name}
+          selected={isSelected(t.id)}
+          onPress={() => onToggle(t.id)}
+          icon={
+            <View className="w-9 h-9 rounded-full bg-indigo-50 items-center justify-center">
+              <Text className="text-xs font-bold text-indigo-700">
+                {t.name.charAt(0).toUpperCase()}
+              </Text>
+            </View>
+          }
+        />
       ))}
 
       {isLoading ? (
@@ -82,7 +133,9 @@ const TeacherPickerSheet = ({
       ) : null}
 
       <Text className="text-xs text-gray-400 leading-5 mt-4">
-        Only teachers already staffed somewhere in the school are listed.
+        {multiple
+          ? 'Tap to add or remove teachers. The change is kept when you save.'
+          : 'Only teachers already staffed somewhere in the school are listed.'}
       </Text>
     </BottomSheet>
   );

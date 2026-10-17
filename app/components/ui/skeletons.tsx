@@ -508,6 +508,68 @@ export const MarkEntryRowsSkeleton = ({ count = 6 }: { count?: number }) => (
   </View>
 );
 
+/**
+ * Matches `components/school-page/StaffingTab.tsx`: the class-teacher card, then
+ * the subject-teacher list. The generic `SkeletonList` it replaces drew plain
+ * text lines with no avatar or trailing chevron, so the card visibly reflowed as
+ * the real rows landed.
+ */
+export const StaffingSkeleton = ({ count = 5 }: { count?: number }) => (
+  <View style={{ paddingTop: 16 }}>
+    <View
+      style={{
+        marginHorizontal: 16,
+        backgroundColor: '#FFFFFF',
+        borderRadius: RADIUS.xl,
+        borderWidth: 1,
+        borderColor: '#F3F4F6',
+        padding: 16,
+        flexDirection: 'row',
+        alignItems: 'center',
+      }}
+    >
+      <Skeleton width={40} height={40} radius="full" />
+      <View style={{ flex: 1, marginLeft: 12, gap: 6 }}>
+        <Skeleton width="55%" height={13} radius="sm" />
+        <Skeleton width="35%" height={11} radius="sm" />
+      </View>
+      <Skeleton width={64} height={30} radius="full" />
+    </View>
+
+    <View
+      style={{
+        marginTop: 16,
+        marginHorizontal: 16,
+        backgroundColor: '#FFFFFF',
+        borderRadius: RADIUS.xl,
+        borderWidth: 1,
+        borderColor: '#F3F4F6',
+        overflow: 'hidden',
+      }}
+    >
+      {Array.from({ length: count }).map((_, i) => (
+        <View
+          key={i}
+          style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            paddingHorizontal: 16,
+            paddingVertical: 12,
+            borderTopWidth: i === 0 ? 0 : 1,
+            borderTopColor: '#F3F4F6',
+          }}
+        >
+          <View style={{ flex: 1, gap: 6 }}>
+            <Skeleton width={120} height={13} radius="sm" phase={i} />
+            <Skeleton width={90} height={11} radius="sm" phase={i} />
+          </View>
+          <Skeleton width={18} height={18} radius="sm" phase={i} />
+        </View>
+      ))}
+    </View>
+  </View>
+);
+
 /** The horizontally-scrollable section/subject chips. */
 export const ChipRowSkeleton = ({ count = 4 }: { count?: number }) => (
   <ScrollView

@@ -193,22 +193,31 @@ const Classes = () => {
                         <Text className="text-xs font-semibold text-gray-400 tracking-wide mb-2">
                           WHO TEACHES WHAT
                         </Text>
-                        {staffing.subjects.map((s) => (
-                          <View
-                            key={s.subjectId}
-                            className="flex-row items-center justify-between py-1"
-                          >
-                            <Text className="text-sm text-gray-700 flex-1 mr-2" numberOfLines={1}>
-                              {s.subjectName}
-                            </Text>
-                            <Text
-                              className="text-sm"
-                              style={{ color: s.teacherName ? '#6B7280' : '#D97706' }}
+                        {staffing.subjects.map((s) => {
+                          const names = s.teachers.map((t) => t.name ?? 'Teacher');
+                          return (
+                            <View
+                              key={s.subjectId}
+                              className="flex-row items-center justify-between py-1"
                             >
-                              {s.teacherName ?? 'Unstaffed'}
-                            </Text>
-                          </View>
-                        ))}
+                              <Text className="text-sm text-gray-700 flex-1 mr-2" numberOfLines={1}>
+                                {s.subjectName}
+                              </Text>
+                              <Text
+                                className="text-sm"
+                                numberOfLines={1}
+                                // Bounded so a co-taught subject's list cannot push
+                                // the subject name off the row.
+                                style={{
+                                  color: names.length > 0 ? '#6B7280' : '#D97706',
+                                  maxWidth: '55%',
+                                }}
+                              >
+                                {names.length > 0 ? names.join(', ') : 'Unstaffed'}
+                              </Text>
+                            </View>
+                          );
+                        })}
                       </View>
                     ) : null}
                   </View>

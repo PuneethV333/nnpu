@@ -10,7 +10,7 @@ import {
 } from '@/src/hooks/useSections';
 import { errorMessage } from '@/src/libs/errorMessage';
 import { EmptyState, ErrorState } from '@/components/ui/Feedback';
-import { SkeletonList } from '@/components/ui/skeletons';
+import { ChipRowSkeleton, StaffingSkeleton } from '@/components/ui/skeletons';
 import {
   Banner,
   Card,
@@ -20,12 +20,16 @@ import {
   SectionTitle,
 } from '@/components/ui/Primitives';
 import SectionChips from '@/components/ui/SectionChips';
-import type { Section } from '@/src/types/section';
+import type { Section, SectionSubjectAssignment } from '@/src/types/section';
 import TeacherPickerSheet from './TeacherPickerSheet';
 
 type PickerTarget =
   | { kind: 'class' }
-  | { kind: 'subject'; subjectId: string; subjectName: string };
+  | { kind: 'subject'; assignment: SectionSubjectAssignment };
+
+/** Set equality — the order a set is toggled in is not a change. */
+const sameSet = (a: string[], b: string[]) =>
+  a.length === b.length && a.every((id) => b.includes(id));
 
 const SectionStaffing = ({ sectionId, sections }: { sectionId: string; sections: Section[] }) => {
   const { data, isLoading, isError, refetch } = useGetSectionAssignments(sectionId);
@@ -33,19 +37,14 @@ const SectionStaffing = ({ sectionId, sections }: { sectionId: string; sections:
   const { mutate: setClassTeacher, isPending: savingClassTeacher } = useSetClassTeacher();
   const { mutate: assignSubjects, isPending: savingSubjects } = useAssignSubjects();
 
-  // Only the subjects the admin has touched. Effective teacher = draft ?? server.
-  const [draft, setDraft] = useState<Record<string, string | null>>({});
+  // Only the subjects the admin has touched. Effective set = draft ?? server.
+  const [draft, setDraft] = useState<Record<string, string[]>>({});
   const [picker, setPicker] = useState<PickerTarget | null>(null);
 
-  const nameOf = (id: string | null) =>
-    id ? pool.teachers.find((t) => t.id === id)?.name ?? 'Teacher' : null;
-
   if (isLoading) {
-    return (
-      <View className="mt-4">
-        <SkeletonList count={4} lastWidth="50%" />
-      </View>
-    );
+    // Shaped like the real content (class-teacher card, then subject rows) so
+    // nothing reflows when the data lands.
+    return <StaffingSkeleton />;
   }
 
   if (isError || !data) {
@@ -58,10 +57,31 @@ const SectionStaffing = ({ sectionId, sections }: { sectionId: string; sections:
     );
   }
 
-  const effective = (subjectId: string, serverId: string | null) =>
-    Object.prototype.hasOwnProperty.call(draft, subjectId) ? draft[subjectId] : serverId;
+  const serverIds = (s: SectionSubjectAssignment) => s.teachers.map((t) => t.id);
 
-  const changed = data.subjects.filter((s) => effective(s.subjectId, s.teacherId) !== s.teacherId);
+  const effectiveIds = (s: SectionSubjectAssignment) =>
+    Object.prototype.hasOwnProperty.call(draft, s.subjectId)
+      ? draft[s.subjectId]
+      : serverIds(s);
+
+  const nameOf = (id: string) =>
+    pool.teachers.find((t) => t.id === id)?.name ??
+    data.subjects
+      .flatMap((s) => s.teachers)
+      .find((t) => t.id === id)?.name ??
+    'Teacher';
+
+  const labelFor = (s: SectionSubjectAssignment, ids: string[]) => {
+    const names =
+      ids.length === 0
+        ? []
+        : Object.prototype.hasOwnProperty.call(draft, s.subjectId)
+          ? ids.map(nameOf)
+          : s.teachers.map((t) => t.name ?? 'Teacher');
+    return names.length > 0 ? names.join(', ') : 'Nobody';
+  };
+
+  const changed = data.subjects.filter((s) => !sameSet(effectiveIds(s), serverIds(s)));
 
   const pickClassTeacher = (teacherId: string | null) => {
     setPicker(null);
@@ -78,9 +98,23 @@ const SectionStaffing = ({ sectionId, sections }: { sectionId: string; sections:
     );
   };
 
-  const pickSubjectTeacher = (subjectId: string, teacherId: string | null) => {
-    setPicker(null);
-    setDraft((prev) => ({ ...prev, [subjectId]: teacherId }));
+  /**
+   * Toggle one teacher on a subject. Multi-select, so the sheet stays open —
+   * the pending set is held in `draft` and committed by Save.
+   */
+  const toggleSubjectTeacher = (s: SectionSubjectAssignment, teacherId: string | null) => {
+    setDraft((prev) => {
+      const current = Object.prototype.hasOwnProperty.call(prev, s.subjectId)
+        ? prev[s.subjectId]
+        : serverIds(s);
+      const next =
+        teacherId === null
+          ? []
+          : current.includes(teacherId)
+            ? current.filter((id) => id !== teacherId)
+            : [...current, teacherId];
+      return { ...prev, [s.subjectId]: next };
+    });
   };
 
   const save = () => {
@@ -92,7 +126,7 @@ const SectionStaffing = ({ sectionId, sections }: { sectionId: string; sections:
         body: {
           assignments: data.subjects.map((s) => ({
             subjectId: s.subjectId,
-            teacherId: effective(s.subjectId, s.teacherId),
+            teacherIds: effectiveIds(s),
           })),
         },
       },
@@ -106,9 +140,7 @@ const SectionStaffing = ({ sectionId, sections }: { sectionId: string; sections:
     );
   };
 
-  const unstaffed = data.subjects.filter(
-    (s) => effective(s.subjectId, s.teacherId) === null,
-  ).length;
+  const unstaffed = data.subjects.filter((s) => effectiveIds(s).length === 0).length;
 
   return (
     <>
@@ -129,8 +161,18 @@ const SectionStaffing = ({ sectionId, sections }: { sectionId: string; sections:
           <Pressable
             onPress={() => setPicker({ kind: 'class' })}
             disabled={savingClassTeacher}
-            className="rounded-full border border-gray-200 px-3 py-1.5"
-            style={{ opacity: savingClassTeacher ? 0.5 : 1 }}
+            accessibilityRole="button"
+            // No `className`: NativeWind drops a function-valued `style` on a
+            // className'd Pressable, so the press fill would never show.
+            style={({ pressed }) => ({
+              borderRadius: 999,
+              borderWidth: 1,
+              borderColor: '#E5E7EB',
+              paddingHorizontal: 12,
+              paddingVertical: 6,
+              backgroundColor: pressed ? '#EEF2FF' : 'transparent',
+              opacity: savingClassTeacher ? 0.5 : 1,
+            })}
           >
             <Text className="text-sm font-semibold text-indigo-600">
               {savingClassTeacher ? 'Saving…' : data.classTeacher ? 'Change' : 'Assign'}
@@ -155,22 +197,25 @@ const SectionStaffing = ({ sectionId, sections }: { sectionId: string; sections:
       ) : (
         <Card className="overflow-hidden">
           {data.subjects.map((s, idx) => {
-            const teacherId = effective(s.subjectId, s.teacherId);
-            const isDirty = teacherId !== s.teacherId;
-            const label = isDirty
-              ? nameOf(teacherId) ?? 'Nobody'
-              : s.teacherName ?? 'Nobody';
+            const ids = effectiveIds(s);
+            const isDirty = !sameSet(ids, serverIds(s));
 
             return (
               <Pressable
                 key={s.subjectId}
-                onPress={() =>
-                  setPicker({ kind: 'subject', subjectId: s.subjectId, subjectName: s.subjectName })
-                }
-                className={`flex-row items-center px-4 py-3 ${
-                  idx !== data.subjects.length - 1 ? 'border-b border-gray-100' : ''
-                }`}
-                style={({ pressed }) => ({ backgroundColor: pressed ? '#F9FAFB' : 'transparent' })}
+                onPress={() => setPicker({ kind: 'subject', assignment: s })}
+                accessibilityRole="button"
+                accessibilityLabel={`Teachers for ${s.subjectName}`}
+                // No `className` for the same reason as the button above.
+                style={({ pressed }) => ({
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  paddingHorizontal: 16,
+                  paddingVertical: 12,
+                  borderBottomWidth: idx !== data.subjects.length - 1 ? 1 : 0,
+                  borderBottomColor: '#F3F4F6',
+                  backgroundColor: pressed ? '#EEF2FF' : 'transparent',
+                })}
               >
                 <View className="flex-1 pr-3">
                   <View className="flex-row items-center" style={{ gap: 6 }}>
@@ -178,15 +223,19 @@ const SectionStaffing = ({ sectionId, sections }: { sectionId: string; sections:
                       {s.subjectName}
                     </Text>
                     {s.hasPractical ? <Feather name="award" size={12} color="#2563EB" /> : null}
+                    {ids.length > 1 ? (
+                      <Pill label={`${ids.length} teachers`} color="#4F46E5" />
+                    ) : null}
                   </View>
                   <Text
                     className="text-xs mt-0.5"
+                    numberOfLines={1}
                     style={{
-                      color: teacherId ? (isDirty ? '#4F46E5' : '#6B7280') : '#D97706',
+                      color: ids.length > 0 ? (isDirty ? '#4F46E5' : '#6B7280') : '#D97706',
                       fontWeight: isDirty ? '600' : '400',
                     }}
                   >
-                    {label}
+                    {labelFor(s, ids)}
                     {isDirty ? ' · unsaved' : ''}
                   </Text>
                 </View>
@@ -216,23 +265,29 @@ const SectionStaffing = ({ sectionId, sections }: { sectionId: string; sections:
 
       {picker ? (
         <TeacherPickerSheet
-          title={picker.kind === 'class' ? 'Class teacher' : picker.subjectName}
-          subtitle={picker.kind === 'class' ? data.sectionName : `Teacher for ${data.sectionName}`}
+          title={picker.kind === 'class' ? 'Class teacher' : picker.assignment.subjectName}
+          subtitle={
+            picker.kind === 'class'
+              ? data.sectionName
+              : `${data.sectionName} · ${
+                  effectiveIds(picker.assignment).length
+                } selected`
+          }
           teachers={pool.teachers}
           isLoading={pool.isLoading}
-          noneLabel={picker.kind === 'class' ? 'Unassign class teacher' : 'Leave unstaffed'}
-          currentId={
+          noneLabel={picker.kind === 'class' ? 'Unassign class teacher' : 'Nobody'}
+          multiple={picker.kind === 'subject'}
+          selectedIds={
             picker.kind === 'class'
-              ? data.classTeacher?.id ?? null
-              : effective(
-                  picker.subjectId,
-                  data.subjects.find((s) => s.subjectId === picker.subjectId)?.teacherId ?? null,
-                )
+              ? data.classTeacher
+                ? [data.classTeacher.id]
+                : []
+              : effectiveIds(picker.assignment)
           }
-          onPick={(id) =>
+          onToggle={(id) =>
             picker.kind === 'class'
               ? pickClassTeacher(id)
-              : pickSubjectTeacher(picker.subjectId, id)
+              : toggleSubjectTeacher(picker.assignment, id)
           }
           onClose={() => setPicker(null)}
         />
@@ -250,9 +305,7 @@ const StaffingTab = () => {
       <SectionTitle title="Staffing" />
 
       {isLoading ? (
-        <View className="mx-4">
-          <SkeletonList count={2} lastWidth="40%" />
-        </View>
+        <ChipRowSkeleton count={3} />
       ) : isError ? (
         <ErrorState
           title="Couldn't load sections"
