@@ -342,6 +342,11 @@ export class AuthService {
         : null,
       school: user.school
         ? {
+            // The id, not just the name: `createStudent` requires a `schoolId`,
+            // and this was the only place an admin's own school was described.
+            // Without it the manual create-student form had no id to send and
+            // the app could not use the endpoint at all.
+            id: user.school.id,
             name: user.school.name,
             ...(user.role === 'Admin' &&
               (await this.schoolStats(user.school.id))),

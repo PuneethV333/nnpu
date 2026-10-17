@@ -315,6 +315,7 @@ describe('AuthService', () => {
         where: { schoolId: 'school-1', role: 'Teacher', isActive: true },
       });
       expect((data as { school: unknown }).school).toEqual({
+        id: 'school-1',
         name: 'School',
         noOfStudents: 500,
         noOfTeacher: 20,
@@ -352,7 +353,7 @@ describe('AuthService', () => {
         role: 'Student',
         isActive: true,
         details: { name: 'Test', profilePic: null, email: 'test@test.com' },
-        school: { name: 'School' },
+        school: { id: 'school-1', name: 'School' },
         section: {
           name: 'A',
           session: 'SCI-A',
