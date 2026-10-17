@@ -2,15 +2,28 @@ import {
   passOutResponseSchema,
   resetPasswordResponseSchema,
   setActiveResponseSchema,
+  teacherListSchema,
   transferStudentResponseSchema,
   type PassOutBody,
   type PassOutResponse,
   type ResetPasswordResponse,
   type SetActiveResponse,
+  type TeacherList,
   type TransferStudentBody,
   type TransferStudentResponse,
 } from '@/src/types/users';
 import { api } from './client';
+
+/**
+ * Active teachers, for the staffing pickers.
+ *
+ * The pickers used to feed themselves from section assignments, which meant a
+ * teacher who had not been staffed anywhere could not be picked — and so could
+ * never be staffed. Admin-only, matching the staffing screens.
+ */
+export const getTeachers = async (): Promise<TeacherList> => {
+  return teacherListSchema.parse((await api.get('/users/teachers')).data);
+};
 
 /**
  * Lifecycle writes. All five are admin-only on the server.

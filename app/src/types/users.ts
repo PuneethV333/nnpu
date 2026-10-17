@@ -47,6 +47,32 @@ export type ResetPasswordResponse = z.infer<
   typeof resetPasswordResponseSchema
 >;
 
+/**
+ * One teacher as `/users/teachers` reports them.
+ *
+ * `name` is nullable because it lives on the separate `PersonalDetails` row — a
+ * teacher account without one still appears rather than vanishing from the
+ * picker. `subjectIds` are the subjects recorded against the teacher, which the
+ * picker uses to mark who was recorded as teaching the subject being staffed.
+ */
+export const teacherRefSchema = z.object({
+  id: z.string(),
+  name: z.string().nullable(),
+  subjectIds: z.array(z.string()),
+});
+
+export const teacherListSchema = z.array(teacherRefSchema);
+
+export type TeacherRef = z.infer<typeof teacherRefSchema>;
+export type TeacherList = z.infer<typeof teacherListSchema>;
+
+/**
+ * A teacher as the pickers consume one: always with a name to render, sort and
+ * filter on. The null case is resolved once, at the hook boundary, rather than
+ * in every row that draws a name.
+ */
+export type TeacherOption = { id: string; name: string; subjectIds: string[] };
+
 export const passOutSectionResultSchema = z.object({
   sectionId: z.string(),
   sectionName: z.string(),

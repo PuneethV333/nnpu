@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { Pressable, Text, TextInput, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
-import type { TeacherOption } from '@/src/hooks/useSections';
+import type { TeacherOption } from '@/src/types/users';
 import { BottomSheet } from '@/components/ui/Primitives';
 
 type Props = {
@@ -10,6 +10,12 @@ type Props = {
   teachers: TeacherOption[];
   /** Ids currently assigned. For the class-teacher picker this holds at most one. */
   selectedIds: string[];
+  /**
+   * The subject being staffed, when there is one. Teachers recorded as teaching
+   * it are marked, which is the only place those recorded subjects are used —
+   * the marker is a hint, not a filter or a restriction.
+   */
+  subjectId?: string;
   /** Label of the "nobody" row, e.g. "Leave unstaffed". */
   noneLabel: string;
   /**
@@ -31,11 +37,13 @@ type Props = {
  */
 const PickerRow = ({
   label,
+  hint,
   selected,
   icon,
   onPress,
 }: {
   label: string;
+  hint?: string;
   selected: boolean;
   icon: React.ReactNode;
   onPress: () => void;
@@ -57,9 +65,14 @@ const PickerRow = ({
     })}
   >
     {icon}
-    <Text style={{ marginLeft: 12, flex: 1, fontSize: 15, fontWeight: '500' }} className="text-gray-900">
-      {label}
-    </Text>
+    <View style={{ marginLeft: 12, flex: 1 }}>
+      <Text style={{ fontSize: 15, fontWeight: '500' }} className="text-gray-900">
+        {label}
+      </Text>
+      {hint ? (
+        <Text className="text-xs text-indigo-600 mt-0.5">{hint}</Text>
+      ) : null}
+    </View>
     {selected ? <Feather name="check" size={18} color="#4F46E5" /> : null}
   </Pressable>
 );
@@ -69,6 +82,7 @@ const TeacherPickerSheet = ({
   subtitle,
   teachers,
   selectedIds,
+  subjectId,
   noneLabel,
   multiple = false,
   isLoading,
@@ -83,6 +97,12 @@ const TeacherPickerSheet = ({
   }, [teachers, query]);
 
   const isSelected = (id: string) => selectedIds.includes(id);
+
+  const footer = multiple
+    ? subjectId
+      ? 'Tap to add or remove teachers. The change is kept when you save. The ones marked in blue were recorded as teaching this subject.'
+      : 'Tap to add or remove teachers. The change is kept when you save.'
+    : 'Every active teacher is listed, whether or not they are staffed yet.';
 
   return (
     <BottomSheet title={title} subtitle={subtitle} onClose={onClose}>
@@ -114,6 +134,11 @@ const TeacherPickerSheet = ({
         <PickerRow
           key={t.id}
           label={t.name}
+          hint={
+            subjectId && t.subjectIds.includes(subjectId)
+              ? 'Recorded as teaching this subject'
+              : undefined
+          }
           selected={isSelected(t.id)}
           onPress={() => onToggle(t.id)}
           icon={
@@ -132,11 +157,7 @@ const TeacherPickerSheet = ({
         <Text className="text-sm text-gray-400 mt-3">No teachers found.</Text>
       ) : null}
 
-      <Text className="text-xs text-gray-400 leading-5 mt-4">
-        {multiple
-          ? 'Tap to add or remove teachers. The change is kept when you save.'
-          : 'Only teachers already staffed somewhere in the school are listed.'}
-      </Text>
+      <Text className="text-xs text-gray-400 leading-5 mt-4">{footer}</Text>
     </BottomSheet>
   );
 };

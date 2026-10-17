@@ -1,12 +1,14 @@
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useAuth } from './useAuth';
 import {
   activateUser,
   deactivateUser,
+  getTeachers,
   passOutStudents,
   resetPassword,
   transferStudent,
 } from '../api/users';
-import type { PassOutBody, TransferStudentBody } from '../types/users';
+import type { PassOutBody, TeacherOption, TransferStudentBody } from '../types/users';
 
 /**
  * Invalidation shared by every mutation here.
@@ -33,6 +35,31 @@ const useInvalidateUserState = () => {
     queryClient.invalidateQueries({ queryKey: ['all-sections'] });
     queryClient.invalidateQueries({ queryKey: ['my-sections'] });
   };
+};
+
+/**
+ * The teachers a section can be staffed with.
+ *
+ * Admin-only, matching `/users/teachers` and the staffing screens. `select`
+ * resolves a missing name once, here, so no picker row has to.
+ *
+ * `useCreateTeacher` invalidates this key, so a teacher created a moment ago is
+ * pickable without a reload.
+ */
+export const useGetTeachers = () => {
+  const { isAuthenticated, role } = useAuth();
+
+  return useQuery({
+    queryKey: ['teachers'],
+    queryFn: getTeachers,
+    select: (list): TeacherOption[] =>
+      list.map((t) => ({
+        id: t.id,
+        name: t.name ?? 'Unnamed teacher',
+        subjectIds: t.subjectIds,
+      })),
+    enabled: isAuthenticated && role === 'Admin',
+  });
 };
 
 export const useDeactivateUser = () => {

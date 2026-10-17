@@ -5,9 +5,9 @@ import {
   useAssignSubjects,
   useGetAllSections,
   useGetSectionAssignments,
-  useGetTeacherPool,
   useSetClassTeacher,
 } from '@/src/hooks/useSections';
+import { useGetTeachers } from '@/src/hooks/useUsers';
 import { errorMessage } from '@/src/libs/errorMessage';
 import { EmptyState, ErrorState } from '@/components/ui/Feedback';
 import { ChipRowSkeleton, StaffingSkeleton } from '@/components/ui/skeletons';
@@ -20,8 +20,9 @@ import {
   SectionTitle,
 } from '@/components/ui/Primitives';
 import SectionChips from '@/components/ui/SectionChips';
-import type { Section, SectionSubjectAssignment } from '@/src/types/section';
+import type { SectionSubjectAssignment } from '@/src/types/section';
 import TeacherPickerSheet from './TeacherPickerSheet';
+import CreateTeacherCard from './CreateTeacherCard';
 
 type PickerTarget =
   | { kind: 'class' }
@@ -31,9 +32,13 @@ type PickerTarget =
 const sameSet = (a: string[], b: string[]) =>
   a.length === b.length && a.every((id) => b.includes(id));
 
-const SectionStaffing = ({ sectionId, sections }: { sectionId: string; sections: Section[] }) => {
+const SectionStaffing = ({ sectionId }: { sectionId: string }) => {
   const { data, isLoading, isError, refetch } = useGetSectionAssignments(sectionId);
-  const pool = useGetTeacherPool(sections.map((s) => s.id));
+  // Every active teacher, not only those already staffed somewhere: a teacher
+  // created a moment ago has no assignments yet and still has to be pickable,
+  // or they could never be staffed at all.
+  const teacherList = useGetTeachers();
+  const pool = teacherList.data ?? [];
   const { mutate: setClassTeacher, isPending: savingClassTeacher } = useSetClassTeacher();
   const { mutate: assignSubjects, isPending: savingSubjects } = useAssignSubjects();
 
@@ -65,7 +70,7 @@ const SectionStaffing = ({ sectionId, sections }: { sectionId: string; sections:
       : serverIds(s);
 
   const nameOf = (id: string) =>
-    pool.teachers.find((t) => t.id === id)?.name ??
+    pool.find((t) => t.id === id)?.name ??
     data.subjects
       .flatMap((s) => s.teachers)
       .find((t) => t.id === id)?.name ??
@@ -273,8 +278,11 @@ const SectionStaffing = ({ sectionId, sections }: { sectionId: string; sections:
                   effectiveIds(picker.assignment).length
                 } selected`
           }
-          teachers={pool.teachers}
-          isLoading={pool.isLoading}
+          teachers={pool}
+          isLoading={teacherList.isLoading}
+          subjectId={
+            picker.kind === 'subject' ? picker.assignment.subjectId : undefined
+          }
           noneLabel={picker.kind === 'class' ? 'Unassign class teacher' : 'Nobody'}
           multiple={picker.kind === 'subject'}
           selectedIds={
@@ -327,7 +335,7 @@ const StaffingTab = () => {
 
           {sectionId ? (
             // Keyed so unsaved subject edits never leak into another section.
-            <SectionStaffing key={sectionId} sectionId={sectionId} sections={sections} />
+            <SectionStaffing key={sectionId} sectionId={sectionId} />
           ) : (
             <View className="mx-4 mt-4">
               <Banner tone="info">
@@ -337,6 +345,11 @@ const StaffingTab = () => {
           )}
         </>
       )}
+
+      {/* Outside the per-section block on purpose: the subjects recorded here are
+          a fact about the teacher, not an assignment to the section picked above. */}
+      <SectionTitle title="Create teacher" />
+      <CreateTeacherCard />
     </>
   );
 };
