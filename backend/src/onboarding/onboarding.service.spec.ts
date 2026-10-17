@@ -1,13 +1,21 @@
 /* eslint-disable @typescript-eslint/no-unsafe-return */
 /* eslint-disable @typescript-eslint/no-unsafe-call */
 /* eslint-disable @typescript-eslint/no-unsafe-argument */
+/* eslint-disable @typescript-eslint/no-unsafe-assignment */
+/* eslint-disable @typescript-eslint/no-unsafe-member-access */
 import { Test, TestingModule } from '@nestjs/testing';
-import { BadRequestException, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  NotFoundException,
+} from '@nestjs/common';
 import { OnboardingService } from './onboarding.service';
 import { LoggerService } from '@/logger/logger.service';
 import { PrismaService } from '@/prisma/prisma.service';
+import { MailService } from '@/mail/mail.service';
 import * as bcrypt from 'bcrypt';
 import { CreateStudentDto } from './dto/create-student.dto';
+import { CreateTeacherDto } from './dto/create-teacher.dto';
 
 jest.mock('bcrypt');
 
@@ -15,6 +23,8 @@ describe('OnboardingService', () => {
   let service: OnboardingService;
   let prisma: {
     school: { create: jest.Mock };
+    personalDetails: { findFirst: jest.Mock };
+    subject: { findMany: jest.Mock };
     $transaction: jest.Mock;
   };
 
@@ -27,6 +37,7 @@ describe('OnboardingService', () => {
     user: { create: jest.Mock };
     auth: { create: jest.Mock };
     personalDetails: { create: jest.Mock };
+    teacherSubject: { createMany: jest.Mock };
   };
 
   const mockLogger = {
@@ -34,6 +45,8 @@ describe('OnboardingService', () => {
     error: jest.fn(),
     warn: jest.fn(),
   };
+
+  const mockMail = { send: jest.fn(), sendBulk: jest.fn() };
 
   beforeEach(async () => {
     tx = {
@@ -45,10 +58,13 @@ describe('OnboardingService', () => {
       user: { create: jest.fn() },
       auth: { create: jest.fn() },
       personalDetails: { create: jest.fn() },
+      teacherSubject: { createMany: jest.fn() },
     };
 
     prisma = {
       school: { create: jest.fn() },
+      personalDetails: { findFirst: jest.fn().mockResolvedValue(null) },
+      subject: { findMany: jest.fn().mockResolvedValue([]) },
       $transaction: jest.fn((callback) => callback(tx)),
     };
 
@@ -57,6 +73,7 @@ describe('OnboardingService', () => {
         OnboardingService,
         { provide: LoggerService, useValue: mockLogger },
         { provide: PrismaService, useValue: prisma },
+        { provide: MailService, useValue: mockMail },
       ],
     }).compile();
 
@@ -461,6 +478,129 @@ describe('OnboardingService', () => {
       );
       expect(tx.user.create).not.toHaveBeenCalled();
       expect(tx.idSequence.upsert).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('createTeacher', () => {
+    const dto: CreateTeacherDto = {
+      name: 'Ravi Kumar',
+      email: 'ravi@school.test',
+      subjectIds: ['sub-1', 'sub-2'],
+      schoolId: 'school-1',
+    };
+
+    beforeEach(() => {
+      tx.idSequence.upsert.mockResolvedValue({ lastValue: 7 });
+      tx.user.create.mockResolvedValue({ id: 'user-1' });
+      tx.auth.create.mockResolvedValue({});
+      tx.personalDetails.create.mockResolvedValue({});
+      tx.teacherSubject.createMany.mockResolvedValue({ count: 2 });
+      prisma.subject.findMany.mockResolvedValue([
+        { id: 'sub-1' },
+        { id: 'sub-2' },
+      ]);
+      mockMail.send.mockResolvedValue(undefined);
+    });
+
+    it('writes the subjects and the email with the account, then mails the login id', async () => {
+      const result = await service.createTeacher(dto);
+
+      // The subject rows are inside the account's transaction, so a teacher can
+      // never exist with half a subject list.
+      expect(tx.teacherSubject.createMany).toHaveBeenCalledWith({
+        data: [
+          { teacherId: 'user-1', subjectId: 'sub-1' },
+          { teacherId: 'user-1', subjectId: 'sub-2' },
+        ],
+      });
+      expect(tx.personalDetails.create).toHaveBeenCalledWith({
+        data: {
+          userId: 'user-1',
+          name: 'Ravi Kumar',
+          profilePic: '',
+          email: 'ravi@school.test',
+        },
+      });
+
+      expect(result).toEqual({
+        userId: 'user-1',
+        authId: 'nnpuT26007',
+        emailedTo: 'ravi@school.test',
+        emailSent: true,
+      });
+      expect(mockMail.send).toHaveBeenCalledWith(
+        expect.objectContaining({ to: 'ravi@school.test' }),
+      );
+      expect(mockMail.send.mock.calls[0][0].body).toContain('nnpuT26007');
+    });
+
+    it('rejects an email that is already in use before writing anything', async () => {
+      prisma.personalDetails.findFirst.mockResolvedValue({ userId: 'other' });
+
+      await expect(service.createTeacher(dto)).rejects.toThrow(
+        ConflictException,
+      );
+
+      // Nothing must be written: the sequence bump is what keeps authIds unique.
+      expect(tx.idSequence.upsert).not.toHaveBeenCalled();
+      expect(mockMail.send).not.toHaveBeenCalled();
+    });
+
+    it('rejects a subject id that does not exist', async () => {
+      prisma.subject.findMany.mockResolvedValue([{ id: 'sub-1' }]);
+
+      await expect(service.createTeacher(dto)).rejects.toThrow(
+        BadRequestException,
+      );
+
+      expect(tx.user.create).not.toHaveBeenCalled();
+    });
+
+    it('keeps the account and reports it when the credential mail fails', async () => {
+      mockMail.send.mockRejectedValue(new Error('smtp down'));
+
+      // A bounced email is a delivery problem, not a reason to discard the
+      // account or burn the id it was given.
+      await expect(service.createTeacher(dto)).resolves.toEqual({
+        userId: 'user-1',
+        authId: 'nnpuT26007',
+        emailedTo: 'ravi@school.test',
+        emailSent: false,
+      });
+      expect(tx.user.create).toHaveBeenCalled();
+    });
+
+    it('dedupes a subject listed twice', async () => {
+      prisma.subject.findMany.mockResolvedValue([{ id: 'sub-1' }]);
+
+      await service.createTeacher({ ...dto, subjectIds: ['sub-1', 'sub-1'] });
+
+      // [teacherId, subjectId] is unique, so a repeated id would abort the
+      // transaction on P2002.
+      expect(tx.teacherSubject.createMany).toHaveBeenCalledWith({
+        data: [{ teacherId: 'user-1', subjectId: 'sub-1' }],
+      });
+    });
+
+    it('creates no subject rows and sends no mail when there are no subjects', async () => {
+      await expect(
+        service.createTeacher({ ...dto, email: '', subjectIds: [] }),
+      ).resolves.toEqual({
+        userId: 'user-1',
+        authId: 'nnpuT26007',
+        emailedTo: null,
+        emailSent: false,
+      });
+
+      expect(tx.teacherSubject.createMany).not.toHaveBeenCalled();
+      expect(mockMail.send).not.toHaveBeenCalled();
+      // Not `''`: an empty string is a real value and would collide on the
+      // unique index with the next account created the same way.
+      expect(tx.personalDetails.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ email: null }),
+        }),
+      );
     });
   });
 });

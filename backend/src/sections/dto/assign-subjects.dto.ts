@@ -10,19 +10,7 @@ import {
 } from 'class-validator';
 import { Transform, Type } from 'class-transformer';
 import { IsBoundedId } from '@/common/decorators/is-bounded-id.decorator';
-
-/**
- * Trim strings inside an array, mirroring `IsBoundedId`'s scalar trim.
- *
- * Its own function with an `unknown` return so the array branch never surfaces
- * as `any` to `@typescript-eslint/no-unsafe-return`.
- */
-const trimEach = (value: unknown): unknown => {
-  if (!Array.isArray(value)) return value;
-  return (value as unknown[]).map((v) =>
-    typeof v === 'string' ? v.trim() : v,
-  );
-};
+import { trimEach } from '@/common/utils/trim-array.util';
 
 export class SubjectAssignmentDto {
   @ApiProperty({ example: 'clx1122334455abcdefghijk' })

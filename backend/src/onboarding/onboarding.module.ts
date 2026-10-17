@@ -4,10 +4,12 @@ import { OnboardingController } from './onboarding.controller';
 import { LoggerModule } from '@/logger/logger.module';
 import { RedisModule } from '@/redis/redis.module';
 import { PrismaModule } from '@/prisma/prisma.module';
+import { MailModule } from '@/mail/mail.module';
 import { AuthModule } from '@/auth/auth.module';
 
 @Module({
-  imports: [LoggerModule, RedisModule, PrismaModule, AuthModule],
+  // MailModule for the credentials a created teacher is sent.
+  imports: [LoggerModule, RedisModule, PrismaModule, AuthModule, MailModule],
   controllers: [OnboardingController],
   providers: [OnboardingService],
 })

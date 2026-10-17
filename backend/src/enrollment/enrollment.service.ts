@@ -26,16 +26,7 @@ import {
   type StudentCsvRow,
   type StudentCsvRowError,
 } from './csv/parse-student-csv';
-
-/**
- * The default password handed to every imported student.
- *
- * Requested, and shared across the whole cohort. Worth stating plainly: this
- * is not a secret. Anyone who learns one student's authId can sign in as any
- * other student in the same combination by guessing `nnpu123`. The credential
- * email asks every recipient to change it, which is the only control here.
- */
-const DEFAULT_PASSWORD = 'nnpu123';
+import { DEFAULT_PASSWORD } from '@/common/utils/default-password';
 
 export interface ImportedStudent {
   name: string;

@@ -1,5 +1,6 @@
 import { LoggerService } from '@/logger/logger.service';
 import { PrismaService } from '@/prisma/prisma.service';
+import { MailService } from '@/mail/mail.service';
 
 import {
   BadRequestException,
@@ -23,17 +24,33 @@ import {
 import { Prisma } from '@/generated/prisma';
 import { SecondLanguage } from '@/generated/prisma';
 import { CreateSectionsBulkDto } from './dto/create-sections-bulk.dto';
+import { DEFAULT_PASSWORD } from '@/common/utils/default-password';
 
 const STAFF_ROLE_CODE: Record<'Teacher' | 'Admin', string> = {
   Teacher: 'T',
   Admin: 'A',
 };
 
+/**
+ * The parts of staff creation that only a Teacher has.
+ *
+ * Passed alongside the DTO rather than read off it because `createAdmin` shares
+ * this path and its DTO has neither field — an admin account is not a teacher,
+ * and writing a subject list for one would be a lie in the database.
+ */
+interface CreateStaffOptions {
+  /** Address to deliver the login details to. No mail is sent when absent. */
+  email?: string | null;
+  /** Subjects the new teacher teaches. */
+  subjectIds?: string[];
+}
+
 @Injectable()
 export class OnboardingService {
   constructor(
     private readonly logger: LoggerService,
     private readonly prisma: PrismaService,
+    private readonly mail: MailService,
   ) {}
 
   async createSchool(name: string) {
@@ -165,7 +182,7 @@ export class OnboardingService {
       const serial = String(seq.lastValue).padStart(3, '0');
       const authId = `nnpu${puYear}${streamCode}${comboCode}${joinYear2}${langCode}${sessionCode}${serial}`;
 
-      const hashedPassword = await bcrypt.hash('nnpu123', 10);
+      const hashedPassword = await bcrypt.hash(DEFAULT_PASSWORD, 10);
 
       const user = await tx.user.create({
         data: {
@@ -201,9 +218,50 @@ export class OnboardingService {
   private async createStaffUser(
     role: 'Teacher' | 'Admin',
     dto: CreateTeacherDto | CreateAdminDto,
+    options: CreateStaffOptions = {},
   ) {
     this.logger.log(`[creating-${role.toLowerCase()}]`);
-    return this.prisma.$transaction(async (tx) => {
+
+    // `|| null`, not `?? null`: the DTO requires a real address, but an empty
+    // string must never reach `PersonalDetails.email`. `''` is a *value*, and the
+    // unique index treats every one of them as the same address — that is the
+    // exact shape of the P2002 that surfaced as a 500 on the second manually
+    // created account.
+    const email = options.email?.trim() || null;
+    const subjectIds = [...new Set(options.subjectIds ?? [])];
+
+    // Pre-checked rather than caught from P2002: the violation fires inside the
+    // transaction and names only the index, while a taken email is the one
+    // failure here the admin can actually fix. `PersonalDetails.email` is
+    // @unique and `null` is how "no email" is stored — `''` would collide, as it
+    // did for the second manually created account.
+    if (email) {
+      const taken = await this.prisma.personalDetails.findFirst({
+        where: { email },
+        select: { userId: true },
+      });
+      if (taken) {
+        throw new ConflictException(`Email "${email}" is already in use`);
+      }
+    }
+
+    // Checked before the transaction for the same reason: an unknown id must not
+    // burn an idSequence bump, since the sequence is what makes authIds unique.
+    if (subjectIds.length > 0) {
+      const found = await this.prisma.subject.findMany({
+        where: { id: { in: subjectIds } },
+        select: { id: true },
+      });
+      const known = new Set(found.map((s) => s.id));
+      const unknown = subjectIds.filter((id) => !known.has(id));
+      if (unknown.length > 0) {
+        throw new BadRequestException(
+          `Unknown subject(s): ${unknown.join(', ')}`,
+        );
+      }
+    }
+
+    const created = await this.prisma.$transaction(async (tx) => {
       const roleCode = STAFF_ROLE_CODE[role];
       const joinYear2 = new Date().getFullYear().toString().slice(-2);
       const bucketKey = `nnpu-staff-${roleCode}-${joinYear2}`;
@@ -216,7 +274,7 @@ export class OnboardingService {
       const serial = String(seq.lastValue).padStart(3, '0');
       const authId = `nnpu${roleCode}${joinYear2}${serial}`;
 
-      const hashedPassword = await bcrypt.hash('nnpu123', 10);
+      const hashedPassword = await bcrypt.hash(DEFAULT_PASSWORD, 10);
 
       const user = await tx.user.create({
         data: {
@@ -234,20 +292,65 @@ export class OnboardingService {
           userId: user.id,
           name: dto.name,
           profilePic: dto.profilePic ?? '',
-          // `null`, not `''`: the column is @unique, and an empty string is a
-          // real value, so every manually-created account collided with the
-          // previous one (P2002 -> 500). Postgres excludes NULLs from unique
-          // indexes.
-          email: null,
+          // The address the credentials go to. Nullable-unique, so `null` is the
+          // only safe "no address" value.
+          email,
         },
       });
 
+      // Inside the transaction with the account, so a teacher can never be
+      // created with half their subject list.
+      if (subjectIds.length > 0) {
+        await tx.teacherSubject.createMany({
+          data: subjectIds.map((subjectId) => ({
+            teacherId: user.id,
+            subjectId,
+          })),
+        });
+      }
+
       return { userId: user.id, authId };
     });
+
+    if (!email) {
+      return { ...created, emailedTo: null, emailSent: false };
+    }
+
+    // Sent after the commit, and a failure never rolls the account back: the
+    // account exists and a bounced email is a delivery problem to report rather
+    // than a reason to discard the work and burn the id. `emailedTo` still names
+    // the address that was attempted so the UI can say which one failed.
+    try {
+      await this.mail.send({
+        to: email,
+        subject: 'Your NNPU staff portal login details',
+        body: [
+          `Hi ${dto.name},`,
+          '',
+          'Your NNPU staff portal account is now active.',
+          '',
+          `Login ID: ${created.authId}`,
+          `Password: ${DEFAULT_PASSWORD}`,
+          '',
+          'Please change your password after your first login and do not share these details with anyone.',
+          '',
+          '— NNPU',
+        ].join('\n'),
+      });
+      return { ...created, emailedTo: email, emailSent: true };
+    } catch (err) {
+      this.logger.error(
+        `[creating-${role.toLowerCase()}] mail failed for ${email}: ${String(err)}`,
+      );
+      return { ...created, emailedTo: email, emailSent: false };
+    }
   }
 
   async createTeacher(dto: CreateTeacherDto) {
-    return this.createStaffUser('Teacher', dto);
+    return this.createStaffUser('Teacher', dto, {
+      email: dto.email,
+      subjectIds: dto.subjectIds,
+    });
   }
 
   async createAdmin(dto: CreateAdminDto) {
