@@ -33,9 +33,9 @@ describe('OnboardingService', () => {
     combination: { findFirst: jest.Mock };
     academicYear: { findFirst: jest.Mock };
     section: { findUnique: jest.Mock };
-    idSequence: { upsert: jest.Mock };
+    idSequence: { upsert: jest.Mock; update: jest.Mock };
     user: { create: jest.Mock };
-    auth: { create: jest.Mock };
+    auth: { create: jest.Mock; findFirst: jest.Mock };
     personalDetails: { create: jest.Mock };
     teacherSubject: { createMany: jest.Mock };
   };
@@ -54,9 +54,9 @@ describe('OnboardingService', () => {
       combination: { findFirst: jest.fn() },
       academicYear: { findFirst: jest.fn() },
       section: { findUnique: jest.fn() },
-      idSequence: { upsert: jest.fn() },
+      idSequence: { upsert: jest.fn(), update: jest.fn() },
       user: { create: jest.fn() },
-      auth: { create: jest.fn() },
+      auth: { create: jest.fn(), findFirst: jest.fn() },
       personalDetails: { create: jest.fn() },
       teacherSubject: { createMany: jest.fn() },
     };
@@ -493,6 +493,9 @@ describe('OnboardingService', () => {
       tx.idSequence.upsert.mockResolvedValue({ lastValue: 7 });
       tx.user.create.mockResolvedValue({ id: 'user-1' });
       tx.auth.create.mockResolvedValue({});
+      // No staff authIds on file yet, so the counter starts from scratch unless a
+      // test says otherwise.
+      tx.auth.findFirst.mockResolvedValue(null);
       tx.personalDetails.create.mockResolvedValue({});
       tx.teacherSubject.createMany.mockResolvedValue({ count: 2 });
       prisma.subject.findMany.mockResolvedValue([
@@ -599,6 +602,59 @@ describe('OnboardingService', () => {
       expect(tx.personalDetails.create).toHaveBeenCalledWith(
         expect.objectContaining({
           data: expect.objectContaining({ email: null }),
+        }),
+      );
+    });
+
+    it('starts the counter past the staff authIds already issued', async () => {
+      // The seed wrote nnpuT26001..nnpuT26020 without a sequence row, so the
+      // bucket is absent. Starting it at 1 mints nnpuT26001 again, which is a
+      // live teacher — the P2002 that reached production as a 500.
+      tx.auth.findFirst.mockResolvedValue({ authId: 'nnpuT26020' });
+      tx.idSequence.upsert.mockResolvedValue({ lastValue: 21 });
+
+      await expect(service.createTeacher(dto)).resolves.toEqual(
+        expect.objectContaining({ authId: 'nnpuT26021' }),
+      );
+
+      expect(tx.idSequence.upsert).toHaveBeenCalledWith({
+        where: { id: 'nnpu-staff-T-26' },
+        create: { id: 'nnpu-staff-T-26', lastValue: 21 },
+        update: { lastValue: { increment: 1 } },
+        select: { lastValue: true },
+      });
+      // The fast path: the counter led, so nothing needed correcting.
+      expect(tx.idSequence.update).not.toHaveBeenCalled();
+    });
+
+    it('a counter that is behind the ids issued is pushed past them', async () => {
+      tx.auth.findFirst.mockResolvedValue({ authId: 'nnpuT26020' });
+      // Stale: three was never a truthful count of the twenty on file.
+      tx.idSequence.upsert.mockResolvedValue({ lastValue: 3 });
+      tx.idSequence.update.mockResolvedValue({ lastValue: 21 });
+
+      await expect(service.createTeacher(dto)).resolves.toEqual(
+        expect.objectContaining({ authId: 'nnpuT26021' }),
+      );
+
+      expect(tx.idSequence.update).toHaveBeenCalledWith({
+        where: { id: 'nnpu-staff-T-26' },
+        data: { lastValue: 21 },
+        select: { lastValue: true },
+      });
+    });
+
+    it('ignores a prefix row whose tail is not a serial', async () => {
+      tx.auth.findFirst.mockResolvedValue({ authId: 'nnpuT26TEMPLE' });
+      tx.idSequence.upsert.mockResolvedValue({ lastValue: 7 });
+
+      await expect(service.createTeacher(dto)).resolves.toEqual(
+        expect.objectContaining({ authId: 'nnpuT26007' }),
+      );
+
+      expect(tx.idSequence.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          create: { id: 'nnpu-staff-T-26', lastValue: 1 },
         }),
       );
     });

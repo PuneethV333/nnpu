@@ -503,6 +503,24 @@ async function main() {
   }
   console.log(`✅ Admins created: ${ADMIN_NAMES.length}`);
 
+  // Record the staff serials this seed issued, exactly as the student loop does
+  // below. The API mints `nnpuT<yy><serial>` from an `IdSequence` bucket, so a
+  // seed that skipped this left the bucket absent and the first teacher created
+  // through the API started at 1 — colliding with the seeded `nnpuT26001` and
+  // failing on `Auth_authId_key`. `OnboardingService` no longer trusts the
+  // counter blindly, but the counter should still be true.
+  for (const [roleCode, issued] of [
+    ['T', TEACHER_NAMES.length],
+    ['A', ADMIN_NAMES.length],
+  ] as const) {
+    const id = `nnpu-staff-${roleCode}-${JOIN_YEAR2}`;
+    await prisma.idSequence.upsert({
+      where: { id },
+      update: { lastValue: issued },
+      create: { id, lastValue: issued },
+    });
+  }
+
   // ── 8. Assign class teachers & section subjects ────────────────────────────
   // Teacher assignment plan:
   //   sec 1-A (Science)  → 5 teachers (t0-t4)

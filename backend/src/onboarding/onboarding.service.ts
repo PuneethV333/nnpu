@@ -215,6 +215,34 @@ export class OnboardingService {
     });
   }
 
+  /**
+   * The highest serial already issued for an authId prefix, or 0 for none.
+   *
+   * `Auth.authId` is fixed-width — `nnpuT26` followed by a zero-padded serial —
+   * so a descending sort over the rows carrying the prefix names the highest
+   * one. A row whose tail is not numeric cannot be ordered against the others
+   * and contributes nothing.
+   *
+   * This exists because the sequence table is not the only writer of authIds:
+   * the seed has written them without touching it, and a database can outlive
+   * the code that mis-minted into it.
+   */
+  private async highestIssuedSerial(
+    tx: Prisma.TransactionClient,
+    prefix: string,
+  ): Promise<number> {
+    const highest = await tx.auth.findFirst({
+      where: { authId: { startsWith: prefix } },
+      orderBy: { authId: 'desc' },
+      select: { authId: true },
+    });
+
+    if (!highest) return 0;
+
+    const serial = highest.authId.slice(prefix.length);
+    return /^\d+$/.test(serial) ? Number(serial) : 0;
+  }
+
   private async createStaffUser(
     role: 'Teacher' | 'Admin',
     dto: CreateTeacherDto | CreateAdminDto,
@@ -265,14 +293,36 @@ export class OnboardingService {
       const roleCode = STAFF_ROLE_CODE[role];
       const joinYear2 = new Date().getFullYear().toString().slice(-2);
       const bucketKey = `nnpu-staff-${roleCode}-${joinYear2}`;
+      const prefix = `nnpu${roleCode}${joinYear2}`;
 
-      const seq = await tx.idSequence.upsert({
+      const floor = await this.highestIssuedSerial(tx, prefix);
+
+      // The counter is seeded just past the highest authId the table already
+      // holds, not at 1: `prisma/dummy.ts` mints staff authIds from its own loop
+      // and never wrote the sequence row for them, so on a seeded database this
+      // bucket did not exist and the first real create minted `nnpuT26001` again
+      // — an existing teacher, and a 500 on `Auth_authId_key`.
+      let seq = await tx.idSequence.upsert({
         where: { id: bucketKey },
-        create: { id: bucketKey, lastValue: 1 },
+        create: { id: bucketKey, lastValue: floor + 1 },
         update: { lastValue: { increment: 1 } },
+        select: { lastValue: true },
       });
+
+      // A counter that exists but sits behind the table it describes is the same
+      // hazard, so it is pushed past the ids actually issued rather than trusted.
+      // Only reachable while the bucket is behind; once it leads, the atomic
+      // increment above is the whole cost.
+      if (seq.lastValue <= floor) {
+        seq = await tx.idSequence.update({
+          where: { id: bucketKey },
+          data: { lastValue: floor + 1 },
+          select: { lastValue: true },
+        });
+      }
+
       const serial = String(seq.lastValue).padStart(3, '0');
-      const authId = `nnpu${roleCode}${joinYear2}${serial}`;
+      const authId = `${prefix}${serial}`;
 
       const hashedPassword = await bcrypt.hash(DEFAULT_PASSWORD, 10);
 
