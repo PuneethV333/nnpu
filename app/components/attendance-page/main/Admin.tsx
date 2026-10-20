@@ -66,6 +66,18 @@ const Admin = () => {
     ? Math.max(0, coverage.totalStudents - coverage.marked)
     : 0;
 
+  /**
+   * The dashboard reports what kind of day this is from the calendar, but the
+   * coverage card ignored it: on a holiday it announced that every student was
+   * "still unmarked", which is true of the data and wrong about the day.
+   *
+   * A date with no calendar row reads as working rather than as a day off — an
+   * unseeded day must not be able to hide a real gap in marking.
+   */
+  const dayType = dashboard?.today?.type ?? null;
+  const nonWorkingType = dayType && dayType !== 'Working' ? dayType : null;
+  const markedToday = coverage?.marked ?? 0;
+
   const events = useMemo(
     () => dashboard?.upcomingEvents ?? [],
     [dashboard],
@@ -101,40 +113,81 @@ const Admin = () => {
           />
         ) : (
           <>
-            <View className="mx-4 mb-3 bg-white rounded-2xl border border-gray-100 p-4">
-              <Text className="text-xs font-semibold text-gray-400 tracking-wide">
-                TODAY&apos;S MARKING COVERAGE
-              </Text>
-
-              <View className="flex-row items-baseline mt-1">
-                <Text className="text-4xl font-extrabold text-gray-900">
-                  {coverage?.percentage ?? 0}%
+            {nonWorkingType ? (
+              <View className="mx-4 mb-3 bg-white rounded-2xl border border-gray-100 p-4">
+                <Text className="text-xs font-semibold text-gray-400 tracking-wide">
+                  TODAY
                 </Text>
-                <Text className="text-sm text-gray-400 ml-2">
-                  {coverage?.marked ?? 0} of {coverage?.totalStudents ?? 0} students
-                </Text>
-              </View>
 
-              <View className="h-2 rounded-full bg-gray-100 mt-3 overflow-hidden">
-                <View
-                  className="h-full rounded-full"
-                  style={{
-                    width: `${Math.min(100, Math.max(0, coverage?.percentage ?? 0))}%`,
-                    backgroundColor: '#2563EB',
-                  }}
-                />
-              </View>
-
-              {unmarked > 0 && (
-                <View className="flex-row items-center gap-2 mt-3">
-                  <Feather name="alert-circle" size={14} color="#D97706" />
-                  <Text className="text-xs font-semibold text-amber-700">
-                    {unmarked} student{unmarked > 1 ? 's' : ''} still unmarked
-                    today
+                <View className="flex-row items-center gap-2 mt-1">
+                  <View
+                    className="rounded-full px-2 py-0.5"
+                    style={{
+                      backgroundColor: `${DAY_CHIP_COLOR[nonWorkingType]}1A`,
+                    }}
+                  >
+                    <Text
+                      className="text-xs font-semibold"
+                      style={{ color: DAY_CHIP_COLOR[nonWorkingType] }}
+                    >
+                      {nonWorkingType}
+                    </Text>
+                  </View>
+                  <Text
+                    className="flex-1 text-base font-semibold text-gray-900"
+                    numberOfLines={1}
+                  >
+                    {dashboard?.today?.label ?? 'Not a working day'}
                   </Text>
                 </View>
-              )}
-            </View>
+
+                <Text className="text-xs text-gray-500 mt-2">
+                  {/* Marking outside the calendar — a special class on a holiday —
+                      is reported rather than hidden, because it really happened. */}
+                  {markedToday > 0
+                    ? `${markedToday} of ${
+                        coverage?.totalStudents ?? 0
+                      } students were marked anyway; no more are expected today.`
+                    : 'No attendance is expected today, so nothing is unmarked.'}
+                </Text>
+              </View>
+            ) : (
+              <View className="mx-4 mb-3 bg-white rounded-2xl border border-gray-100 p-4">
+                <Text className="text-xs font-semibold text-gray-400 tracking-wide">
+                  TODAY&apos;S MARKING COVERAGE
+                </Text>
+
+                <View className="flex-row items-baseline mt-1">
+                  <Text className="text-4xl font-extrabold text-gray-900">
+                    {coverage?.percentage ?? 0}%
+                  </Text>
+                  <Text className="text-sm text-gray-400 ml-2">
+                    {coverage?.marked ?? 0} of {coverage?.totalStudents ?? 0}{' '}
+                    students
+                  </Text>
+                </View>
+
+                <View className="h-2 rounded-full bg-gray-100 mt-3 overflow-hidden">
+                  <View
+                    className="h-full rounded-full"
+                    style={{
+                      width: `${Math.min(100, Math.max(0, coverage?.percentage ?? 0))}%`,
+                      backgroundColor: '#2563EB',
+                    }}
+                  />
+                </View>
+
+                {unmarked > 0 && (
+                  <View className="flex-row items-center gap-2 mt-3">
+                    <Feather name="alert-circle" size={14} color="#D97706" />
+                    <Text className="text-xs font-semibold text-amber-700">
+                      {unmarked} student{unmarked > 1 ? 's' : ''} still unmarked
+                      today
+                    </Text>
+                  </View>
+                )}
+              </View>
+            )}
 
             <MonthlyAttendanceGrid
               year={monthYear}
