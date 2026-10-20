@@ -1,4 +1,5 @@
 import { api } from './client';
+import { BULK_MAIL_REQUEST_TIMEOUT_MS } from './timeouts';
 import {
   importStudentsResponseSchema,
   promoteTo2ndPucResponseSchema,
@@ -33,7 +34,12 @@ export const importStudents = async (
     type: body.file.type || 'text/csv',
   } as unknown as Blob);
 
-  const res = await api.post('/enrollment/students/import', form);
+  // The server emails the whole cohort before it answers, under a 5-minute
+  // budget. The default 15s timeout abandoned the request while the accounts had
+  // already been created.
+  const res = await api.post('/enrollment/students/import', form, {
+    timeout: BULK_MAIL_REQUEST_TIMEOUT_MS,
+  });
 
   return importStudentsResponseSchema.parse(res.data);
 };

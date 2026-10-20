@@ -19,6 +19,7 @@ import {
   createSectionsBulkResultSchema,
 } from '@/src/types/onboarding';
 import { api } from './client';
+import { MAIL_REQUEST_TIMEOUT_MS } from './timeouts';
 
 export const createSchool = async (name: string): Promise<School> => {
   return schoolSchema.parse((await api.post('/onboarding/create-school', { name })).data);
@@ -28,12 +29,28 @@ export const createStudent = async (body: CreateStudentType): Promise<CreatedUse
   return createdUserSchema.parse((await api.post('/onboarding/create-student', body)).data);
 };
 
+/**
+ * Staff creation mails the credentials before answering, so it waits on SMTP the
+ * way the import waits on its batch.
+ */
 export const createTeacher = async (body: CreateTeacherType): Promise<CreatedTeacher> => {
-  return createdTeacherSchema.parse((await api.post('/onboarding/create-teacher', body)).data);
+  return createdTeacherSchema.parse(
+    (
+      await api.post('/onboarding/create-teacher', body, {
+        timeout: MAIL_REQUEST_TIMEOUT_MS,
+      })
+    ).data,
+  );
 };
 
 export const createAdmin = async (body: CreateStaffType): Promise<CreatedUser> => {
-  return createdUserSchema.parse((await api.post('/onboarding/create-admin', body)).data);
+  return createdUserSchema.parse(
+    (
+      await api.post('/onboarding/create-admin', body, {
+        timeout: MAIL_REQUEST_TIMEOUT_MS,
+      })
+    ).data,
+  );
 };
 
 export const createAcademicYear = async (body: CreateAcademicYearType): Promise<AcademicYear> => {

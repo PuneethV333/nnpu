@@ -13,6 +13,7 @@ import {
   type TransferStudentResponse,
 } from '@/src/types/users';
 import { api } from './client';
+import { MAIL_REQUEST_TIMEOUT_MS } from './timeouts';
 
 /**
  * Active teachers, for the staffing pickers.
@@ -63,7 +64,12 @@ export const transferStudent = async (
 export const resetPassword = async (
   userId: string,
 ): Promise<ResetPasswordResponse> => {
-  const res = await api.post(`/users/${userId}/reset-password`);
+  // The response carries the authId the office has to read out, so it is worth
+  // waiting past the mail attempt rather than reporting a failure that would
+  // leave the student without either the ID or the password.
+  const res = await api.post(`/users/${userId}/reset-password`, undefined, {
+    timeout: MAIL_REQUEST_TIMEOUT_MS,
+  });
   return resetPasswordResponseSchema.parse(res.data);
 };
 
