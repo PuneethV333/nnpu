@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { Alert, Pressable, Text, View } from 'react-native';
+import { Pressable, Text, View } from 'react-native';
 import { z } from 'zod';
+import { AttendanceStatusModal } from '@/components/attendance-page/AttendanceStatusModal';
 import { useAuth } from '@/src/hooks/useAuth';
 import { useCreateTeacher } from '@/src/hooks/useOnboarding';
 import { useGetSubjects } from '@/src/hooks/useSubjects';
@@ -100,6 +101,18 @@ const CreateTeacherCard = () => {
     (CreatedTeacher & { name: string }) | null
   >(null);
 
+  /**
+   * The outcome is shown as a modal, the same one attendance and marks use, so
+   * a create reports itself the way every other save in the app does instead of
+   * appearing as a line the admin can scroll past.
+   */
+  const [feedback, setFeedback] = useState<{
+    visible: boolean;
+    type: 'success' | 'error';
+    title: string;
+    message: string;
+  }>({ visible: false, type: 'success', title: '', message: '' });
+
   const schoolId = user?.school?.id ?? null;
   const trimmedName = name.trim();
   const trimmedEmail = email.trim();
@@ -130,12 +143,27 @@ const CreateTeacherCard = () => {
       {
         onSuccess: (res) => {
           setCreated({ ...res, name: trimmedName });
+          setFeedback({
+            visible: true,
+            type: 'success',
+            title: `${trimmedName} created`,
+            // The account exists either way — a delivery failure is news about
+            // the email, and the ID has to be handed over by hand in that case.
+            message: res.emailSent
+              ? `Login ID ${res.authId}. The details were emailed to ${res.emailedTo}. Password nnpu123 until they change it.`
+              : `Login ID ${res.authId}. Sending the email failed, so pass this ID on by hand — password nnpu123.`,
+          });
           setName('');
           setEmail('');
           setSubjectIds([]);
         },
         onError: (err) =>
-          Alert.alert('Could not create teacher', errorMessage(err)),
+          setFeedback({
+            visible: true,
+            type: 'error',
+            title: 'Could not create teacher',
+            message: errorMessage(err),
+          }),
       },
     );
   };
@@ -226,7 +254,9 @@ const CreateTeacherCard = () => {
         <View className="mt-4">
           <Banner
             // The account exists either way, so a delivery failure is a warning
-            // about the email, not a failure of the create.
+            // about the email, not a failure of the create. Kept alongside the
+            // modal because the popup is dismissed: this line is what is left on
+            // screen when the admin goes to hand the login ID over.
             tone={created.emailSent ? 'success' : 'warning'}
             title={`${created.name} created`}
           >
@@ -238,6 +268,24 @@ const CreateTeacherCard = () => {
           </Banner>
         </View>
       ) : null}
+
+      <AttendanceStatusModal
+        visible={feedback.visible}
+        type={feedback.type}
+        title={feedback.title}
+        message={feedback.message}
+        onClose={() => setFeedback((f) => ({ ...f, visible: false }))}
+        onRetry={
+          feedback.type === 'error'
+            ? () => {
+                // A failed create is safe to repeat: the account and its subject
+                // rows are one transaction, so a rejected attempt wrote nothing.
+                setFeedback((f) => ({ ...f, visible: false }));
+                submit();
+              }
+            : undefined
+        }
+      />
     </Card>
   );
 };

@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
-import { Alert, Pressable, Text, View } from 'react-native';
+import { Pressable, Text, View } from 'react-native';
 import { useQueryClient } from '@tanstack/react-query';
+import { AttendanceStatusModal } from '@/components/attendance-page/AttendanceStatusModal';
 import { useAuth } from '@/src/hooks/useAuth';
 import { useGetAllSections } from '@/src/hooks/useSections';
 import { useGetCombinations } from '@/src/hooks/useCombinations';
@@ -97,6 +98,18 @@ const SingleStudentCard = () => {
   const [language, setLanguage] = useState<Language>('Kannada');
   const [created, setCreated] = useState<{ name: string; authId: string } | null>(null);
 
+  /**
+   * The outcome is shown as a modal, the same one attendance, marks and the
+   * teacher card use, so every create in this screen reports itself the same way
+   * instead of one of them appearing as a line further down the card.
+   */
+  const [feedback, setFeedback] = useState<{
+    visible: boolean;
+    type: 'success' | 'error';
+    title: string;
+    message: string;
+  }>({ visible: false, type: 'success', title: '', message: '' });
+
   const section = useMemo(
     () => (sections ?? []).find((s) => s.id === sectionId) ?? null,
     [sections, sectionId],
@@ -139,12 +152,26 @@ const SingleStudentCard = () => {
       {
         onSuccess: (res) => {
           setCreated({ name: trimmedName, authId: res.authId });
+          setFeedback({
+            visible: true,
+            type: 'success',
+            title: `${trimmedName} created`,
+            // No mail is sent for a single student, so the ID on this screen is
+            // the only copy that exists.
+            message: `Login ID ${res.authId}. No email was sent — give this ID to the student, password nnpu123.`,
+          });
           setName('');
           setCombinationId('');
           // The new account has to appear on the roster behind this card.
           queryClient.invalidateQueries({ queryKey: ['students', section.id] });
         },
-        onError: (err) => Alert.alert('Could not create student', errorMessage(err)),
+        onError: (err) =>
+          setFeedback({
+            visible: true,
+            type: 'error',
+            title: 'Could not create student',
+            message: errorMessage(err),
+          }),
       },
     );
   };
@@ -257,6 +284,24 @@ const SingleStudentCard = () => {
           </Banner>
         </View>
       ) : null}
+
+      <AttendanceStatusModal
+        visible={feedback.visible}
+        type={feedback.type}
+        title={feedback.title}
+        message={feedback.message}
+        onClose={() => setFeedback((f) => ({ ...f, visible: false }))}
+        onRetry={
+          feedback.type === 'error'
+            ? () => {
+                // Safe to repeat: a rejected create wrote nothing, so nothing is
+                // half-made and no authId was burned.
+                setFeedback((f) => ({ ...f, visible: false }));
+                submit();
+              }
+            : undefined
+        }
+      />
     </Card>
   );
 };
