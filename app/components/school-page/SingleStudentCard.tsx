@@ -17,6 +17,7 @@ import {
 } from '@/components/ui/Primitives';
 import { Skeleton } from '@/components/ui/Skeleton';
 import SectionChips from '@/components/ui/SectionChips';
+import { colors } from '@/constants/theme';
 
 const LANGUAGES = ['Kannada', 'Hindi', 'Sanskrit'] as const;
 type Language = (typeof LANGUAGES)[number];
@@ -52,12 +53,12 @@ const ChoicePills = ({
             paddingVertical: 6,
             backgroundColor: active
               ? pressed
-                ? '#4338CA'
-                : '#4F46E5'
+                ? colors.accentPressed
+                : colors.accent
               : pressed
                 ? '#E5E7EB'
                 : '#FFFFFF',
-            borderColor: active ? '#4F46E5' : pressed ? '#D1D5DB' : '#E5E7EB',
+            borderColor: active ? colors.accent : pressed ? '#D1D5DB' : '#E5E7EB',
           })}
         >
           <Text

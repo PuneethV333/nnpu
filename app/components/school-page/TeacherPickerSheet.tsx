@@ -3,6 +3,7 @@ import { Pressable, Text, TextInput, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import type { TeacherOption } from '@/src/types/users';
 import { BottomSheet } from '@/components/ui/Primitives';
+import { colors } from '@/constants/theme';
 
 type Props = {
   title: string;
@@ -70,10 +71,10 @@ const PickerRow = ({
         {label}
       </Text>
       {hint ? (
-        <Text className="text-xs text-indigo-600 mt-0.5">{hint}</Text>
+        <Text className="text-xs text-blue-600 mt-0.5">{hint}</Text>
       ) : null}
     </View>
-    {selected ? <Feather name="check" size={18} color="#4F46E5" /> : null}
+    {selected ? <Feather name="check" size={18} color={colors.accent} /> : null}
   </Pressable>
 );
 
@@ -142,8 +143,8 @@ const TeacherPickerSheet = ({
           selected={isSelected(t.id)}
           onPress={() => onToggle(t.id)}
           icon={
-            <View className="w-9 h-9 rounded-full bg-indigo-50 items-center justify-center">
-              <Text className="text-xs font-bold text-indigo-700">
+            <View className="w-9 h-9 rounded-full bg-blue-50 items-center justify-center">
+              <Text className="text-xs font-bold text-blue-700">
                 {t.name.charAt(0).toUpperCase()}
               </Text>
             </View>

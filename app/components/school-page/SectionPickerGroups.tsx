@@ -47,7 +47,7 @@ const SectionPickerGroups = ({ sections, selectedIds, onChange, activeColor }: P
                   )
                 }
               >
-                <Text className="text-xs font-semibold text-indigo-600">
+                <Text className="text-xs font-semibold text-blue-600">
                   {allSelected ? 'Clear' : 'Select all'}
                 </Text>
               </Pressable>

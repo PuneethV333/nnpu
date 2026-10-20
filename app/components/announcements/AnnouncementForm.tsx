@@ -26,6 +26,7 @@ import {
   TYPE_COPY,
   TYPE_ORDER,
 } from './announcementMeta';
+import { colors } from '@/constants/theme';
 
 type Props = {
   /** When set the sheet edits this post; otherwise it creates a new one. */
@@ -156,7 +157,7 @@ const AnnouncementForm = ({ initial = null, onClose }: Props) => {
           <Switch
             value={rescope}
             onValueChange={setRescope}
-            trackColor={{ true: '#4F46E5', false: '#E5E7EB' }}
+            trackColor={{ true: colors.accent, false: '#E5E7EB' }}
           />
         </View>
       ) : null}
@@ -173,8 +174,8 @@ const AnnouncementForm = ({ initial = null, onClose }: Props) => {
                   onPress={() => setAudience(a)}
                   className="rounded-full px-3 py-1.5 border"
                   style={{
-                    backgroundColor: active ? '#4F46E5' : '#FFFFFF',
-                    borderColor: active ? '#4F46E5' : '#E5E7EB',
+                    backgroundColor: active ? colors.accent : '#FFFFFF',
+                    borderColor: active ? colors.accent : '#E5E7EB',
                   }}
                 >
                   <Text
@@ -216,7 +217,7 @@ const AnnouncementForm = ({ initial = null, onClose }: Props) => {
             <Switch
               value={isPinned}
               onValueChange={setIsPinned}
-              trackColor={{ true: '#4F46E5', false: '#E5E7EB' }}
+              trackColor={{ true: colors.accent, false: '#E5E7EB' }}
             />
           </View>
         </>

@@ -14,8 +14,8 @@ const ProfileHeader = ({ name, profilePic, role, schoolName }: ProfileHeaderProp
       {profilePic ? (
         <Image source={{ uri: profilePic }} className="w-24 h-24 rounded-full" />
       ) : (
-        <View className="w-24 h-24 rounded-full bg-indigo-100 items-center justify-center">
-          <Text className="text-3xl font-bold text-indigo-700">
+        <View className="w-24 h-24 rounded-full bg-blue-100 items-center justify-center">
+          <Text className="text-3xl font-bold text-blue-700">
             {name.charAt(0).toUpperCase()}
           </Text>
         </View>

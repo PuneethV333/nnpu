@@ -19,6 +19,7 @@ import AnnouncementRow from '@/components/announcements/AnnouncementRow';
 import AnnouncementForm from '@/components/announcements/AnnouncementForm';
 import AnnouncementDetailSheet from '@/components/announcements/AnnouncementDetailSheet';
 import { TYPE_COPY, TYPE_ORDER } from '@/components/announcements/announcementMeta';
+import { colors } from '@/constants/theme';
 
 const PAGE_SIZE = 10;
 
@@ -180,7 +181,7 @@ const Announcements = () => {
             accessibilityLabel="New announcement"
             // Geometry and fill both live in the style function: a
             // function-valued `style` is dropped when `className` is present,
-            // so the indigo fill had to be forced through a static style and
+            // so the accent fill had to be forced through a static style and
             // there was no press state at all.
             style={({ pressed }) => ({
               flexDirection: 'row',
@@ -189,7 +190,9 @@ const Announcements = () => {
               paddingHorizontal: 14,
               paddingVertical: 8,
               gap: 6,
-              backgroundColor: pressed ? '#4338CA' : '#4F46E5',
+              backgroundColor: pressed
+                ? colors.accentPressed
+                : colors.accent,
             })}
           >
             <Feather name="plus" size={15} color="#FFFFFF" />

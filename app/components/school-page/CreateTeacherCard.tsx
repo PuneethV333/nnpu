@@ -16,6 +16,7 @@ import {
 import { Skeleton } from '@/components/ui/Skeleton';
 import type { Subject } from '@/src/types/subject';
 import type { CreatedTeacher } from '@/src/types/onboarding';
+import { colors } from '@/constants/theme';
 
 /** The same rule the server applies, so a typo fails here and not after a round trip. */
 const emailSchema = z.email();
@@ -51,12 +52,12 @@ const SubjectPills = ({
             paddingVertical: 6,
             backgroundColor: active
               ? pressed
-                ? '#4338CA'
-                : '#4F46E5'
+                ? colors.accentPressed
+                : colors.accent
               : pressed
                 ? '#E5E7EB'
                 : '#FFFFFF',
-            borderColor: active ? '#4F46E5' : pressed ? '#D1D5DB' : '#E5E7EB',
+            borderColor: active ? colors.accent : pressed ? '#D1D5DB' : '#E5E7EB',
           })}
         >
           <Text

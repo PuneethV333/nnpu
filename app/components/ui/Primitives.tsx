@@ -14,11 +14,12 @@ import {
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { colors } from '@/constants/theme';
 
 /**
  * Small building blocks that reproduce the card / pill / button look already
  * used across the app (white rounded-2xl cards on gray-50, gray-400 tracking
- * labels, blue/indigo primary buttons), so new screens stop re-typing the same
+ * labels, one blue primary button), so new screens stop re-typing the same
  * class strings.
  */
 
@@ -55,13 +56,12 @@ export const FieldLabel = ({ children }: { children: string }) => (
   </Text>
 );
 
-export type Tone = 'indigo' | 'blue' | 'green' | 'red' | 'neutral';
+export type Tone = 'blue' | 'green' | 'red' | 'neutral';
 
 const TONE: Record<Tone, { bg: string; fg: string; border: string }> = {
-  indigo: { bg: '#4F46E5', fg: '#FFFFFF', border: '#4F46E5' },
-  blue: { bg: '#2563EB', fg: '#FFFFFF', border: '#2563EB' },
+  blue: { bg: colors.accent, fg: '#FFFFFF', border: colors.accent },
   green: { bg: '#16A34A', fg: '#FFFFFF', border: '#16A34A' },
-  red: { bg: '#DC2626', fg: '#FFFFFF', border: '#DC2626' },
+  red: { bg: colors.danger, fg: '#FFFFFF', border: colors.danger },
   neutral: { bg: '#FFFFFF', fg: '#374151', border: '#E5E7EB' },
 };
 
@@ -78,7 +78,6 @@ const TONE: Record<Tone, { bg: string; fg: string; border: string }> = {
  */
 const PRESSED_FILL: Record<string, string> = {
   '#2563EB': '#1D4ED8', // blue-600   -> blue-700
-  '#4F46E5': '#4338CA', // indigo-600 -> indigo-700
   '#16A34A': '#15803D', // green-600  -> green-700
   '#DC2626': '#B91C1C', // red-600    -> red-700
   '#FFFFFF': '#E5E7EB', // white      -> gray-200, for outlined/secondary fills
@@ -107,7 +106,7 @@ export const PrimaryButton = ({
   onPress,
   loading = false,
   disabled = false,
-  tone = 'indigo',
+  tone = 'blue',
   icon,
 }: {
   label: string;
@@ -164,7 +163,7 @@ export const PillTabs = <T extends string>({
   options,
   value,
   onChange,
-  activeColor = '#4F46E5',
+  activeColor = colors.accent,
 }: {
   options: { value: T; label: string }[];
   value: T;

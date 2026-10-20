@@ -23,6 +23,7 @@ import SectionChips from '@/components/ui/SectionChips';
 import type { SectionSubjectAssignment } from '@/src/types/section';
 import TeacherPickerSheet from './TeacherPickerSheet';
 import CreateTeacherCard from './CreateTeacherCard';
+import { colors } from '@/constants/theme';
 
 type PickerTarget =
   | { kind: 'class' }
@@ -179,7 +180,7 @@ const SectionStaffing = ({ sectionId }: { sectionId: string }) => {
               opacity: savingClassTeacher ? 0.5 : 1,
             })}
           >
-            <Text className="text-sm font-semibold text-indigo-600">
+            <Text className="text-sm font-semibold text-blue-600">
               {savingClassTeacher ? 'Saving…' : data.classTeacher ? 'Change' : 'Assign'}
             </Text>
           </Pressable>
@@ -229,14 +230,18 @@ const SectionStaffing = ({ sectionId }: { sectionId: string }) => {
                     </Text>
                     {s.hasPractical ? <Feather name="award" size={12} color="#2563EB" /> : null}
                     {ids.length > 1 ? (
-                      <Pill label={`${ids.length} teachers`} color="#4F46E5" />
+                      <Pill label={`${ids.length} teachers`} color={colors.accent} />
                     ) : null}
                   </View>
                   <Text
                     className="text-xs mt-0.5"
                     numberOfLines={1}
                     style={{
-                      color: ids.length > 0 ? (isDirty ? '#4F46E5' : '#6B7280') : '#D97706',
+                      color: ids.length > 0
+                        ? isDirty
+                          ? colors.accent
+                          : '#6B7280'
+                        : '#D97706',
                       fontWeight: isDirty ? '600' : '400',
                     }}
                   >

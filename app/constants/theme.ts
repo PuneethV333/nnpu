@@ -32,5 +32,19 @@ export const components = {
 
 const tabBar = components.tabBar
 
+/**
+ * One accent for the whole app.
+ *
+ * The tab bar is the largest permanently-coloured surface, so it sets the accent:
+ * a primary button must not introduce a second blue or indigo next to it. Risky
+ * actions are the only buttons allowed to leave the accent, and they use `danger`.
+ */
+export const colors = {
+  accent: '#2563EB',
+  accentPressed: '#1D4ED8',
+  danger: '#DC2626',
+  dangerPressed: '#B91C1C',
+} as const;
+
 export const getTabBarClearance = (insetBottom: number) =>
   tabBar.height + Math.max(insetBottom, tabBar.horizontalInset);

@@ -150,7 +150,7 @@ const PassOutCard = () => {
         <PrimaryButton
           label={selected.length ? `Preview (${selected.length} section${selected.length > 1 ? 's' : ''})` : 'Select sections'}
           icon="eye"
-          tone={preview ? 'neutral' : 'red'}
+          tone={preview ? 'neutral' : 'blue'}
           onPress={runPreview}
           disabled={selected.length === 0 || running}
           loading={previewing}

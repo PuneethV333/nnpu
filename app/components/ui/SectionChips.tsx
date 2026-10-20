@@ -1,6 +1,7 @@
 import React from 'react';
 import { Pressable, Text, View } from 'react-native';
 import type { Section } from '@/src/types/section';
+import { colors } from '@/constants/theme';
 
 type Props = {
   sections: Section[];
@@ -21,7 +22,7 @@ const SectionChips = ({
   sections,
   selectedIds,
   onToggle,
-  activeColor = '#4F46E5',
+  activeColor = colors.accent,
 }: Props) => (
   <View className="flex-row flex-wrap" style={{ gap: 8 }}>
     {sections.map((section) => {

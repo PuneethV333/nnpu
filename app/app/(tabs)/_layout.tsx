@@ -1,5 +1,5 @@
 import { tabs } from "@/constants/data";
-import { components } from "@/constants/theme";
+import { colors, components } from "@/constants/theme";
 import { useAuth } from "@/src/hooks/useAuth";
 import { Ionicons } from "@expo/vector-icons";
 import { clsx } from "clsx";
@@ -46,7 +46,7 @@ const TabIcon = ({ focused, icon, title }: TabIconProps) => (
       <Ionicons
         name={getIconName(icon, focused)}
         size={20}
-        color={focused ? "#2563EB" : "rgba(255,255,255,0.75)"}
+        color={focused ? colors.accent : "rgba(255,255,255,0.75)"}
       />
     </View>
 
@@ -82,10 +82,10 @@ export default function TabsLayout() {
           height: tabBar.height,
           marginHorizontal: tabBar.horizontalInset,
           borderRadius: tabBar.radius,
-          backgroundColor: "#2563EB",
+          backgroundColor: colors.accent,
           borderTopWidth: 0,
           elevation: 8,
-          shadowColor: "#2563EB",
+          shadowColor: colors.accent,
           shadowOffset: { width: 0, height: 8 },
           shadowOpacity: 0.3,
           shadowRadius: 16,
