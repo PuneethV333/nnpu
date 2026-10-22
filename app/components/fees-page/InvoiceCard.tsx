@@ -1,21 +1,27 @@
 import React from 'react';
 import { View, Text, Pressable, ActivityIndicator } from 'react-native';
 import { Feather } from '@expo/vector-icons';
-import { Invoice } from '@/src/types/fees';
+import { StudentInvoice } from '@/src/types/fees';
 import { formatDate, formatMoney } from '@/src/libs/money';
 import StatusBadge from './StatusBadge';
 
-const FEE_ROWS: { key: keyof Invoice['feeStructure']; label: string }[] = [
-  { key: 'tuitionFee', label: 'Tuition Fee' },
-  { key: 'examFee', label: 'Exam Fee' },
-  { key: 'transportFee', label: 'Transport Fee' },
-  { key: 'hostelFee', label: 'Hostel Fee' },
-  { key: 'otherFee', label: 'Other Fee' },
+/**
+ * Labels for `feeBreakdown`. `tuition` is what the school now calls the academic
+ * fee (see `FeeStructureForm`), so the card says the same thing the admin
+ * entered. Zero amounts are skipped, which is most of them: transport and hostel
+ * are not billed through the app.
+ */
+const FEE_ROWS: { key: keyof StudentInvoice['feeBreakdown']; label: string }[] = [
+  { key: 'tuition', label: 'Academic Fee' },
+  { key: 'exam', label: 'Exam Fee' },
+  { key: 'transport', label: 'Transport Fee' },
+  { key: 'hostel', label: 'Hostel Fee' },
+  { key: 'other', label: 'Other Fee' },
 ];
 
 interface InvoiceCardProps {
-  invoice: Invoice;
-  onPay: (invoice: Invoice) => void;
+  invoice: StudentInvoice;
+  onPay: (invoice: StudentInvoice) => void;
   isPaying: boolean;
 }
 
@@ -57,7 +63,7 @@ const InvoiceCard = ({ invoice, onPay, isPaying }: InvoiceCardProps) => {
 
       <View className="mt-4 pt-3 border-t border-gray-100">
         {FEE_ROWS.map(({ key, label }) => {
-          const amount = invoice.feeStructure[key] as number;
+          const amount = invoice.feeBreakdown[key];
           if (amount === 0) return null;
           return (
             <View key={key} className="flex-row items-center justify-between py-1">

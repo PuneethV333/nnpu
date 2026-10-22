@@ -1,6 +1,4 @@
 import {
-  invoiceArraySchema,
-  InvoiceArray,
   paymentOrderSchema,
   PaymentOrder,
   createFeeStructureType,
@@ -46,8 +44,15 @@ export const generateInvoices = async (body: generateInvoicesType):Promise<gener
   );
 }
 
-export const getMyInvoices = async (): Promise<InvoiceArray> => {
-  return invoiceArraySchema.parse((await api.get('/fees/invoices/me')).data);
+/**
+ * `/fees/invoices/me` answers with the *student* invoice shape — `feeBreakdown`
+ * plus a trimmed payment list — not the admin invoice (which embeds the whole
+ * `feeStructure`). Parsing it with `invoiceArraySchema` threw on the missing
+ * `studentId`/`feeStructure` fields, so this screen failed with "Couldn't load
+ * your invoices" for every student, on every invoice.
+ */
+export const getMyInvoices = async (): Promise<StudentInvoices> => {
+  return studentInvoicesSchema.parse((await api.get('/fees/invoices/me')).data);
 };
 
 export const getStudentInvoices = async (studentId: string):Promise<StudentInvoices> => {

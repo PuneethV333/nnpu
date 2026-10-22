@@ -14,7 +14,7 @@ import {
   useCreatePaymentOrder,
   useVerifyPayment,
 } from '@/src/hooks/useFees';
-import { Invoice } from '@/src/types/fees';
+import type { StudentInvoice } from '@/src/types/fees';
 import { formatMoney } from '@/src/libs/money';
 import { EmptyState, ErrorState } from '@/components/ui/Feedback';
 import { InvoiceCardSkeleton, SkeletonStatRow } from '@/components/ui/skeletons';
@@ -75,7 +75,7 @@ const FeesPage = () => {
     };
   }, [invoices]);
 
-  const handlePay = async (invoice: Invoice) => {
+  const handlePay = async (invoice: StudentInvoice) => {
     setPayingInvoiceId(invoice.id);
     try {
       const order = await createOrder(invoice.id);
