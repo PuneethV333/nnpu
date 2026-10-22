@@ -1,4 +1,31 @@
+#!/usr/bin/env sh
+#
+# Runs on `git commit`. Two gates, both cheap enough to be non-optional:
+#
+#   1. eslint --fix (which carries prettier) on exactly the staged files.
+#      lint-staged re-adds the fixed files, so the committed tree is the
+#      formatted one. This is the gate that would have caught the
+#      fees.service.spec.ts formatting error before it reached CI.
+#   2. The workspace's own suite, but only for the trees this commit touches:
+#      backend jest is ~17s and app tsc ~13s, so a docs-only commit pays neither
+#      and a backend-only commit does not wait on the app typecheck.
+#
+# Bypass once with `git commit --no-verify` — git handles that flag itself, so
+# there is deliberately no environment variable here to switch this off
+# permanently.
 
-cd backend
+staged=$(git diff --cached --name-only --diff-filter=ACMR)
+
+if [ -z "$staged" ]; then
+  exit 0
+fi
+
 npx lint-staged
-npm run test
+
+if echo "$staged" | grep -q '^backend/'; then
+  npm --prefix backend test -- --silent
+fi
+
+if echo "$staged" | grep -q '^app/'; then
+  npm --prefix app run typecheck
+fi

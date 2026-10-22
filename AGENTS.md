@@ -208,6 +208,30 @@ feature/
   loudly (correctly) on any shape drift. Update the test, don't loosen
   the assertion.
 
+## Pre-commit hook
+
+`.husky/pre-commit` runs on every `git commit`, in two gates:
+
+1. `npx lint-staged` on the staged files only. Config lives in
+   `lint-staged.config.mjs` at the repo root, not in either package.json —
+   lint-staged reads one config, and the two packages have separate eslint
+   configs, so each task is a `bash -c 'cd <pkg> && eslint --fix …'` with the
+   root-relative paths rewritten. lint-staged re-adds whatever the fixer
+   changed, so the committed tree is the formatted one. This gate exists
+   because a spec file was pushed unformatted and CI (`--max-warnings 0`)
+   rejected it.
+2. The suite for the trees the commit touches: `backend/**` runs the whole
+   Jest suite, `app/**` runs `tsc --noEmit`. Docs-only commits run neither.
+
+It needs `npm install` once at the repo root (`prepare` → `husky`), which is
+why the hook was silently inactive until it was run: husky had never been
+installed, `core.hooksPath` was unset, and `.husky/pre-commit` never executed.
+`git commit --no-verify` skips it for a single commit; there is no env var to
+switch it off.
+
+**Agents: commit locally, never push.** `git push` is the maintainer's call —
+stop at the commit and say what was committed.
+
 ## Session keys vs. session labels (do not conflate)
 
 `Section.session` is an internal storage key and `Section.name` is what

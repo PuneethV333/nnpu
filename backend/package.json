@@ -7,6 +7,7 @@
   "license": "UNLICENSED",
   "scripts": {
     "build": "nest build",
+    "typecheck": "tsc --noEmit",
     "prisma:generate": "prisma generate",
     "postinstall": "prisma generate",
     "prisma:migrate": "prisma migrate deploy",
@@ -132,11 +133,6 @@
     ],
     "coverageDirectory": "../coverage",
     "testEnvironment": "node"
-  },
-  "lint-staged": {
-    "*.ts": [
-      "eslint --fix"
-    ]
   },
   "allowScripts": {
     "bcrypt@6.0.0": true,

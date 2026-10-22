@@ -4,11 +4,10 @@
     "lint-staged": "^17.0.8"
   },
   "scripts": {
-    "prepare": "husky"
-  },
-  "lint-staged": {
-    "backend/**/*.ts": [
-      "bash -c 'cd backend && eslint --fix'"
-    ]
+    "prepare": "husky",
+    "lint:staged": "lint-staged",
+    "test:backend": "npm --prefix backend test -- --silent",
+    "typecheck:backend": "npm --prefix backend run typecheck",
+    "typecheck:app": "npm --prefix app run typecheck"
   }
 }
