@@ -181,19 +181,20 @@ export class FeesService {
     }
 
     try {
-      await this.prisma.$transaction(
-        toInvoice.map((student) =>
-          this.prisma.invoice.create({
-            data: {
-              studentId: student.id,
-              feeStructureId: dto.feeStructureId,
-              totalAmount,
-              dueDate: new Date(dto.dueDate),
-              description: dto.description,
-            },
-          }),
-        ),
-      );
+      // One INSERT for the whole section instead of N statements inside a batch
+      // transaction. Both are all-or-nothing, but the per-row form holds N round
+      // trips open inside a single request — on a cold pool against a 100-student
+      // section that is what surfaced as a 500, and it is why the client now
+      // waits five minutes instead of fifteen seconds.
+      await this.prisma.invoice.createMany({
+        data: toInvoice.map((student) => ({
+          studentId: student.id,
+          feeStructureId: dto.feeStructureId,
+          totalAmount,
+          dueDate: new Date(dto.dueDate),
+          description: dto.description,
+        })),
+      });
     } catch (err) {
       if ((err as { code?: string })?.code === 'P2002') {
         throw new ConflictException(

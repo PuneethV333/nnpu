@@ -32,6 +32,7 @@ type TransactionMock = {
 
 type PrismaMock = {
   auth: MockDelegate;
+  user: MockDelegate;
   section: MockDelegate;
   feeStructure: MockDelegate;
   invoice: MockDelegate;
@@ -87,6 +88,7 @@ describe('FeesService', () => {
     };
     prisma = {
       auth: { findUnique: jest.fn() },
+      user: { findMany: jest.fn() },
       section: { findFirst: jest.fn() },
       feeStructure: {
         findUnique: jest.fn(),
@@ -95,6 +97,8 @@ describe('FeesService', () => {
       },
       invoice: {
         findUnique: jest.fn(),
+        findMany: jest.fn(),
+        createMany: jest.fn(),
         count: jest.fn(),
         update: jest.fn(),
         updateMany: jest.fn(),
@@ -554,6 +558,66 @@ describe('FeesService', () => {
         where: { id: 'fs-1' },
         data: { tuitionFee: 6_000_000 },
       });
+    });
+  });
+
+  describe('generateInvoices', () => {
+    const structure = {
+      id: 'fs-1',
+      sectionId: 'section-1',
+      tuitionFee: 40_000,
+      examFee: 2_000,
+      transportFee: 0,
+      hostelFee: 0,
+      otherFee: 3_000,
+    };
+
+    it('writes the un-invoiced students in one statement', async () => {
+      prisma.feeStructure.findUnique.mockResolvedValue(structure);
+      prisma.user.findMany.mockResolvedValue([{ id: 's1' }, { id: 's2' }]);
+      prisma.invoice.findMany.mockResolvedValue([{ studentId: 's2' }]);
+      prisma.invoice.createMany.mockResolvedValue({ count: 1 });
+
+      await expect(
+        service.generateInvoices({ feeStructureId: 'fs-1', dueDate: '2026-11-01' }),
+      ).resolves.toEqual({
+        message: 'Invoices generated for 1 students',
+        created: 1,
+        skipped: 1,
+      });
+
+      // The whole section is one INSERT. A per-row `$transaction` was N round
+      // trips held open in a single request, which is what a 100-student
+      // generate turned into a 500 on a cold pool.
+      expect(prisma.invoice.createMany).toHaveBeenCalledWith({
+        data: [
+          {
+            studentId: 's1',
+            feeStructureId: 'fs-1',
+            totalAmount: 45_000,
+            dueDate: new Date('2026-11-01'),
+            description: undefined,
+          },
+        ],
+      });
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+    });
+
+    it('does nothing when every student already has an invoice', async () => {
+      prisma.feeStructure.findUnique.mockResolvedValue(structure);
+      prisma.user.findMany.mockResolvedValue([{ id: 's1' }]);
+      prisma.invoice.findMany.mockResolvedValue([{ studentId: 's1' }]);
+
+      await expect(
+        service.generateInvoices({ feeStructureId: 'fs-1', dueDate: '2026-11-01' }),
+      ).resolves.toEqual({
+        message:
+          'All students in this section already have an invoice for this fee structure',
+        created: 0,
+        skipped: 1,
+      });
+
+      expect(prisma.invoice.createMany).not.toHaveBeenCalled();
     });
   });
 });

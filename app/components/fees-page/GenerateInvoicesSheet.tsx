@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { View, Text, Pressable, Alert } from "react-native";
 import { Feather } from "@expo/vector-icons";
 import { BottomSheet, Field, PrimaryButton } from "@/components/ui/Primitives";
+import { DateField } from "@/components/ui/DateField";
 import { FeeStructureForm } from "@/components/fees-page/FeeStructureForm";
 import { useGetFeeStructure, useGenerateInvoices } from "@/src/hooks/useFees";
 import { formatMoney } from "@/src/libs/money";
@@ -164,16 +165,10 @@ export const GenerateInvoicesSheet = ({
             </Text>
           </View>
 
-          <Field
-            label="Due date"
-            value={dueDate}
-            onChangeText={setDueDate}
-            placeholder="YYYY-MM-DD"
-            autoCapitalize="none"
-          />
+          <DateField label="Due date" value={dueDate} onChange={setDueDate} />
           {dateInvalid && (
             <Text className="text-xs text-red-500 -mt-3 mb-4">
-              Use YYYY-MM-DD.
+              Pick a due date.
             </Text>
           )}
 

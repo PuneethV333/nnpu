@@ -1,16 +1,16 @@
 /**
- * Timeouts for the calls whose server handler sends email before it answers.
+ * Timeouts for the calls whose work legitimately outlasts the default 15s.
  *
- * Those handlers hold the response open for as long as the mail attempt takes,
- * and the server bounds that attempt itself: two minutes for one message, five
- * minutes for a cohort batch. The default 15s client timeout is shorter than
- * either, so the request was abandoned mid-flight — the work committed, the
- * accounts existed, and the app reported a network error. These sit above the
- * server's ceiling so the client always waits for the answer the server is going
- * to give.
+ * The global client timeout is 15s, which is right for a read or a single-row
+ * write. Three calls here are batches: they hold the response open while the
+ * server does work proportional to a cohort, and abandoning them mid-flight does
+ * not cancel that work — it only hides the result. The user then retries an
+ * operation that already committed, or reports a failure for something that
+ * succeeded.
  *
- * Keep them in step with `MailService`: a client timeout below the server's bound
- * reintroduces the false failure.
+ * Each constant sits above the bound the server itself enforces, because a
+ * client timeout below the server's ceiling reintroduces the false failure it
+ * was added to remove. Keep them in step when either side changes.
  */
 
 /** One message, server-capped at about two minutes (60 + 30 + 60s). */
@@ -22,3 +22,12 @@ export const MAIL_REQUEST_TIMEOUT_MS = 160_000;
  * only matters when a mail host dies mid-batch.
  */
 export const BULK_MAIL_REQUEST_TIMEOUT_MS = 460_000;
+
+/**
+ * Invoice generation writes one row per active student in the section, in one
+ * request. A section runs to a hundred students, and on a cold connection pool
+ * that is the same failure the CSV import hit: correct server-side work that
+ * outlasts the client. Five minutes, the same budget as a mail batch — a
+ * generate that takes longer than that is stuck, not slow.
+ */
+export const INVOICE_GENERATION_TIMEOUT_MS = 300_000;

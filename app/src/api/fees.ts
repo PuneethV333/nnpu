@@ -16,6 +16,7 @@ import {
   singleInvoiceSchema,
 } from '@/src/types/fees';
 import { api } from './client';
+import { INVOICE_GENERATION_TIMEOUT_MS } from './timeouts';
 import { z } from 'zod';
 
 export const createFeeStructure = async (body:createFeeStructureType):Promise<FeeStructure> => {
@@ -33,7 +34,16 @@ export const updateFeeStructure = async (id: string, body: UpdateFeeStructureTyp
 };
 
 export const generateInvoices = async (body: generateInvoicesType):Promise<generateInvoicesResultType> => {
-  return generateInvoicesResultSchema.parse((await api.post('/fees/invoices/generate',body)).data)
+  return generateInvoicesResultSchema.parse(
+    (
+      await api.post('/fees/invoices/generate', body, {
+        // One insert per student in the section; the default 15s abandons it
+        // while the server is still writing, which is the false failure the
+        // create-students import hit first.
+        timeout: INVOICE_GENERATION_TIMEOUT_MS,
+      })
+    ).data,
+  );
 }
 
 export const getMyInvoices = async (): Promise<InvoiceArray> => {
