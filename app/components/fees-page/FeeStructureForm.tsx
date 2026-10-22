@@ -9,10 +9,10 @@ import type { FeeStructure } from "@/src/types/fees";
 /**
  * Every amount the API stores, in the order they are billed.
  *
- * Tuition, transport and hostel are deliberately NOT inputs here (see
- * `EDITABLE`): this school does not bill them through the app, but they are
- * still columns on the structure and still counted in the invoice total, so
- * they are carried rather than deleted.
+ * Transport and hostel are deliberately NOT inputs here (see `EDITABLE`): this
+ * school does not bill them through the app, but they are still columns on the
+ * structure and still counted in the invoice total, so they are carried rather
+ * than deleted.
  */
 type AmountKey =
   | "tuitionFee"
@@ -38,18 +38,24 @@ const LABEL: Record<AmountKey, string> = {
 };
 
 /**
- * The only two amounts an admin types.
+ * The amounts an admin types.
  *
- * Tuition and hostel were removed from this form by request, and transport is
- * left out of the total with them — the two fields the school actually quotes
- * are the exam fee and the catch-all other fee. Anything not listed still has a
- * column on the structure: on create it is ₹0, on edit it keeps whatever the
- * structure already holds, because sending 0 for a field the form never showed
- * would silently wipe an amount the section is being billed for.
+ * "Academic fee" is stored in the `tuitionFee` column. It is the same money
+ * under the school's own name for it, and reusing the column keeps the invoice
+ * total, the DTO and every structure created before this change correct without
+ * a schema migration. The mapping lives here and nowhere else, so a future
+ * split into two distinct columns is a change to this list plus the Prisma
+ * model — not a hunt through the app.
+ *
+ * Transport and hostel are left out: the school quotes an academic fee, an exam
+ * fee and a catch-all other fee. On create those two are ₹0; on edit they keep
+ * whatever the structure already holds, because sending 0 for a column the form
+ * never showed would silently wipe an amount the section is being billed for.
  */
-const EDITABLE: { key: AmountKey; placeholder: string }[] = [
-  { key: "examFee", placeholder: "e.g. 2000" },
-  { key: "otherFee", placeholder: "e.g. 45000" },
+const EDITABLE: { key: AmountKey; label: string; placeholder: string }[] = [
+  { key: "tuitionFee", label: "Academic fee", placeholder: "e.g. 40000" },
+  { key: "examFee", label: "Exam fee", placeholder: "e.g. 2000" },
+  { key: "otherFee", label: "Other fee", placeholder: "e.g. 5000" },
 ];
 
 const BLANK: Record<AmountKey, string> = {
@@ -78,11 +84,11 @@ type Parsed =
 /**
  * Typed rupee text → the full set of paise the structure will store.
  *
- * The carried amounts (tuition, transport, hostel) come from `initial` when
- * there is one, so an edit changes only what the admin can see. Blank input is
- * ₹0 for both editable fields; there is no longer a "required" amount, so a
- * structure that adds up to ₹0 is the thing that gets refused — it would
- * generate zero-value invoices for the whole section.
+ * The carried amounts (transport, hostel) come from `initial` when there is
+ * one, so an edit changes only what the admin can see. Blank input is ₹0 for
+ * every editable field; nothing is required, so a structure that adds up to ₹0
+ * is the thing that gets refused — it would generate zero-value invoices for
+ * the whole section.
  */
 const parse = (
   typed: Record<AmountKey, string>,
@@ -91,7 +97,7 @@ const parse = (
   const paise = {} as Record<AmountKey, number>;
   for (const key of ALL) paise[key] = initial ? initial[key] : 0;
 
-  for (const { key } of EDITABLE) {
+  for (const { key, label } of EDITABLE) {
     const raw = typed[key].trim();
     if (!raw) {
       paise[key] = 0;
@@ -102,7 +108,7 @@ const parse = (
     if (value === null) {
       return {
         ok: false,
-        problem: `${LABEL[key]} must be a plain amount — up to two decimals, no ₹ or minus sign.`,
+        problem: `${label} must be a plain amount — up to two decimals, no ₹ or minus sign.`,
       };
     }
     paise[key] = value;
@@ -112,7 +118,8 @@ const parse = (
   if (total <= 0) {
     return {
       ok: false,
-      problem: "The total must be more than ₹0 — enter an exam fee or an other fee.",
+      problem:
+        "The total must be more than ₹0 — enter an academic fee, an exam fee or an other fee.",
     };
   }
 
@@ -237,15 +244,14 @@ export const FeeStructureForm = ({
 
       {initial ? null : (
         <Text className="text-[11px] text-gray-400 -mt-3 mb-4">
-          Tuition, transport and hostel are not asked for here — they are saved
-          as ₹0.
+          Transport and hostel are not asked for here — they are saved as ₹0.
         </Text>
       )}
 
       {EDITABLE.map((field) => (
         <Field
           key={field.key}
-          label={`${LABEL[field.key]} (₹)`}
+          label={`${field.label} (₹)`}
           value={amounts[field.key]}
           onChangeText={setAmount(field.key)}
           placeholder={field.placeholder}
