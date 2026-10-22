@@ -5,6 +5,7 @@ import {
   ScrollView,
   Alert,
   RefreshControl,
+  NativeModules,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
@@ -16,10 +17,21 @@ import {
 } from '@/src/hooks/useFees';
 import type { StudentInvoice } from '@/src/types/fees';
 import { formatMoney } from '@/src/libs/money';
+import { errorMessage } from '@/src/libs/errorMessage';
 import { EmptyState, ErrorState } from '@/components/ui/Feedback';
 import { InvoiceCardSkeleton, SkeletonStatRow } from '@/components/ui/skeletons';
 import InvoiceCard from '../InvoiceCard';
 import { useTabBarClearance } from '@/src/hooks/useTabBarClearance';
+
+/**
+ * `react-native-razorpay` is a bare native module: there is no Expo config
+ * plugin and Expo Go does not bundle it, so `RazorpayCheckout.open` resolves its
+ * bridge to null in that runtime and throws `Cannot read property 'open' of
+ * null`. This repo has no prebuilt `android/` or `ios/` project — it runs in
+ * Expo Go — so opening a payment there cannot work at all. Ask before it reaches
+ * Razorpay, and refuse before minting a payment order the student can never pay.
+ */
+const RAZORPAY_LINKED = Boolean(NativeModules.RNRazorpayCheckout);
 
 const SummaryTile = ({
   label,
@@ -76,6 +88,14 @@ const FeesPage = () => {
   }, [invoices]);
 
   const handlePay = async (invoice: StudentInvoice) => {
+    if (!RAZORPAY_LINKED) {
+      Alert.alert(
+        'Online payment unavailable',
+        "This build of the app can't open the payment screen. Use the installed app rather than Expo Go, or pay at the office.",
+      );
+      return;
+    }
+
     setPayingInvoiceId(invoice.id);
     try {
       const order = await createOrder(invoice.id);
@@ -98,12 +118,23 @@ const FeesPage = () => {
 
       Alert.alert('Payment successful', 'Your fee payment has been recorded.');
     } catch (err) {
-      const code = (err as { code?: number } | null)?.code;
-      if (code === 0) return; // checkout dismissed — not an error
+      // Razorpay rejects with its own result object ({ code, description }), not
+      // an axios error. `code` was being read as "0 means the user dismissed
+      // checkout", which is wrong on this SDK — 0 is a network error — and the
+      // one field that names what happened, `description`, was thrown away. A
+      // cancel therefore surfaced as "Something went wrong. Please try again."
+      // and a real network failure vanished without a word.
+      const failure = err as { code?: number; description?: string } | null;
+      const description = failure?.description?.trim() ?? '';
+
+      // Backing out of checkout is a normal outcome, not an error. The cancel
+      // code is 2 on this SDK, but match the text too so a different code
+      // numbering cannot turn a cancel into a scary alert.
+      if (failure?.code === 2 || /cancel/i.test(description)) return;
 
       const message =
-        (err as { response?: { data?: { message?: string } } })?.response?.data
-          ?.message ?? 'Something went wrong. Please try again.';
+        description ||
+        errorMessage(err, 'Payment could not be completed. Please try again.');
       Alert.alert('Payment failed', message);
     } finally {
       setPayingInvoiceId(null);
