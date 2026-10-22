@@ -579,7 +579,10 @@ describe('FeesService', () => {
       prisma.invoice.createMany.mockResolvedValue({ count: 1 });
 
       await expect(
-        service.generateInvoices({ feeStructureId: 'fs-1', dueDate: '2026-11-01' }),
+        service.generateInvoices({
+          feeStructureId: 'fs-1',
+          dueDate: '2026-11-01',
+        }),
       ).resolves.toEqual({
         message: 'Invoices generated for 1 students',
         created: 1,
@@ -609,7 +612,10 @@ describe('FeesService', () => {
       prisma.invoice.findMany.mockResolvedValue([{ studentId: 's1' }]);
 
       await expect(
-        service.generateInvoices({ feeStructureId: 'fs-1', dueDate: '2026-11-01' }),
+        service.generateInvoices({
+          feeStructureId: 'fs-1',
+          dueDate: '2026-11-01',
+        }),
       ).resolves.toEqual({
         message:
           'All students in this section already have an invoice for this fee structure',
