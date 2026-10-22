@@ -7,22 +7,52 @@ import { formatMoney, rupeesToPaise } from "@/src/libs/money";
 import type { FeeStructure } from "@/src/types/fees";
 
 /**
- * The five amounts a fee structure is made of. Tuition is the only one the
- * school must state; the rest default to zero, so a day-scholar section is not
- * forced to enter a hostel fee it will never use.
+ * Every amount the API stores, in the order they are billed.
+ *
+ * Tuition, transport and hostel are deliberately NOT inputs here (see
+ * `EDITABLE`): this school does not bill them through the app, but they are
+ * still columns on the structure and still counted in the invoice total, so
+ * they are carried rather than deleted.
  */
-const AMOUNT_FIELDS = [
-  { key: "tuitionFee", label: "Tuition fee" },
-  { key: "examFee", label: "Exam fee" },
-  { key: "transportFee", label: "Transport fee" },
-  { key: "hostelFee", label: "Hostel fee" },
-  { key: "otherFee", label: "Other fee" },
-] as const;
+type AmountKey =
+  | "tuitionFee"
+  | "examFee"
+  | "transportFee"
+  | "hostelFee"
+  | "otherFee";
 
-type AmountKey = (typeof AMOUNT_FIELDS)[number]["key"];
-type AmountText = Record<AmountKey, string>;
+const ALL: AmountKey[] = [
+  "tuitionFee",
+  "examFee",
+  "transportFee",
+  "hostelFee",
+  "otherFee",
+];
 
-const BLANK: AmountText = {
+const LABEL: Record<AmountKey, string> = {
+  tuitionFee: "Tuition fee",
+  examFee: "Exam fee",
+  transportFee: "Transport fee",
+  hostelFee: "Hostel fee",
+  otherFee: "Other fee",
+};
+
+/**
+ * The only two amounts an admin types.
+ *
+ * Tuition and hostel were removed from this form by request, and transport is
+ * left out of the total with them — the two fields the school actually quotes
+ * are the exam fee and the catch-all other fee. Anything not listed still has a
+ * column on the structure: on create it is ₹0, on edit it keeps whatever the
+ * structure already holds, because sending 0 for a field the form never showed
+ * would silently wipe an amount the section is being billed for.
+ */
+const EDITABLE: { key: AmountKey; placeholder: string }[] = [
+  { key: "examFee", placeholder: "e.g. 2000" },
+  { key: "otherFee", placeholder: "e.g. 45000" },
+];
+
+const BLANK: Record<AmountKey, string> = {
   tuitionFee: "",
   examFee: "",
   transportFee: "",
@@ -33,7 +63,7 @@ const BLANK: AmountText = {
 /** Paise → the plain rupee string an input shows, without a trailing ".00". */
 const toInput = (paise: number): string => String(paise / 100);
 
-const fromStructure = (structure: FeeStructure): AmountText => ({
+const fromStructure = (structure: FeeStructure): Record<AmountKey, string> => ({
   tuitionFee: toInput(structure.tuitionFee),
   examFee: toInput(structure.examFee),
   transportFee: toInput(structure.transportFee),
@@ -46,25 +76,25 @@ type Parsed =
   | { ok: false; problem: string };
 
 /**
- * Rupee text → paise, refusing anything that would bill the wrong amount.
+ * Typed rupee text → the full set of paise the structure will store.
  *
- * Blank means zero for every field except tuition: a missing tuition fee is
- * almost always a half-filled form, and a ₹0-per-student structure is not a
- * structure anybody meant to create. It is refused here rather than left to the
- * server, whose DTO allows zero.
+ * The carried amounts (tuition, transport, hostel) come from `initial` when
+ * there is one, so an edit changes only what the admin can see. Blank input is
+ * ₹0 for both editable fields; there is no longer a "required" amount, so a
+ * structure that adds up to ₹0 is the thing that gets refused — it would
+ * generate zero-value invoices for the whole section.
  */
-const parse = (amounts: AmountText): Parsed => {
-  // Every key is written by the loop below, so the empty object is never read
-  // with a missing field.
+const parse = (
+  typed: Record<AmountKey, string>,
+  initial: FeeStructure | null,
+): Parsed => {
   const paise = {} as Record<AmountKey, number>;
+  for (const key of ALL) paise[key] = initial ? initial[key] : 0;
 
-  for (const field of AMOUNT_FIELDS) {
-    const raw = amounts[field.key].trim();
+  for (const { key } of EDITABLE) {
+    const raw = typed[key].trim();
     if (!raw) {
-      if (field.key === "tuitionFee") {
-        return { ok: false, problem: "Enter the tuition fee." };
-      }
-      paise[field.key] = 0;
+      paise[key] = 0;
       continue;
     }
 
@@ -72,15 +102,18 @@ const parse = (amounts: AmountText): Parsed => {
     if (value === null) {
       return {
         ok: false,
-        problem: `${field.label} must be a plain amount — up to two decimals, no ₹ or minus sign.`,
+        problem: `${LABEL[key]} must be a plain amount — up to two decimals, no ₹ or minus sign.`,
       };
     }
-    paise[field.key] = value;
+    paise[key] = value;
   }
 
-  const total = AMOUNT_FIELDS.reduce((sum, f) => sum + paise[f.key], 0);
+  const total = ALL.reduce((sum, key) => sum + paise[key], 0);
   if (total <= 0) {
-    return { ok: false, problem: "The total must be more than ₹0." };
+    return {
+      ok: false,
+      problem: "The total must be more than ₹0 — enter an exam fee or an other fee.",
+    };
   }
 
   return { ok: true, paise };
@@ -120,7 +153,7 @@ export const FeeStructureForm = ({
   onDone: () => void;
   onCancel: () => void;
 }) => {
-  const [amounts, setAmounts] = useState<AmountText>(() =>
+  const [amounts, setAmounts] = useState<Record<AmountKey, string>>(() =>
     initial ? fromStructure(initial) : BLANK,
   );
   const [error, setError] = useState<string | null>(null);
@@ -129,16 +162,29 @@ export const FeeStructureForm = ({
   const update = useUpdateFeeStructure();
   const saving = create.isPending || update.isPending;
 
-  // Sums whatever is currently parseable, so the admin sees the per-student
-  // total before committing to it.
+  // Sums what the structure will actually store, so the admin sees the invoice
+  // amount before committing — including any carried-over amount they cannot
+  // see in the inputs.
   const liveTotal = useMemo(
     () =>
-      AMOUNT_FIELDS.reduce(
-        (sum, field) => sum + (rupeesToPaise(amounts[field.key]) ?? 0),
-        0,
-      ),
-    [amounts],
+      ALL.reduce((sum, key) => {
+        if (initial && !EDITABLE.some((field) => field.key === key)) {
+          return sum + initial[key];
+        }
+        return sum + (rupeesToPaise(amounts[key]) ?? 0);
+      }, 0),
+    [amounts, initial],
   );
+
+  // Amounts the structure already carries that this form does not show. Named
+  // explicitly so a total that looks larger than the inputs is explained rather
+  // than looking like a bug.
+  const carried = useMemo(() => {
+    if (!initial) return [];
+    return ALL.filter(
+      (key) => !EDITABLE.some((field) => field.key === key) && initial[key] > 0,
+    ).map((key) => `${LABEL[key]} ${formatMoney(initial[key])}`);
+  }, [initial]);
 
   const setAmount = (key: AmountKey) => (text: string) => {
     setAmounts((prev) => ({ ...prev, [key]: text }));
@@ -150,7 +196,7 @@ export const FeeStructureForm = ({
   const submit = () => {
     if (saving) return;
 
-    const result = parse(amounts);
+    const result = parse(amounts, initial);
     if (!result.ok) {
       setError(result.problem);
       return;
@@ -189,30 +235,45 @@ export const FeeStructureForm = ({
         academic year — its total becomes the invoice amount for each student.
       </Text>
 
-      {AMOUNT_FIELDS.map((field) => (
+      {initial ? null : (
+        <Text className="text-[11px] text-gray-400 -mt-3 mb-4">
+          Tuition, transport and hostel are not asked for here — they are saved
+          as ₹0.
+        </Text>
+      )}
+
+      {EDITABLE.map((field) => (
         <Field
           key={field.key}
-          label={`${field.label} (₹)`}
+          label={`${LABEL[field.key]} (₹)`}
           value={amounts[field.key]}
           onChangeText={setAmount(field.key)}
-          placeholder={field.key === "tuitionFee" ? "e.g. 50000" : "0"}
+          placeholder={field.placeholder}
           keyboardType="decimal-pad"
           autoCapitalize="none"
         />
       ))}
 
-      <View className="bg-gray-50 rounded-xl p-4 mb-4 flex-row items-center justify-between">
-        <View>
-          <Text className="text-xs font-semibold text-gray-400 tracking-wide">
-            TOTAL PER STUDENT
-          </Text>
-          <Text className="text-[11px] text-gray-400 mt-0.5">
-            Becomes the invoice amount
+      <View className="bg-gray-50 rounded-xl p-4 mb-4">
+        <View className="flex-row items-center justify-between">
+          <View className="flex-1 pr-3">
+            <Text className="text-xs font-semibold text-gray-400 tracking-wide">
+              TOTAL PER STUDENT
+            </Text>
+            <Text className="text-[11px] text-gray-400 mt-0.5">
+              Becomes the invoice amount
+            </Text>
+          </View>
+          <Text className="text-xl font-extrabold text-gray-900">
+            {formatMoney(liveTotal)}
           </Text>
         </View>
-        <Text className="text-xl font-extrabold text-gray-900">
-          {formatMoney(liveTotal)}
-        </Text>
+
+        {carried.length > 0 ? (
+          <Text className="text-[11px] text-gray-400 mt-3">
+            Kept from this structure: {carried.join(" · ")}
+          </Text>
+        ) : null}
       </View>
 
       {error && <Text className="text-xs text-red-500 mb-3">{error}</Text>}
