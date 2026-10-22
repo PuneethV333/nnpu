@@ -215,23 +215,41 @@ export const ProgressCardSkeleton = ({ count = 1 }: { count?: number }) => (
 export const CalendarGridSkeleton = () => (
   <SkeletonCard style={{ marginHorizontal: 16 }}>
     <Skeleton width="55%" height={14} radius="sm" />
-    <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 12 }}>
+    <View
+      style={{
+        flexDirection: 'row',
+        justifyContent: 'center',
+        columnGap: 6,
+        marginTop: 12,
+      }}
+    >
       {Array.from({ length: 7 }).map((_, i) => (
-        <Skeleton key={i} width={16} height={10} radius="sm" phase={i} />
+        <View key={i} style={{ width: 36, alignItems: 'center' }}>
+          <Skeleton width={16} height={10} radius="sm" phase={i} />
+        </View>
       ))}
     </View>
-    <View style={{ flexDirection: 'row', flexWrap: 'wrap', marginTop: 12 }}>
-      {Array.from({ length: 28 }).map((_, i) => (
-        <Skeleton
-          key={i}
-          width={36}
-          height={36}
-          radius="full"
-          phase={i % 7}
-          style={{ margin: 2 }}
-        />
-      ))}
-    </View>
+    {Array.from({ length: 4 }).map((_, row) => (
+      <View
+        key={row}
+        style={{
+          flexDirection: 'row',
+          justifyContent: 'center',
+          columnGap: 6,
+          marginTop: 6,
+        }}
+      >
+        {Array.from({ length: 7 }).map((_, col) => (
+          <Skeleton
+            key={col}
+            width={36}
+            height={36}
+            radius="full"
+            phase={col}
+          />
+        ))}
+      </View>
+    ))}
   </SkeletonCard>
 );
 
