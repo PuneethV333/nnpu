@@ -150,6 +150,7 @@ const FeesPage = () => {
             sectionId={section.id}
             sectionName={section.name}
             academicYearId={section.academicYearId}
+            academicYearLabel={section.academicYearLabel}
             studentCount={students?.length ?? 0}
             onClose={() => setGenerating(false)}
           />

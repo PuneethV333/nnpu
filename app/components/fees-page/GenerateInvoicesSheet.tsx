@@ -2,7 +2,9 @@ import React, { useState } from "react";
 import { View, Text, Pressable, Alert } from "react-native";
 import { Feather } from "@expo/vector-icons";
 import { BottomSheet, Field, PrimaryButton } from "@/components/ui/Primitives";
+import { FeeStructureForm } from "@/components/fees-page/FeeStructureForm";
 import { useGetFeeStructure, useGenerateInvoices } from "@/src/hooks/useFees";
+import { formatMoney } from "@/src/libs/money";
 
 const today = () => new Date().toISOString().slice(0, 10);
 const in30Days = () => {
@@ -29,17 +31,23 @@ const in30Days = () => {
  * Re-running is safe and cheap: the server skips students who already have an
  * invoice for this structure and returns `created: 0` rather than duplicating,
  * so a slipped second tap cannot double-bill.
+ *
+ * The structure itself is created here too, when the section has none: the
+ * sheet is where its absence blocks the admin, and sending them to a separate
+ * screen to fix it was the dead end this branch used to be.
  */
 export const GenerateInvoicesSheet = ({
   sectionId,
   sectionName,
   academicYearId,
+  academicYearLabel,
   studentCount,
   onClose,
 }: {
   sectionId: string;
   sectionName: string;
   academicYearId: string;
+  academicYearLabel: string;
   studentCount: number;
   onClose: () => void;
 }) => {
@@ -52,6 +60,7 @@ export const GenerateInvoicesSheet = ({
   const [dueDate, setDueDate] = useState(in30Days());
   const [description, setDescription] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [editing, setEditing] = useState(false);
 
   const dateInvalid = !/^\d{4}-\d{2}-\d{2}$/.test(dueDate);
 
@@ -103,33 +112,51 @@ export const GenerateInvoicesSheet = ({
 
   return (
     <BottomSheet
-      title="Generate invoices"
-      subtitle={`${sectionName} · ${studentCount} student${studentCount === 1 ? "" : "s"}`}
+      title={editing ? "Fee structure" : "Generate invoices"}
+      subtitle={`${sectionName} · ${academicYearLabel} · ${studentCount} student${
+        studentCount === 1 ? "" : "s"
+      }`}
       onClose={onClose}
     >
       {loadingStructure ? (
         <Text className="text-sm text-gray-400 py-6 text-center">
           Loading fee structure…
         </Text>
-      ) : noStructure ? (
-        <View className="py-2">
-          <Text className="text-sm text-gray-700 mb-1">
-            This section has no fee structure for the selected year.
-          </Text>
-          <Text className="text-xs text-gray-400 mb-4">
-            Create a fee structure for the section first — invoices are built
-            from it, and its total becomes the invoice amount.
-          </Text>
-          <PrimaryButton label="Close" tone="neutral" onPress={onClose} />
-        </View>
+      ) : noStructure || editing ? (
+        <FeeStructureForm
+          sectionId={sectionId}
+          academicYearId={academicYearId}
+          sectionName={sectionName}
+          academicYearLabel={academicYearLabel}
+          initial={structure ?? null}
+          // Creating one leaves `structure` populated after the invalidation,
+          // so clearing `editing` lands on the generate step either way.
+          onDone={() => setEditing(false)}
+          onCancel={structure ? () => setEditing(false) : onClose}
+        />
       ) : (
         <View>
           <View className="bg-gray-50 rounded-xl p-4 mb-4">
-            <Text className="text-xs font-semibold text-gray-400 tracking-wide">
-              PER STUDENT
-            </Text>
+            <View className="flex-row items-center justify-between">
+              <Text className="text-xs font-semibold text-gray-400 tracking-wide">
+                PER STUDENT
+              </Text>
+              <Pressable
+                onPress={() => setEditing(true)}
+                hitSlop={10}
+                accessibilityRole="button"
+                accessibilityLabel="Edit fee structure"
+                className="flex-row items-center"
+                style={{ gap: 4 }}
+              >
+                <Feather name="edit-2" size={11} color="#2563EB" />
+                <Text className="text-[11px] font-semibold text-blue-600">
+                  Edit
+                </Text>
+              </Pressable>
+            </View>
             <Text className="text-2xl font-extrabold text-gray-900 mt-1">
-              ₹{total.toLocaleString("en-IN")}
+              {formatMoney(total)}
             </Text>
             <Text className="text-xs text-gray-400 mt-1">
               One invoice each for {studentCount} student

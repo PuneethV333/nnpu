@@ -88,9 +88,14 @@ describe('FeesService', () => {
     prisma = {
       auth: { findUnique: jest.fn() },
       section: { findFirst: jest.fn() },
-      feeStructure: { findUnique: jest.fn() },
+      feeStructure: {
+        findUnique: jest.fn(),
+        create: jest.fn(),
+        update: jest.fn(),
+      },
       invoice: {
         findUnique: jest.fn(),
+        count: jest.fn(),
         update: jest.fn(),
         updateMany: jest.fn(),
       },
@@ -476,6 +481,79 @@ describe('FeesService', () => {
       ).rejects.toBeInstanceOf(BadRequestException);
 
       expect(db.auth.findUnique).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('fee structures', () => {
+    it('creates one with the optional fees defaulted to zero', async () => {
+      prisma.feeStructure.findUnique.mockResolvedValue(null);
+      prisma.feeStructure.create.mockResolvedValue({ id: 'fs-new' });
+
+      await expect(
+        service.createFeeStructure({
+          sectionId: 'section-1',
+          academicYearId: 'year-1',
+          tuitionFee: 5_000_000,
+        }),
+      ).resolves.toEqual({ id: 'fs-new' });
+
+      expect(prisma.feeStructure.create).toHaveBeenCalledWith({
+        data: {
+          sectionId: 'section-1',
+          academicYearId: 'year-1',
+          tuitionFee: 5_000_000,
+          examFee: 0,
+          transportFee: 0,
+          hostelFee: 0,
+          otherFee: 0,
+        },
+      });
+    });
+
+    // A structure is unique per (section, academic year) and re-creating it
+    // would silently replace the amounts every invoice in that section was
+    // built from, so the duplicate has to be a refusal, not an upsert.
+    it('refuses a second structure for the same section and year', async () => {
+      prisma.feeStructure.findUnique.mockResolvedValue({ id: 'fs-existing' });
+
+      await expect(
+        service.createFeeStructure({
+          sectionId: 'section-1',
+          academicYearId: 'year-1',
+          tuitionFee: 5_000_000,
+        }),
+      ).rejects.toBeInstanceOf(ConflictException);
+
+      expect(prisma.feeStructure.create).not.toHaveBeenCalled();
+    });
+
+    it('refuses an edit once invoices exist against it', async () => {
+      prisma.feeStructure.findUnique.mockResolvedValue({ id: 'fs-1' });
+      prisma.invoice.count.mockResolvedValue(3);
+
+      await expect(
+        service.updateFeeStructure('fs-1', { tuitionFee: 6_000_000 }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+
+      expect(prisma.feeStructure.update).not.toHaveBeenCalled();
+    });
+
+    it('updates while nothing has been billed yet', async () => {
+      prisma.feeStructure.findUnique.mockResolvedValue({ id: 'fs-1' });
+      prisma.invoice.count.mockResolvedValue(0);
+      prisma.feeStructure.update.mockResolvedValue({
+        id: 'fs-1',
+        tuitionFee: 6_000_000,
+      });
+
+      await expect(
+        service.updateFeeStructure('fs-1', { tuitionFee: 6_000_000 }),
+      ).resolves.toEqual({ id: 'fs-1', tuitionFee: 6_000_000 });
+
+      expect(prisma.feeStructure.update).toHaveBeenCalledWith({
+        where: { id: 'fs-1' },
+        data: { tuitionFee: 6_000_000 },
+      });
     });
   });
 });
