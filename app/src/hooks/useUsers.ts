@@ -6,6 +6,7 @@ import {
   getTeachers,
   passOutStudents,
   resetPassword,
+  sendCredentials,
   transferStudent,
 } from '../api/users';
 import type { PassOutBody, TeacherOption, TransferStudentBody } from '../types/users';
@@ -106,6 +107,18 @@ export const useResetPassword = () => {
   return useMutation({
     mutationKey: ['users', 'reset-password'],
     mutationFn: (userId: string) => resetPassword(userId),
+  });
+};
+
+/**
+ * Emails a student the auth ID they already have. Nothing on the account moves,
+ * so there is nothing to invalidate — unlike `useResetPassword`, which changes
+ * the password and kills their sessions.
+ */
+export const useSendCredentials = () => {
+  return useMutation({
+    mutationKey: ['users', 'send-credentials'],
+    mutationFn: (userId: string) => sendCredentials(userId),
   });
 };
 

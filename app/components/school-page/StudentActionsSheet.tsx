@@ -5,6 +5,7 @@ import {
   useActivateUser,
   useDeactivateUser,
   useResetPassword,
+  useSendCredentials,
   useTransferStudent,
 } from '@/src/hooks/useUsers';
 import type { Section } from '@/src/types/section';
@@ -84,6 +85,7 @@ const StudentActionsSheet = ({
   const deactivate = useDeactivateUser();
   const activate = useActivateUser();
   const reset = useResetPassword();
+  const sendCredentials = useSendCredentials();
   const transfer = useTransferStudent();
 
   const destinations = sections.filter((s) => s.id !== currentSection.id);
@@ -150,6 +152,27 @@ const StudentActionsSheet = ({
                     : `${displayName} (${res.authId}) has no email address on file, so nothing was sent. They will need the new password from you in person.`,
                 ),
               onError: fail('Could not reset password'),
+            }),
+        },
+      ],
+    );
+
+  // The office's answer to "I never got my ID". Unlike reset, this changes
+  // nothing on the account — same password, same live sessions — so it is safe
+  // to send to a student who is already signed in on their phone.
+  const confirmSendCredentials = () =>
+    Alert.alert(
+      `Email ${displayName}'s login details?`,
+      'Sends their auth ID and the default password. Their password and current sessions are left alone.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Send',
+          onPress: () =>
+            sendCredentials.mutate(student.id, {
+              onSuccess: (res) =>
+                Alert.alert('Login details sent', `Emailed to ${res.emailedTo}.`),
+              onError: fail('Could not send login details'),
             }),
         },
       ],
@@ -226,6 +249,13 @@ const StudentActionsSheet = ({
         label="Move to another section"
         hint="Transfer between sections."
         onPress={() => setMode('transfer')}
+      />
+      <ActionRow
+        icon="mail"
+        label="Send login details"
+        hint="Emails their auth ID. Password unchanged."
+        loading={sendCredentials.isPending}
+        onPress={confirmSendCredentials}
       />
       <ActionRow
         icon="key"

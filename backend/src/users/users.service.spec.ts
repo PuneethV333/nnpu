@@ -1,3 +1,7 @@
+/* eslint-disable @typescript-eslint/no-unsafe-assignment */
+// Jest's `expect.objectContaining` / `expect.any` are typed `any`, so asserting
+// a partial shape trips no-unsafe-assignment on every field. Same allowance the
+// other specs here take; the assertion is still exact at runtime.
 import { Test, TestingModule } from '@nestjs/testing';
 import {
   BadRequestException,
@@ -645,6 +649,59 @@ describe('UsersService', () => {
       await expect(service.getTeachers()).resolves.toEqual([
         { id: 't1', name: null, subjectIds: [] },
       ]);
+    });
+  });
+
+  describe('sendCredentials', () => {
+    it('emails the existing auth id and leaves the password alone', async () => {
+      prisma.user.findUnique.mockResolvedValue(student());
+
+      const result = await service.sendCredentials('student-1');
+
+      expect(mail.send).toHaveBeenCalledWith(
+        expect.objectContaining({
+          to: 'asha@example.com',
+          body: expect.stringContaining('nnpu1SB26KA001'),
+        }),
+      );
+      // The whole point of this action: it answers "I never got my ID" without
+      // logging the student out of the phone the way resetPassword does.
+      expect(tx.auth.update).not.toHaveBeenCalled();
+      expect(tx.refreshToken.deleteMany).not.toHaveBeenCalled();
+      expect(result).toEqual({
+        userId: 'student-1',
+        authId: 'nnpu1SB26KA001',
+        emailedTo: 'asha@example.com',
+      });
+    });
+
+    it('refuses a student with no email instead of silently sending nothing', async () => {
+      prisma.user.findUnique.mockResolvedValue(
+        student({ details: { name: 'Asha', email: null } }),
+      );
+
+      await expect(service.sendCredentials('student-1')).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+      expect(mail.send).not.toHaveBeenCalled();
+    });
+
+    it('refuses a deactivated account', async () => {
+      prisma.user.findUnique.mockResolvedValue(student({ isActive: false }));
+
+      await expect(service.sendCredentials('student-1')).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+      expect(mail.send).not.toHaveBeenCalled();
+    });
+
+    it('reports a delivery failure rather than claiming it was sent', async () => {
+      prisma.user.findUnique.mockResolvedValue(student());
+      mail.send.mockRejectedValue(new Error('smtp down'));
+
+      await expect(service.sendCredentials('student-1')).rejects.toBeInstanceOf(
+        ServiceUnavailableException,
+      );
     });
   });
 });

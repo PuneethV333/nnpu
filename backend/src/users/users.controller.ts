@@ -96,4 +96,16 @@ export class UsersController {
   resetPassword(@Param() params: UserIdParamDto) {
     return this.usersService.resetPassword(params.userId);
   }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('Admin')
+  @Post(':userId/send-credentials')
+  @Throttle({ default: { limit: 10, ttl: 60000 } })
+  @ApiOperation({
+    summary:
+      'Email the user their auth ID and default password, leaving the password unchanged',
+  })
+  sendCredentials(@Param() params: UserIdParamDto) {
+    return this.usersService.sendCredentials(params.userId);
+  }
 }

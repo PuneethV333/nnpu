@@ -74,6 +74,23 @@ export const resetPassword = async (
 };
 
 /**
+ * Emails the auth ID the account already has, changing nothing else.
+ *
+ * `resetPassword` also emails, but it mints a new password and revokes every
+ * session — too much to answer "I never got my ID", which is a read-only
+ * question. Server rejects users with no email, so `emailedTo` is never null
+ * on success.
+ */
+export const sendCredentials = async (
+  userId: string,
+): Promise<ResetPasswordResponse> => {
+  const res = await api.post(`/users/${userId}/send-credentials`, undefined, {
+    timeout: MAIL_REQUEST_TIMEOUT_MS,
+  });
+  return resetPasswordResponseSchema.parse(res.data);
+};
+
+/**
  * Deactivates every active student in the given sections and revokes sessions.
  *
  * Students only — a teacher attached to a passing-out cohort is reported under

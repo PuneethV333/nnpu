@@ -11,6 +11,7 @@ import {
 } from '@nestjs/common';
 import { randomBytes } from 'crypto';
 import { hash } from 'bcrypt';
+import { DEFAULT_PASSWORD } from '@/common/utils/default-password';
 import type { Prisma } from '@/generated/prisma';
 import type { PassOutStudentsDto, TransferStudentDto } from './dto';
 import { ATTENDANCE_CACHE_PREFIX } from '@/common/utils/cache-keys';
@@ -473,6 +474,69 @@ export class UsersService {
     });
 
     await this.invalidate(`me:${user.auth.authId}`);
+
+    return { userId, authId: user.auth.authId, emailedTo: email };
+  }
+
+  /**
+   * Emails a student their auth ID and how to sign in, without touching their
+   * password.
+   *
+   * `resetPassword` also sends an email, but it issues a *new* password, revokes
+   * every session and logs the student out of their phone — far too much to
+   * answer "I never got my ID". This is the read-only version: the credential
+   * that already exists, restated.
+   */
+  async sendCredentials(userId: string) {
+    this.logger.log('[users-send-credentials]');
+
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        id: true,
+        isActive: true,
+        auth: { select: { authId: true } },
+        details: { select: { name: true, email: true } },
+      },
+    });
+
+    if (!user) {
+      throw new NotFoundException(`User ${userId} not found`);
+    }
+
+    if (!user.auth) {
+      throw new BadRequestException('User has no auth record to send');
+    }
+
+    if (!user.isActive) {
+      throw new BadRequestException(
+        'This account is deactivated. Reactivate it before sending login details.',
+      );
+    }
+
+    const email = user.details?.email;
+    if (!email) {
+      throw new BadRequestException(
+        'User has no email address on file, so there is nowhere to send it',
+      );
+    }
+
+    const name = user.details?.name ?? 'there';
+
+    try {
+      await this.mail.send({
+        to: email,
+        subject: 'Your School Portal login details',
+        body: `Hi ${name},\n\nYour login details are:\n\nAuth ID: ${user.auth.authId}\nPassword: ${DEFAULT_PASSWORD}, unless you have already changed it.\n\nIf the password does not work, use "Forgot password" or ask your school office to reset it.`,
+      });
+    } catch (err) {
+      this.logger.error(
+        `[users-send-credentials] mail failed for ${email}: ${String(err)}`,
+      );
+      throw new ServiceUnavailableException(
+        'Could not send the login details. Try again.',
+      );
+    }
 
     return { userId, authId: user.auth.authId, emailedTo: email };
   }

@@ -146,6 +146,17 @@ feature/
 - Gmail SMTP's ~500/day cap is a real constraint if bulk-sending to a
   large student body — a transactional email provider should be
   considered before relying on Gmail SMTP for a full-cohort send.
+- Two admin mail actions, deliberately different in blast radius:
+  `POST /users/:userId/reset-password` mints a new password, bumps
+  `tokenVersion` and kills sessions; `POST /users/:userId/send-credentials`
+  only restates the authId the account already has (no password write, no
+  session revocation) and is the right answer to "I never got my ID".
+  Neither can recover a password — it is a bcrypt hash. A user with no
+  email on file is rejected with a 400 rather than silently sending
+  nothing.
+- Render's free tier blocks outbound SMTP, so mail only actually leaves
+  from a real host. That is a deployment limitation, not a reason to drop
+  the error handling: a send failure is reported to the caller.
 
 ## Frontend (React Native / Expo)
 
