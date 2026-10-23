@@ -1,3 +1,7 @@
+/* eslint-disable @typescript-eslint/no-unsafe-assignment */
+// Jest's `expect.objectContaining` / `expect.any` are typed `any`, so asserting
+// a partial shape trips no-unsafe-assignment on every field. Same allowance the
+// other specs here take; the assertion is still exact at runtime.
 import { Test, TestingModule } from '@nestjs/testing';
 import {
   BadRequestException,
@@ -437,6 +441,86 @@ describe('FeesService', () => {
 
       expect(transaction.payment.findUnique).not.toHaveBeenCalled();
       expect(transaction.payment.updateMany).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('recordManualPayment', () => {
+    it('clears the balance when no amount is given', async () => {
+      const result = await service.recordManualPayment('invoice-1', {
+        method: 'CASH',
+      });
+
+      expect(transaction.payment.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          invoiceId: 'invoice-1',
+          studentId: 'student-1',
+          amount: 6000,
+          method: 'CASH',
+          status: 'Success',
+          reference: null,
+        }),
+        select: { id: true },
+      });
+      // Credited in one statement so a concurrent settle cannot read the stale
+      // paidAmount — same helper the Razorpay path uses.
+      expect(transaction.$executeRaw).toHaveBeenCalledTimes(1);
+      expect(result).toMatchObject({
+        amount: 6000,
+        paidAmount: 10000,
+        balanceAmount: 0,
+      });
+    });
+
+    it('records a part payment and keeps a reference', async () => {
+      const result = await service.recordManualPayment('invoice-1', {
+        method: 'UPI',
+        amount: 2000,
+        reference: '  UPI-9931  ',
+      });
+
+      expect(transaction.payment.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          amount: 2000,
+          method: 'UPI',
+          reference: 'UPI-9931',
+        }),
+        select: { id: true },
+      });
+      expect(result).toMatchObject({ paidAmount: 6000, balanceAmount: 4000 });
+    });
+
+    /**
+     * A captured Razorpay payment can only be refunded after the fact, so the
+     * excess is recorded. A figure typed in by hand is different: refusing it
+     * leaves nothing for the school to hand back.
+     */
+    it('refuses more than the outstanding balance', async () => {
+      await expect(
+        service.recordManualPayment('invoice-1', {
+          method: 'CASH',
+          amount: 6001,
+        }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+
+      expect(transaction.payment.create).not.toHaveBeenCalled();
+      expect(transaction.$executeRaw).not.toHaveBeenCalled();
+    });
+
+    it('refuses an invoice that is already paid', async () => {
+      transaction.$queryRaw.mockResolvedValueOnce([
+        {
+          id: 'invoice-1',
+          studentId: 'student-1',
+          totalAmount: 10000,
+          paidAmount: 10000,
+        },
+      ]);
+
+      await expect(
+        service.recordManualPayment('invoice-1', { method: 'CASH' }),
+      ).rejects.toBeInstanceOf(ConflictException);
+
+      expect(transaction.payment.create).not.toHaveBeenCalled();
     });
   });
 

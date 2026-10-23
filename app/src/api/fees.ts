@@ -89,5 +89,36 @@ export const verifyPayment = async (payload: {
   );
 };
 
+/**
+ * Money collected outside Razorpay. `RAZORPAY` is deliberately not offered —
+ * online payments must go through checkout so a real payment id exists.
+ */
+export type ManualPaymentMethod = 'CASH' | 'UPI' | 'CHEQUE' | 'BANK_TRANSFER';
 
+const manualPaymentResponseSchema = z.object({
+  paymentId: z.string(),
+  invoiceId: z.string(),
+  method: z.string(),
+  amount: z.number(),
+  totalAmount: z.number(),
+  paidAmount: z.number(),
+  balanceAmount: z.number(),
+});
 
+export type ManualPaymentResponse = z.infer<
+  typeof manualPaymentResponseSchema
+>;
+
+/**
+ * `amount` is paise and optional: omitted means the whole outstanding balance,
+ * which is what the counter collects. The server refuses anything larger than
+ * the balance rather than recording money the school would owe back.
+ */
+export const recordManualPayment = async (
+  invoiceId: string,
+  body: { method: ManualPaymentMethod; amount?: number; reference?: string },
+): Promise<ManualPaymentResponse> => {
+  return manualPaymentResponseSchema.parse(
+    (await api.post(`/fees/invoices/${invoiceId}/manual-payment`, body)).data,
+  );
+};

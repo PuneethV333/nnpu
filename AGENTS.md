@@ -408,3 +408,28 @@ costs a cycle:
   once `Asia/Banglore` in `.env`, which booted fine and then 500'd every
   date-dependent route at the first `new DateTimeFormat`. A bad zone must fail
   at boot, not per-request.
+
+## Fees: online vs. counter payments
+
+`POST /fees/invoices/:id/manual-payment` — admin only, `@Throttle({ limit: 20 })`.
+Body: `{ method, amount?, reference? }`, where `method` is `CASH`, `UPI`,
+`CHEQUE` or `BANK_TRANSFER`.
+
+- `RAZORPAY` is deliberately not an accepted method. Those `Payment` rows are
+  only ever created by `createPaymentOrder`; letting an admin hand-write one
+  would let a fabricated payment id satisfy `verifyPayment`.
+- `amount` is paise and optional — omitted means the outstanding balance, which
+  is what the counter actually collects. A part payment is allowed, since
+  `Invoice.paidAmount` already models partial settlement.
+- **Overpayment is rejected here, unlike a captured Razorpay payment.** A
+  captured payment has already happened and can only be refunded, so that path
+  records `RefundRequired`. A figure typed in by hand can still be corrected, so
+  it is refused before any `Payment` row is written — money the school would
+  have to hand back should never enter the books.
+- Both paths credit the invoice through the same private `creditInvoice()`:
+  one `UPDATE ... CASE` so two concurrent settles cannot both read the stale
+  `paidAmount`. It is also what derives `Paid` / `Partial` / `Pending` from the
+  new balance. Do not re-open-code that UPDATE in a new caller.
+- The `Payment` row is written server-side in the same transaction as the
+  credit, so an invoice and its payment history cannot disagree, and a cash
+  receipt appears in the same list as an online one.

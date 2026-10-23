@@ -10,6 +10,7 @@ import {
   generateInvoices,
   getStudentInvoices,
   getInvoice,
+  recordManualPayment,
 } from '../api/fees';
 
 export const useGetMyInvoices = () => {
@@ -100,6 +101,37 @@ export const useVerifyPayment = () => {
     mutationFn: verifyPayment,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['my-invoices'] });
+    },
+  });
+};
+
+/**
+ * Records a cash / UPI / cheque / bank-transfer payment against an invoice.
+ *
+ * Admin-only on the server. Both admin-facing invoice lists are invalidated: the
+ * balance and status the counter just changed are exactly what they show, and a
+ * stale "Partial" after taking the money is the kind of wrong figure someone
+ * chases a parent about.
+ */
+export const useRecordManualPayment = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationKey: ['fees', 'manual-payment'],
+    mutationFn: ({
+      invoiceId,
+      ...body
+    }: {
+      invoiceId: string;
+      method: 'CASH' | 'UPI' | 'CHEQUE' | 'BANK_TRANSFER';
+      amount?: number;
+      reference?: string;
+    }) => recordManualPayment(invoiceId, body),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['student-invoices'] });
+      queryClient.invalidateQueries({ queryKey: ['invoice'] });
+      queryClient.invalidateQueries({ queryKey: ['my-invoices'] });
+      queryClient.invalidateQueries({ queryKey: ['admin-dashboard'] });
     },
   });
 };

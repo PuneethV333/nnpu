@@ -24,6 +24,7 @@ import { StudentIdParamDto } from '@/common/dto/student-id-param.dto';
 import { UpdateFeeStructureDto } from './dto/update-fee-structure.dto';
 import { GenerateInvoicesDto } from './dto/generate-invoices.dto';
 import { HandleRazorpayWebhookDto } from './dto/handle-razorpay-webhook.dto';
+import { RecordManualPaymentDto } from './dto/record-manual-payment.dto';
 import type { JwtPayload } from '@/auth/types/jwt-payload.type';
 import { CurrentUser } from '@/auth/decorators/current-user.decorator';
 import { Request } from 'express';
@@ -119,6 +120,21 @@ export class FeesController {
     @CurrentUser() user: JwtPayload,
   ) {
     return this.feesService.createPaymentOrder(params.id, user.authId);
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('Admin')
+  @Post('invoices/:id/manual-payment')
+  @Throttle({ default: { limit: 20, ttl: 60000 } })
+  @ApiOperation({
+    summary:
+      'Record a payment taken outside Razorpay (cash, UPI, cheque, bank transfer)',
+  })
+  recordManualPayment(
+    @Param() params: IdParamDto,
+    @Body() dto: RecordManualPaymentDto,
+  ) {
+    return this.feesService.recordManualPayment(params.id, dto);
   }
 
   @UseGuards(JwtAuthGuard)

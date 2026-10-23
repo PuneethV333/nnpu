@@ -10,6 +10,7 @@ import {
   GenerateInvoicesSheet,
 } from '@/components/fees-page/GenerateInvoicesSheet';
 import { useGetAdminDashboard } from '@/src/hooks/useDashboard';
+import RecordCashPaymentSheet from '@/components/fees-page/RecordCashPaymentSheet';
 import { formatDate, formatMoney } from '@/src/libs/money';
 import { SectionPicker } from '@/components/attendance-page/SectionPicker';
 import { StatCard } from '@/components/profile-page/StatCard';
@@ -21,9 +22,20 @@ import {
   MetricCardSkeleton,
 } from '@/components/ui/skeletons';
 import { useTabBarClearance } from '@/src/hooks/useTabBarClearance';
+import { colors } from '@/constants/theme';
+
+/** The subset the record-payment sheet needs from an invoice row. */
+type InvoiceForPayment = {
+  id: string;
+  description: string | null;
+  totalAmount: number;
+  paidAmount: number;
+  balanceAmount: number;
+};
 
 const InvoiceRow = ({
   invoice,
+  onRecord,
 }: {
   invoice: {
     id: string;
@@ -34,6 +46,7 @@ const InvoiceRow = ({
     balanceAmount: number;
     description: string | null;
   };
+  onRecord: () => void;
 }) => {
   const tone =
     invoice.status === 'Paid'
@@ -70,6 +83,27 @@ const InvoiceRow = ({
           {formatMoney(invoice.balanceAmount)}
         </Text>
       </View>
+
+      {/* Cash, UPI, cheque and bank transfers all arrive at the office, not
+          through checkout — this is the only way those show up as paid. */}
+      {invoice.balanceAmount > 0 ? (
+        <Pressable
+          onPress={onRecord}
+          accessibilityRole="button"
+          className="flex-row items-center justify-center mt-3 rounded-xl border"
+          style={({ pressed }) => ({
+            backgroundColor: pressed ? '#EFF6FF' : '#FFFFFF',
+            borderColor: '#BFDBFE',
+            paddingVertical: 8,
+            gap: 6,
+          })}
+        >
+          <Feather name="dollar-sign" size={14} color={colors.accent} />
+          <Text className="text-[13px] font-semibold" style={{ color: colors.accent }}>
+            Record a payment
+          </Text>
+        </Pressable>
+      ) : null}
     </View>
   );
 };
@@ -87,6 +121,7 @@ const FeesPage = () => {
   const [sectionId, setSectionId] = useState('');
   const [studentId, setStudentId] = useState('');
   const [generating, setGenerating] = useState(false);
+  const [recording, setRecording] = useState<InvoiceForPayment | null>(null);
 
   const { data: students, isLoading: studentsLoading } = useGetStudents(sectionId);
   const { data: invoices, isLoading: invoicesLoading } = useGetStudentInvoices(
@@ -244,7 +279,11 @@ const FeesPage = () => {
                     </View>
                   ) : (
                     invoices.map((inv) => (
-                      <InvoiceRow key={inv.id} invoice={inv} />
+                      <InvoiceRow
+                        key={inv.id}
+                        invoice={inv}
+                        onRecord={() => setRecording(inv)}
+                      />
                     ))
                   )}
                 </View>
@@ -253,6 +292,13 @@ const FeesPage = () => {
           </>
         )}
       </ScrollView>
+
+      {recording ? (
+        <RecordCashPaymentSheet
+          invoice={recording}
+          onClose={() => setRecording(null)}
+        />
+      ) : null}
     </SafeAreaView>
   );
 };

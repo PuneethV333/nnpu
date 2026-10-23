@@ -13,9 +13,10 @@ import { CreateFeeStructureDto } from './dto/create-fee-structure.dto';
 import { UpdateFeeStructureDto } from './dto/update-fee-structure.dto';
 import { GenerateInvoicesDto } from './dto/generate-invoices.dto';
 import { RazorpayService } from './razorpay.service';
-import { Role } from '@/generated/prisma';
+import { Prisma, Role } from '@/generated/prisma';
 import { ConfigService } from '@nestjs/config';
 import { HandleRazorpayWebhookDto } from './dto/handle-razorpay-webhook.dto';
+import { RecordManualPaymentDto } from './dto/record-manual-payment.dto';
 import { createHmac, timingSafeEqual } from 'crypto';
 import { StudentInvoice, StudentInvoices } from './type/studentInvoice.type';
 import { RazorpayWebhookEvent } from './type/razorpay-webhook.type';
@@ -524,6 +525,78 @@ export class FeesService {
     };
   }
 
+  /**
+   * Records money collected outside Razorpay — cash at the counter, a UPI
+   * transfer, a cheque — and credits the invoice in the same transaction.
+   *
+   * The `Payment` row is written here rather than in the app so the invoice and
+   * its payment history can never disagree, and so a cash receipt shows up in
+   * the same list as an online one. `amount` defaults to the outstanding balance
+   * because that is what the counter collects in the normal case; a partial
+   * amount is allowed for part payments.
+   */
+  async recordManualPayment(invoiceId: string, dto: RecordManualPaymentDto) {
+    return this.prisma.$transaction(async (tx) => {
+      const invoiceRows = await tx.$queryRaw<
+        Array<{
+          id: string;
+          studentId: string;
+          totalAmount: number;
+          paidAmount: number;
+        }>
+      >`
+        SELECT "id", "studentId", "totalAmount", "paidAmount"
+        FROM "Invoice"
+        WHERE "id" = ${invoiceId}
+        FOR UPDATE
+      `;
+      const invoice = invoiceRows[0];
+      if (!invoice) {
+        throw new NotFoundException('invoice not found');
+      }
+
+      const balance = invoice.totalAmount - invoice.paidAmount;
+      if (balance <= 0) {
+        throw new ConflictException('Invoice is already fully paid');
+      }
+
+      const amount = dto.amount ?? balance;
+      if (amount > balance) {
+        // Unlike a captured Razorpay payment, which has already happened and can
+        // only be refunded, this is entered by hand: refuse it and let the clerk
+        // correct the figure instead of recording money the school must hand back.
+        throw new BadRequestException(
+          `Amount is more than the outstanding balance (${balance} paise)`,
+        );
+      }
+
+      const payment = await tx.payment.create({
+        data: {
+          invoiceId: invoice.id,
+          studentId: invoice.studentId,
+          amount,
+          method: dto.method,
+          status: 'Success',
+          reference: dto.reference?.trim() || null,
+          paidAt: new Date(),
+        },
+        select: { id: true },
+      });
+
+      await this.creditInvoice(tx, invoice.id, amount);
+
+      return {
+        paymentId: payment.id,
+        invoiceId: invoice.id,
+        method: dto.method,
+        amount,
+        totalAmount: invoice.totalAmount,
+        paidAmount: invoice.paidAmount + amount,
+        balanceAmount: balance - amount,
+      };
+    });
+  }
+
   async verifyPayment(payload: HandleRazorpayWebhookDto) {
     const { razorpay_order_id, razorpay_payment_id, razorpay_signature } =
       payload;
@@ -762,23 +835,7 @@ export class FeesService {
       );
       const refundAmount = capturedAmount - amountToApply;
 
-      const updated = await tx.$executeRaw`
-        UPDATE "Invoice"
-        SET "paidAmount" = LEAST("totalAmount", "paidAmount" + ${amountToApply}),
-            "status" = CASE
-              WHEN LEAST("totalAmount", "paidAmount" + ${amountToApply}) >= "totalAmount"
-              THEN 'Paid'::"InvoiceStatus"
-              WHEN "paidAmount" + ${amountToApply} > 0
-              THEN 'Partial'::"InvoiceStatus"
-              ELSE 'Pending'::"InvoiceStatus"
-            END,
-            "updatedAt" = NOW()
-        WHERE "id" = ${payment.invoiceId}
-      `;
-
-      if (updated === 0) {
-        throw new NotFoundException('Invoice not found');
-      }
+      await this.creditInvoice(tx, invoice.id, amountToApply);
 
       if (refundAmount > 0) {
         await tx.payment.update({
@@ -793,6 +850,36 @@ export class FeesService {
         refundAmount,
       };
     });
+  }
+
+  /**
+   * Credits an invoice by `amount` in paise and derives its status from the new
+   * balance, in one statement so two concurrent settles cannot both read the old
+   * `paidAmount`. Shared by the Razorpay settle path and manual entry — the two
+   * differ only in where the money came from, not in how the invoice moves.
+   */
+  private async creditInvoice(
+    tx: Prisma.TransactionClient,
+    invoiceId: string,
+    amount: number,
+  ): Promise<void> {
+    const updated = await tx.$executeRaw`
+      UPDATE "Invoice"
+      SET "paidAmount" = LEAST("totalAmount", "paidAmount" + ${amount}),
+          "status" = CASE
+            WHEN LEAST("totalAmount", "paidAmount" + ${amount}) >= "totalAmount"
+            THEN 'Paid'::"InvoiceStatus"
+            WHEN "paidAmount" + ${amount} > 0
+            THEN 'Partial'::"InvoiceStatus"
+            ELSE 'Pending'::"InvoiceStatus"
+          END,
+          "updatedAt" = NOW()
+      WHERE "id" = ${invoiceId}
+    `;
+
+    if (updated === 0) {
+      throw new NotFoundException('Invoice not found');
+    }
   }
 
   async handleWebhookEvent(rawBody: Buffer, signature: string) {
