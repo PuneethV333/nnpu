@@ -71,13 +71,19 @@ export const createPaymentOrder = async (invoiceId: string): Promise<PaymentOrde
 
 const verifyPaymentResponseSchema = z.object({
   alreadyProcessed: z.boolean(),
+  // Present when the captured amount exceeded the invoice balance. The server
+  // records the row as `RefundRequired` and issues nothing automatically, so
+  // this is the only signal the student gets — dropping it means telling someone
+  // "payment successful" about money that is owed back to them.
+  refundRequired: z.boolean().optional(),
+  refundAmount: z.number().optional(),
 });
 
 export const verifyPayment = async (payload: {
   razorpay_order_id: string;
   razorpay_payment_id: string;
   razorpay_signature: string;
-}): Promise<{ alreadyProcessed: boolean }> => {
+}): Promise<z.infer<typeof verifyPaymentResponseSchema>> => {
   return verifyPaymentResponseSchema.parse(
     (await api.post('/fees/payments/verify', payload)).data,
   );

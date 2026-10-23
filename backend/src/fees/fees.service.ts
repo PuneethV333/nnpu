@@ -553,9 +553,11 @@ export class FeesService {
       );
     }
 
-    if (providerPayment.status !== 'captured' || !providerPayment.captured) {
-      throw new ConflictException('Razorpay payment has not been captured yet');
-    }
+    const settledAmount = await this.ensureCaptured(
+      razorpay_payment_id,
+      providerPayment.status,
+      capturedAmount,
+    );
 
     const result = await this.confirmPayment(
       razorpay_order_id,
@@ -563,7 +565,7 @@ export class FeesService {
         razorpayPaymentId: razorpay_payment_id,
         razorpaySignature: razorpay_signature,
       },
-      capturedAmount,
+      settledAmount,
     );
 
     if (result.alreadyProcessed) {
@@ -596,6 +598,97 @@ export class FeesService {
       refundRequired: false,
       refundAmount: 0,
     };
+  }
+
+  /**
+   * Returns the amount that is actually captured, capturing it first if Razorpay
+   * only authorised it.
+   *
+   * Razorpay's automatic capture is asynchronous and conditional on the
+   * account's capture setting. In test mode it is effectively instant, so this
+   * path never runs in a test-mode walkthrough — but on the first real payment a
+   * just-completed checkout is routinely still `authorized`, and the old code
+   * threw 409 "not captured yet" at that point. The student's money is already
+   * gone by then, the invoice is not, and nothing retries. Capturing here makes
+   * the settle step independent of the dashboard setting.
+   */
+  private async ensureCaptured(
+    razorpayPaymentId: string,
+    status: string | undefined,
+    authorizedAmount: number,
+  ): Promise<number> {
+    if (status === 'captured') {
+      return authorizedAmount;
+    }
+
+    if (status !== 'authorized') {
+      throw new ConflictException(
+        `Razorpay payment is ${status ?? 'in an unknown state'}, not captured`,
+      );
+    }
+
+    let capturedAmount: number;
+    try {
+      const captured = await this.razorpay.capturePayment(
+        razorpayPaymentId,
+        authorizedAmount,
+      );
+      capturedAmount = Number(captured.amount);
+      this.logger.warn(
+        `[payment] captured ${razorpayPaymentId} explicitly — auto-capture had not run`,
+      );
+    } catch (error) {
+      this.logger.error(
+        `[payment] capture failed for ${razorpayPaymentId}: ${
+          (error as { error?: { description?: string } })?.error?.description ??
+          (error as Error)?.message ??
+          'unknown error'
+        }`,
+      );
+
+      // Razorpay's own capture can win the race between the read above and this
+      // call, and capturing an already-captured payment is an error there — the
+      // same "already captured" the caller would otherwise be told about a
+      // payment that did in fact succeed. Re-read before declaring failure.
+      const settledAmount = await this.readCapturedAmount(razorpayPaymentId);
+      if (settledAmount !== null) {
+        this.logger.warn(
+          `[payment] ${razorpayPaymentId} was captured concurrently — using the settled amount`,
+        );
+        return settledAmount;
+      }
+
+      throw new ConflictException(
+        'Razorpay could not capture this payment. If the amount left the account, contact the office — the invoice is still unpaid.',
+      );
+    }
+
+    if (!Number.isSafeInteger(capturedAmount) || capturedAmount <= 0) {
+      throw new ConflictException(
+        'Razorpay returned an unusable captured amount',
+      );
+    }
+
+    return capturedAmount;
+  }
+
+  /** The amount, if Razorpay reports this payment as captured right now. */
+  private async readCapturedAmount(
+    razorpayPaymentId: string,
+  ): Promise<number | null> {
+    try {
+      const payment = await this.razorpay.fetchPayment(razorpayPaymentId);
+      const amount = Number(payment.amount);
+      return payment.status === 'captured' &&
+        Number.isSafeInteger(amount) &&
+        amount > 0
+        ? amount
+        : null;
+    } catch {
+      // The re-read is a second opinion, not a requirement: if it also fails,
+      // the original capture error is the one worth reporting.
+      return null;
+    }
   }
 
   /**
@@ -750,7 +843,14 @@ export class FeesService {
       return { received: true };
     }
 
-    if (event.event !== 'payment.captured') {
+    // `payment.authorized` is what a manual-capture account sends instead of
+    // `payment.captured`. Ignoring it left the money merely held: nothing else
+    // captures, so the authorisation expires and the invoice never settles —
+    // and this is the only event that arrives when the app is killed after
+    // checkout. Treat it as "capture, then settle".
+    const isAuthorizedEvent = event.event === 'payment.authorized';
+
+    if (event.event !== 'payment.captured' && !isAuthorizedEvent) {
       this.logger.log(`[razorpay-webhook] ignoring event type: ${event.event}`);
       return { received: true };
     }
@@ -758,14 +858,14 @@ export class FeesService {
     const paymentEntity = event.payload?.payment?.entity;
     const orderId = paymentEntity?.order_id;
     const paymentId = paymentEntity?.id;
-    const capturedAmount = paymentEntity?.amount;
+    const authorizedAmount = paymentEntity?.amount;
 
     if (
       !orderId ||
       !paymentId ||
-      typeof capturedAmount !== 'number' ||
-      !Number.isSafeInteger(capturedAmount) ||
-      capturedAmount <= 0 ||
+      typeof authorizedAmount !== 'number' ||
+      !Number.isSafeInteger(authorizedAmount) ||
+      authorizedAmount <= 0 ||
       paymentEntity?.currency !== 'INR'
     ) {
       this.logger.error(
@@ -773,6 +873,13 @@ export class FeesService {
       );
       throw new BadRequestException('Malformed Razorpay payment event');
     }
+
+    // Throws on failure, which answers non-2xx on purpose: Razorpay retries a
+    // failed delivery, and a capture that timed out is worth retrying. Swallow
+    // it and the payment is lost with the invoice still unpaid.
+    const capturedAmount = isAuthorizedEvent
+      ? await this.ensureCaptured(paymentId, 'authorized', authorizedAmount)
+      : authorizedAmount;
 
     let result: {
       alreadyProcessed: boolean;

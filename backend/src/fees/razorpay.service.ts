@@ -33,6 +33,17 @@ export class RazorpayService implements OnModuleInit {
     return this.razorpay.payments.fetch(paymentId);
   }
 
+  /**
+   * Capture an authorised payment.
+   *
+   * `amount` must equal the authorised amount — Razorpay rejects a partial
+   * capture here (partial capture needs the `payments/:id/capture` options form,
+   * which this flow never wants: the order was minted for the exact balance).
+   */
+  async capturePayment(paymentId: string, amountInPaise: number) {
+    return this.razorpay.payments.capture(paymentId, amountInPaise, 'INR');
+  }
+
   verifyPaymentSignature(
     razorpayOrderId: string,
     razorpayPaymentId: string,

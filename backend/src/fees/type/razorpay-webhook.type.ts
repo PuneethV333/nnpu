@@ -3,8 +3,8 @@
  *
  * Typed rather than left as `JSON.parse(...)`'s implicit `any` so that
  * `order_id` / `id` are `string | undefined` and can be narrowed by the
- * existing guards. See the `payment.failed` and `payment.captured` branches in
- * `FeesService.handleWebhook`.
+ * existing guards. See the `payment.failed`, `payment.captured` and
+ * `payment.authorized` branches in `FeesService.handleWebhookEvent`.
  */
 export interface RazorpayWebhookEvent {
   event?: string;

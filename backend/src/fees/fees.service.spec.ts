@@ -48,6 +48,7 @@ describe('FeesService', () => {
     createOrder: jest.Mock;
     fetchPayment: jest.Mock;
     verifyPaymentSignature: jest.Mock;
+    capturePayment: jest.Mock;
   };
   let config: { get: jest.Mock };
 
@@ -126,6 +127,10 @@ describe('FeesService', () => {
         currency: 'INR',
       }),
       verifyPaymentSignature: jest.fn().mockReturnValue(true),
+      capturePayment: jest.fn().mockResolvedValue({
+        status: 'captured',
+        amount: 6000,
+      }),
     };
     config = {
       get: jest.fn((k: string) =>
@@ -319,13 +324,107 @@ describe('FeesService', () => {
       expect(transaction.$executeRaw).toHaveBeenCalledTimes(1);
     });
 
-    it('does not credit an authorized but uncaptured payment', async () => {
+    /**
+     * Test mode captures instantly, so a walkthrough there never reaches this
+     * branch. On live money a just-finished checkout is still `authorized`, and
+     * 409-ing at that point takes the student's money while leaving the invoice
+     * unpaid with nothing to retry it.
+     */
+    it('captures an authorized payment before crediting it', async () => {
+      asUser();
+      withInvoice();
       razorpay.fetchPayment.mockResolvedValue({
         order_id: 'order_open',
         status: 'authorized',
         captured: false,
         amount: 6000,
         currency: 'INR',
+      });
+      transaction.payment.findUnique.mockResolvedValue({
+        id: 'payment-1',
+        invoiceId: 'invoice-1',
+        amount: 6000,
+        refundAmount: 0,
+        method: 'RAZORPAY',
+        status: 'Pending',
+      });
+
+      await expect(
+        service.verifyPayment({
+          razorpay_order_id: 'order_open',
+          razorpay_payment_id: 'pay_1',
+          razorpay_signature: 'signature',
+        }),
+      ).resolves.toEqual({
+        alreadyProcessed: false,
+        refundRequired: false,
+        refundAmount: 0,
+      });
+
+      expect(razorpay.capturePayment).toHaveBeenCalledWith('pay_1', 6000);
+      expect(transaction.payment.updateMany).toHaveBeenCalledTimes(1);
+    });
+
+    /**
+     * Our capture can lose the race to Razorpay's own async one. Reporting
+     * failure there would tell the student their completed payment failed.
+     */
+    it('credits a payment captured concurrently by Razorpay', async () => {
+      asUser();
+      withInvoice();
+      razorpay.fetchPayment
+        .mockResolvedValueOnce({
+          order_id: 'order_open',
+          status: 'authorized',
+          captured: false,
+          amount: 6000,
+          currency: 'INR',
+        })
+        .mockResolvedValueOnce({
+          order_id: 'order_open',
+          status: 'captured',
+          captured: true,
+          amount: 6000,
+          currency: 'INR',
+        });
+      razorpay.capturePayment.mockRejectedValueOnce({
+        error: { description: 'Payment has already been captured' },
+      });
+      transaction.payment.findUnique.mockResolvedValue({
+        id: 'payment-1',
+        invoiceId: 'invoice-1',
+        amount: 6000,
+        refundAmount: 0,
+        method: 'RAZORPAY',
+        status: 'Pending',
+      });
+
+      await expect(
+        service.verifyPayment({
+          razorpay_order_id: 'order_open',
+          razorpay_payment_id: 'pay_1',
+          razorpay_signature: 'signature',
+        }),
+      ).resolves.toEqual({
+        alreadyProcessed: false,
+        refundRequired: false,
+        refundAmount: 0,
+      });
+
+      expect(razorpay.fetchPayment).toHaveBeenCalledTimes(2);
+      expect(transaction.payment.updateMany).toHaveBeenCalledTimes(1);
+    });
+
+    it('refuses to credit when Razorpay will not capture', async () => {
+      razorpay.fetchPayment.mockResolvedValue({
+        order_id: 'order_open',
+        status: 'authorized',
+        captured: false,
+        amount: 6000,
+        currency: 'INR',
+      });
+      razorpay.capturePayment.mockRejectedValueOnce({
+        error: { description: 'Payment could not be captured' },
       });
 
       await expect(
@@ -337,6 +436,7 @@ describe('FeesService', () => {
       ).rejects.toBeInstanceOf(ConflictException);
 
       expect(transaction.payment.findUnique).not.toHaveBeenCalled();
+      expect(transaction.payment.updateMany).not.toHaveBeenCalled();
     });
   });
 
@@ -416,6 +516,46 @@ describe('FeesService', () => {
         data: { status: 'RefundRequired', refundAmount: 5000 },
       });
       expect(transaction.$executeRaw).toHaveBeenCalledTimes(1);
+    });
+
+    /**
+     * The manual-capture account sends `payment.authorized`, not
+     * `payment.captured`, and the app may already be dead by then. Without this
+     * branch the money stays held and the authorisation later expires with the
+     * invoice untouched.
+     */
+    it('captures and settles a payment that arrives authorized', async () => {
+      asUser();
+      transaction.payment.findUnique.mockResolvedValue({
+        id: 'payment-1',
+        invoiceId: 'invoice-1',
+        amount: 6000,
+        refundAmount: 0,
+        method: 'RAZORPAY',
+        status: 'Pending',
+      });
+      const body = Buffer.from(
+        JSON.stringify({
+          event: 'payment.authorized',
+          payload: {
+            payment: {
+              entity: {
+                id: 'pay_1',
+                order_id: 'order_open',
+                amount: 6000,
+                currency: 'INR',
+              },
+            },
+          },
+        }),
+      );
+
+      await expect(
+        service.handleWebhookEvent(body, sign(body.toString())),
+      ).resolves.toEqual({ received: true });
+
+      expect(razorpay.capturePayment).toHaveBeenCalledWith('pay_1', 6000);
+      expect(transaction.payment.updateMany).toHaveBeenCalledTimes(1);
     });
 
     it('ignores unrelated event types', async () => {
