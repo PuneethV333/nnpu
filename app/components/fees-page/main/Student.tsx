@@ -159,7 +159,10 @@ const FeesPage = () => {
         refreshControl={
           <RefreshControl
             refreshing={isRefetching}
-            onRefresh={refetch}
+            // `refetch` resolves to a QueryObserverResult; RN 0.88 types
+              // onRefresh as `() => void | Promise<void>`, so the result
+              // must be discarded explicitly.
+              onRefresh={() => void refetch()}
             tintColor="#2563EB"
           />
         }

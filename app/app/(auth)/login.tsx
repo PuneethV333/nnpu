@@ -7,6 +7,7 @@ import {
   ImageBackground,
   KeyboardAvoidingView,
   ScrollView,
+  type ScrollViewInstance,
   Keyboard,
   Platform,
   ActivityIndicator,
@@ -38,7 +39,10 @@ const Login = () => {
   >(null);
   const [submitting, setSubmitting] = useState(false);
   const [keyboardVisible, setKeyboardVisible] = useState(false);
-  const scrollRef = useRef<ScrollView>(null);
+  // RN 0.88 types `ScrollView` as a function component, so the ref type is the
+  // instance interface rather than the component itself — `useRef<ScrollView>`
+  // now describes the component and has no `scrollTo`.
+  const scrollRef = useRef<ScrollViewInstance>(null);
 
   useEffect(() => {
     const showEvt =
