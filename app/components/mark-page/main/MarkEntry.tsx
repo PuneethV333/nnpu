@@ -414,11 +414,17 @@ const MarkEntry = ({ heading }: { heading: string }) => {
                     activeColor={ACCENT}
                   />
 
-                  {subjectId &&
-                    (!assessments || assessments.length === 0) &&
-                    !assessmentsLoading && (
-                      <NewAssessmentButton onPress={() => setCreatingFor(subjectId)} />
-                    )}
+                  {/* Offered whenever a subject is picked, not only when its
+                      assessment list is empty. The conditional here used to be
+                      `assessments.length === 0`, so a teacher could create the
+                      first test for a subject and then had no way to add a
+                      second — the control vanished at exactly the point it was
+                      needed, and the feature looked missing. */}
+                  {subjectId ? (
+                    <NewAssessmentButton
+                      onPress={() => setCreatingFor(subjectId)}
+                    />
+                  ) : null}
 
                   {!subjectId ? (
                     <EmptyState
