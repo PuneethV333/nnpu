@@ -1,3 +1,63 @@
+diff --git a/node_modules/react-native-css/dist/commonjs/components/index.cjs b/node_modules/react-native-css/dist/commonjs/components/index.cjs
+index bf66172..cdd775f 100644
+--- a/node_modules/react-native-css/dist/commonjs/components/index.cjs
++++ b/node_modules/react-native-css/dist/commonjs/components/index.cjs
+@@ -260,6 +260,54 @@ module.exports = {
+   },
+   get VirtualViewMode() {
+     return require("react-native").VirtualViewMode;
++  },
++  get AssetRegistry() {
++    return require("react-native").AssetRegistry;
++  },
++  get EventEmitter() {
++    return require("react-native").EventEmitter;
++  },
++  get NativeComponentRegistry() {
++    return require("react-native").NativeComponentRegistry;
++  },
++  get ReactNativeVersion() {
++    return require("react-native").ReactNativeVersion;
++  },
++  get useAnimatedColor() {
++    return require("react-native").useAnimatedColor;
++  },
++  get useAnimatedValueXY() {
++    return require("react-native").useAnimatedValueXY;
++  },
++  get usePressability() {
++    return require("react-native").usePressability;
++  },
++  get unstable_DEFAULT_INITIAL_NUM_TO_RENDER() {
++    return require("react-native").unstable_DEFAULT_INITIAL_NUM_TO_RENDER;
++  },
++  get unstable_NativeText() {
++    return require("react-native").unstable_NativeText;
++  },
++  get unstable_NativeView() {
++    return require("react-native").unstable_NativeView;
++  },
++  get unstable_VirtualArray() {
++    return require("react-native").unstable_VirtualArray;
++  },
++  get unstable_VirtualColumn() {
++    return require("react-native").unstable_VirtualColumn;
++  },
++  get unstable_VirtualColumnGenerator() {
++    return require("react-native").unstable_VirtualColumnGenerator;
++  },
++  get unstable_VirtualRow() {
++    return require("react-native").unstable_VirtualRow;
++  },
++  get unstable_createVirtualCollectionView() {
++    return require("react-native").unstable_createVirtualCollectionView;
++  },
++  get unstable_getScrollParent() {
++    return require("react-native").unstable_getScrollParent;
+   }
+ };
+ //# sourceMappingURL=index.cjs.map
+\ No newline at end of file
 diff --git a/node_modules/react-native-css/dist/commonjs/native/styles/index.js b/node_modules/react-native-css/dist/commonjs/native/styles/index.js
 index 222296d..ce0a55a 100644
 --- a/node_modules/react-native-css/dist/commonjs/native/styles/index.js
@@ -11,6 +71,66 @@ index 222296d..ce0a55a 100644
      const lastToken = tokens.pop();
      for (const token of tokens) {
        target[token] ??= {};
+diff --git a/node_modules/react-native-css/dist/module/components/index.cjs b/node_modules/react-native-css/dist/module/components/index.cjs
+index bf66172..cdd775f 100644
+--- a/node_modules/react-native-css/dist/module/components/index.cjs
++++ b/node_modules/react-native-css/dist/module/components/index.cjs
+@@ -260,6 +260,54 @@ module.exports = {
+   },
+   get VirtualViewMode() {
+     return require("react-native").VirtualViewMode;
++  },
++  get AssetRegistry() {
++    return require("react-native").AssetRegistry;
++  },
++  get EventEmitter() {
++    return require("react-native").EventEmitter;
++  },
++  get NativeComponentRegistry() {
++    return require("react-native").NativeComponentRegistry;
++  },
++  get ReactNativeVersion() {
++    return require("react-native").ReactNativeVersion;
++  },
++  get useAnimatedColor() {
++    return require("react-native").useAnimatedColor;
++  },
++  get useAnimatedValueXY() {
++    return require("react-native").useAnimatedValueXY;
++  },
++  get usePressability() {
++    return require("react-native").usePressability;
++  },
++  get unstable_DEFAULT_INITIAL_NUM_TO_RENDER() {
++    return require("react-native").unstable_DEFAULT_INITIAL_NUM_TO_RENDER;
++  },
++  get unstable_NativeText() {
++    return require("react-native").unstable_NativeText;
++  },
++  get unstable_NativeView() {
++    return require("react-native").unstable_NativeView;
++  },
++  get unstable_VirtualArray() {
++    return require("react-native").unstable_VirtualArray;
++  },
++  get unstable_VirtualColumn() {
++    return require("react-native").unstable_VirtualColumn;
++  },
++  get unstable_VirtualColumnGenerator() {
++    return require("react-native").unstable_VirtualColumnGenerator;
++  },
++  get unstable_VirtualRow() {
++    return require("react-native").unstable_VirtualRow;
++  },
++  get unstable_createVirtualCollectionView() {
++    return require("react-native").unstable_createVirtualCollectionView;
++  },
++  get unstable_getScrollParent() {
++    return require("react-native").unstable_getScrollParent;
+   }
+ };
+ //# sourceMappingURL=index.cjs.map
+\ No newline at end of file
 diff --git a/node_modules/react-native-css/dist/module/native/styles/index.js b/node_modules/react-native-css/dist/module/native/styles/index.js
 index 067f8ed..d6ce311 100644
 --- a/node_modules/react-native-css/dist/module/native/styles/index.js
