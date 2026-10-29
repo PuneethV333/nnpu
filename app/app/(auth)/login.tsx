@@ -4,7 +4,7 @@ import {
   Text,
   TextInput,
   Pressable,
-  ImageBackground,
+  Image,
   KeyboardAvoidingView,
   ScrollView,
   type ScrollViewInstance,
@@ -126,11 +126,18 @@ const Login = () => {
   });
 
   return (
-      <ImageBackground
-        source={images.homePageBg}
-        style={styles.bg}
-        resizeMode="cover"
-      >
+      <View style={styles.bg}>
+        {/*
+          `ImageBackground` is deprecated in RN 0.88 (it warns on every mount
+          and is slated for removal), so the photo is an absolutely positioned
+          sibling instead. It must stay FIRST: there is no z-index here, these
+          three paint in source order — photo, gradient scrim, then content.
+        */}
+        <Image
+          source={images.homePageBg}
+          style={styles.bgImage}
+          resizeMode="cover"
+        />
         <LinearGradient
           colors={[
             "rgba(15,23,42,0.25)",
@@ -265,7 +272,7 @@ const Login = () => {
             </Text>
           </ScrollView>
         </KeyboardAvoidingView>
-      </ImageBackground>
+      </View>
   );
 };
 

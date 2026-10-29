@@ -5,6 +5,17 @@ const { height: SCREEN_H } = Dimensions.get("window");
 export const styles = StyleSheet.create({
   flex: { flex: 1 },
   bg: { flex: 1 },
+  /**
+   * The full-bleed photo behind the login form.
+   *
+   * Absolutely positioned so it is out of the flow entirely — as a flex child
+   * it would size itself to the intrinsic image and push the form down. No
+   * width/height: `absoluteFill` pins all four edges and `resizeMode="cover"`
+   * crops to them.
+   */
+  bgImage: {
+    ...StyleSheet.absoluteFill,
+  },
   overlay: {
     ...StyleSheet.absoluteFill,
   },
