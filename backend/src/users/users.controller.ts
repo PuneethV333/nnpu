@@ -1,4 +1,12 @@
-import { Body, Controller, Get, Param, Post, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  Patch,
+  Post,
+  UseGuards,
+} from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import { JwtAuthGuard } from '@/auth/guard/jwt-auth.guard';
@@ -7,7 +15,12 @@ import { Roles } from '@/auth/decorators/roles.decorator';
 import { CurrentUser } from '@/auth/decorators/current-user.decorator';
 import type { JwtPayload } from '@/auth/types/jwt-payload.type';
 import { UsersService } from './users.service';
-import { PassOutStudentsDto, TransferStudentDto, UserIdParamDto } from './dto';
+import {
+  PassOutStudentsDto,
+  TransferStudentDto,
+  UpdateProfilePicDto,
+  UserIdParamDto,
+} from './dto';
 
 @ApiTags('users')
 @ApiBearerAuth()
@@ -33,6 +46,31 @@ export class UsersController {
   })
   getTeachers() {
     return this.usersService.getTeachers();
+  }
+
+  /**
+   * The caller's own profile picture.
+   *
+   * The only route in this controller that is not admin-only — every role
+   * changes their own avatar, and nobody changes anyone else's, so there is no
+   * `:userId` to guard. `JwtAuthGuard` alone, deliberately no `RolesGuard`.
+   *
+   * Takes a URL, not a file. The app uploads the image to Cloudinary and sends
+   * the delivery URL back; the DTO pins the host so this column cannot be
+   * pointed at an arbitrary server (see `UpdateProfilePicDto`).
+   *
+   * 10/min: a user picking a new photo does it once, and each call clears the
+   * attendance roster cache for students.
+   */
+  @UseGuards(JwtAuthGuard)
+  @Patch('me/profile-pic')
+  @Throttle({ default: { limit: 10, ttl: 60000 } })
+  @ApiOperation({ summary: "Set the caller's own profile picture URL" })
+  updateMyProfilePic(
+    @CurrentUser() user: JwtPayload,
+    @Body() dto: UpdateProfilePicDto,
+  ) {
+    return this.usersService.updateMyProfilePic(user.authId, dto.url);
   }
 
   /**

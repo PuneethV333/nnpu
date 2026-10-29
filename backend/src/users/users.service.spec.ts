@@ -8,6 +8,7 @@ import {
   ConflictException,
   NotFoundException,
   ServiceUnavailableException,
+  UnauthorizedException,
 } from '@nestjs/common';
 import { UsersService } from './users.service';
 import type { PassOutStudentsDto } from './dto';
@@ -25,7 +26,8 @@ describe('UsersService', () => {
       update: jest.Mock;
       count: jest.Mock;
     };
-    auth: { update: jest.Mock; updateMany: jest.Mock };
+    auth: { findUnique: jest.Mock; update: jest.Mock; updateMany: jest.Mock };
+    personalDetails: { updateMany: jest.Mock };
     refreshToken: { deleteMany: jest.Mock };
     section: { findUnique: jest.Mock; findMany: jest.Mock };
     $transaction: jest.Mock;
@@ -77,7 +79,10 @@ describe('UsersService', () => {
         update: jest.fn().mockResolvedValue({}),
         count: jest.fn().mockResolvedValue(0),
       },
-      auth: { update: jest.fn(), updateMany: jest.fn() },
+      auth: { findUnique: jest.fn(), update: jest.fn(), updateMany: jest.fn() },
+      personalDetails: {
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+      },
       refreshToken: { deleteMany: jest.fn() },
       section: { findUnique: jest.fn(), findMany: jest.fn() },
       $transaction: jest
@@ -104,6 +109,67 @@ describe('UsersService', () => {
     }).compile();
 
     service = module.get(UsersService);
+  });
+
+  describe('updateMyProfilePic', () => {
+    const PIC =
+      'https://res.cloudinary.com/demo/image/upload/v1/profile-pics/a.jpg';
+
+    it('writes the url and clears the profile and roster caches for a student', async () => {
+      prisma.auth.findUnique.mockResolvedValue({
+        userId: 'student-1',
+        user: { role: 'Student' },
+      });
+
+      await expect(
+        service.updateMyProfilePic('nnpu1SB26KA001', PIC),
+      ).resolves.toEqual({ userId: 'student-1', profilePic: PIC });
+
+      expect(prisma.personalDetails.updateMany).toHaveBeenCalledWith({
+        where: { userId: 'student-1' },
+        data: { profilePic: PIC },
+      });
+      expect(redis.delPattern).toHaveBeenCalledWith('me:nnpu1SB26KA001');
+      // The roster rows carry profilePic; a stale one would show the old
+      // avatar for the full TTL on every class teacher's attendance screen.
+      expect(redis.delPattern).toHaveBeenCalledWith('attendance:*');
+    });
+
+    it('leaves the roster cache alone for a teacher', async () => {
+      prisma.auth.findUnique.mockResolvedValue({
+        userId: 'teacher-1',
+        user: { role: 'Teacher' },
+      });
+
+      await service.updateMyProfilePic('nnpu0TR26KA001', PIC);
+
+      expect(redis.delPattern).toHaveBeenCalledWith('me:nnpu0TR26KA001');
+      expect(redis.delPattern).not.toHaveBeenCalledWith('attendance:*');
+    });
+
+    it('404s when the account has no PersonalDetails row', async () => {
+      prisma.auth.findUnique.mockResolvedValue({
+        userId: 'student-1',
+        user: { role: 'Student' },
+      });
+      prisma.personalDetails.updateMany.mockResolvedValue({ count: 0 });
+
+      await expect(
+        service.updateMyProfilePic('nnpu1SB26KA001', PIC),
+      ).rejects.toBeInstanceOf(NotFoundException);
+
+      expect(redis.delPattern).not.toHaveBeenCalled();
+    });
+
+    it('401s on an unknown authId without writing', async () => {
+      prisma.auth.findUnique.mockResolvedValue(null);
+
+      await expect(
+        service.updateMyProfilePic('nobody', PIC),
+      ).rejects.toBeInstanceOf(UnauthorizedException);
+
+      expect(prisma.personalDetails.updateMany).not.toHaveBeenCalled();
+    });
   });
 
   describe('deactivate', () => {

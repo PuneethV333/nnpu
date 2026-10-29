@@ -8,7 +8,10 @@ import {
   resetPassword,
   sendCredentials,
   transferStudent,
+  updateMyProfilePic,
 } from '../api/users';
+import { uploadProfileImage } from '../api/cloudinary';
+import type { PickedImage } from '../types/cloudinary';
 import type { PassOutBody, TeacherOption, TransferStudentBody } from '../types/users';
 
 /**
@@ -60,6 +63,41 @@ export const useGetTeachers = () => {
         subjectIds: t.subjectIds,
       })),
     enabled: isAuthenticated && role === 'Admin',
+  });
+};
+
+/**
+ * Changes the signed-in user's own profile picture.
+ *
+ * Two steps in one mutation, in this order on purpose: the image goes to
+ * Cloudinary first, and only a URL that already resolves is written to the
+ * profile. The reverse order would leave the record pointing at an image that
+ * may never have uploaded.
+ *
+ * A failed upload therefore costs nothing; a failed PATCH leaves an orphaned
+ * image in the Cloudinary folder, which is the cheaper of the two failures and
+ * is what the preset's storage cap is for.
+ *
+ * `refreshUser` rather than a query invalidation: the current user lives in
+ * `AuthContext`, not in React Query, and that context is what every header and
+ * avatar reads. The roster keys are invalidated too because a student's picture
+ * is drawn in the class teacher's attendance list.
+ */
+export const useUpdateProfilePic = () => {
+  const queryClient = useQueryClient();
+  const { refreshUser } = useAuth();
+
+  return useMutation({
+    mutationKey: ['users', 'profile-pic'],
+    mutationFn: async (file: PickedImage) => {
+      const url = await uploadProfileImage(file);
+      return updateMyProfilePic(url);
+    },
+    onSuccess: async () => {
+      await refreshUser();
+      queryClient.invalidateQueries({ queryKey: ['roster'] });
+      queryClient.invalidateQueries({ queryKey: ['students'] });
+    },
   });
 };
 

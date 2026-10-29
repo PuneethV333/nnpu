@@ -48,6 +48,22 @@ export type ResetPasswordResponse = z.infer<
 >;
 
 /**
+ * `PATCH /users/me/profile-pic`.
+ *
+ * The server echoes the URL it stored rather than the whole profile: `/auth/me`
+ * is the one description of the current user, and returning a second, partial
+ * one here invites two screens to disagree about which is current. The app
+ * refreshes the profile after this resolves.
+ */
+export const updateProfilePicResponseSchema = z.object({
+  userId: z.string(),
+  profilePic: z.string(),
+});
+export type UpdateProfilePicResponse = z.infer<
+  typeof updateProfilePicResponseSchema
+>;
+
+/**
  * One teacher as `/users/teachers` reports them.
  *
  * `name` is nullable because it lives on the separate `PersonalDetails` row — a

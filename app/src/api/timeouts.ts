@@ -31,3 +31,14 @@ export const BULK_MAIL_REQUEST_TIMEOUT_MS = 460_000;
  * generate that takes longer than that is stuck, not slow.
  */
 export const INVOICE_GENERATION_TIMEOUT_MS = 300_000;
+
+/**
+ * A profile picture going up to Cloudinary, not to our server.
+ *
+ * Not server work this time but bytes on the wire: a phone photo is a couple of
+ * megabytes and the upload happens over whatever connection the school has.
+ * `expo-image-picker` is asked for a resized, re-compressed copy before this
+ * runs, so a minute is generous — but 15s is a real failure on a slow upload,
+ * and a timeout here leaves the image uploaded and the profile unchanged.
+ */
+export const IMAGE_UPLOAD_TIMEOUT_MS = 60_000;

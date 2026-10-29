@@ -49,3 +49,27 @@ export const pushConfig = {
   enabled: pushEnabled,
   projectId: firebaseProjectId,
 } as const;
+
+/**
+ * Cloudinary, for profile-picture uploads.
+ *
+ * The app uploads the image straight to Cloudinary with an UNSIGNED preset and
+ * sends only the resulting URL to our backend, so the picture never passes
+ * through the KVM1 box — it has neither the memory to buffer uploads nor
+ * anywhere to store them.
+ *
+ * Both values are public by definition (they ship inside the bundle), which is
+ * what an unsigned preset means: anyone who reads them can upload to this
+ * cloud. Keep the preset narrow in the Cloudinary console — restrict it to one
+ * folder, cap the file size, and leave overwrite/invalidate off. The secret
+ * (`api_secret`) is never involved; if uploads ever need to be authenticated,
+ * that means a signature endpoint on the backend, not this preset.
+ */
+export const cloudinaryConfig = {
+  cloudName: nonEmpty(process.env.EXPO_PUBLIC_CLOUDINARY_CLOUD_NAME),
+  uploadPreset: nonEmpty(process.env.EXPO_PUBLIC_CLOUDINARY_UPLOAD_PRESET),
+} as const;
+
+/** Both halves are needed; one without the other cannot upload. */
+export const isCloudinaryConfigured = (): boolean =>
+  Boolean(cloudinaryConfig.cloudName && cloudinaryConfig.uploadPreset);

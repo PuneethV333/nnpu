@@ -49,6 +49,13 @@
           "color": "#2563EB",
           "defaultChannel": "default"
         }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Allow NNPU Academy to use your photos so you can set your profile picture.",
+          "cameraPermission": "Allow NNPU Academy to use your camera so you can take a profile picture."
+        }
       ]
     ],
     "experiments": {

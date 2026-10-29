@@ -1,4 +1,6 @@
 import {
+  updateProfilePicResponseSchema,
+  type UpdateProfilePicResponse,
   passOutResponseSchema,
   resetPasswordResponseSchema,
   setActiveResponseSchema,
@@ -24,6 +26,21 @@ import { MAIL_REQUEST_TIMEOUT_MS } from './timeouts';
  */
 export const getTeachers = async (): Promise<TeacherList> => {
   return teacherListSchema.parse((await api.get('/users/teachers')).data);
+};
+
+/**
+ * Points the caller's own profile at an already-uploaded image.
+ *
+ * The one write in this file that is not admin-only — every role may change
+ * their own picture and nobody may change anyone else's, which is why there is
+ * no userId in the path. The server validates that the URL is a Cloudinary
+ * delivery URL, so `uploadProfileImage` must run first.
+ */
+export const updateMyProfilePic = async (
+  url: string,
+): Promise<UpdateProfilePicResponse> => {
+  const res = await api.patch('/users/me/profile-pic', { url });
+  return updateProfilePicResponseSchema.parse(res.data);
 };
 
 /**

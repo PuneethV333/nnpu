@@ -8,13 +8,17 @@ import {
   Injectable,
   NotFoundException,
   ServiceUnavailableException,
+  UnauthorizedException,
 } from '@nestjs/common';
 import { randomBytes } from 'crypto';
 import { hash } from 'bcrypt';
 import { DEFAULT_PASSWORD } from '@/common/utils/default-password';
 import type { Prisma } from '@/generated/prisma';
 import type { PassOutStudentsDto, TransferStudentDto } from './dto';
-import { ATTENDANCE_CACHE_PREFIX } from '@/common/utils/cache-keys';
+import {
+  ATTENDANCE_CACHE_PREFIX,
+  profileCacheKey,
+} from '@/common/utils/cache-keys';
 
 /**
  * Ongoing user lifecycle: deactivation, reactivation, section transfer and
@@ -53,6 +57,25 @@ export class UsersService {
     }
 
     return user;
+  }
+
+  /**
+   * The caller themselves, from the authId on the JWT.
+   *
+   * Every other method here is admin-acting-on-someone-else and takes a
+   * `userId` straight off the route. `me/*` routes have no such parameter —
+   * the subject IS the caller — so they resolve it here rather than each
+   * re-deriving it inline.
+   */
+  private async resolveUser(authId: string) {
+    const auth = await this.prisma.auth.findUnique({
+      where: { authId },
+      select: { userId: true, user: { select: { role: true } } },
+    });
+
+    if (!auth) throw new UnauthorizedException('user not found');
+
+    return { userId: auth.userId, role: auth.user.role };
   }
 
   /**
@@ -106,6 +129,51 @@ export class UsersService {
     } catch (err) {
       this.logger.warn(`[users] cache invalidation failed: ${String(err)}`);
     }
+  }
+
+  /**
+   * Writes the caller's own profile picture.
+   *
+   * The image itself never passes through this server: the app uploads it to
+   * Cloudinary and sends back the delivery URL, which is all this column holds.
+   * Keeping the bytes out of the request is what lets the KVM1 box serve this
+   * at all — a multipart avatar upload would buffer the file in process memory
+   * and then need somewhere to put it.
+   *
+   * `updateMany` rather than `update`: `PersonalDetails` is optional on `User`
+   * (onboarding can create an account before the details row), and `update`
+   * answers a missing row with a raw P2025 that surfaces as a 500. The count
+   * tells us the same thing and lets us say what is actually wrong.
+   *
+   * Two caches hold this value and both are cleared here, per the rule that a
+   * cache may only exist if every writer of its data invalidates it:
+   * `me:<authId>` is the caller's own profile (300s), and the attendance
+   * rosters carry each student's `profilePic`. The roster clear is scoped to
+   * students because no roster draws a teacher's or an admin's picture.
+   */
+  async updateMyProfilePic(authId: string, url: string) {
+    this.logger.log('[users-update-profile-pic]');
+
+    const { userId, role } = await this.resolveUser(authId);
+
+    const { count } = await this.prisma.personalDetails.updateMany({
+      where: { userId },
+      data: { profilePic: url },
+    });
+
+    if (count === 0) {
+      throw new NotFoundException(
+        'This account has no profile record to attach a picture to',
+      );
+    }
+
+    await this.invalidate(profileCacheKey(authId));
+
+    if (role === 'Student') {
+      await this.invalidate(ATTENDANCE_CACHE_PREFIX);
+    }
+
+    return { userId, profilePic: url };
   }
 
   async setActive(userId: string, active: boolean, actingAuthId: string) {
