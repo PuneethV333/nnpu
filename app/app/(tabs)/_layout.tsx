@@ -112,19 +112,41 @@ export default function TabsLayout() {
         />
       ))}
 
+      {/*
+        Screens reachable only by `router.push` (the bell, a quick action,
+        the profile menu) — no tab of their own, but they MUST stay routable.
+
+        Deliberately NOT `href: null` here: expo-router 58 turns that into
+        `options.hidden`, which drops the route from the tab navigator's
+        visible set. Pushing to it then renders nothing and
+        `useVisibleTabsWithRedirect` replaces it with the first visible tab,
+        so the screen "opens" and bounces straight back to Home. Hiding the
+        tab bar item instead keeps the route visible to the navigator while
+        taking it out of the bar's layout. `href: null` above is fine because
+        a role-hidden tab is never navigated to.
+      */}
       <Tabs.Screen
         name="change-pass"
-        options={{ href: null, title: "Change Password" }}
+        options={{
+          tabBarItemStyle: { display: "none" },
+          title: "Change Password",
+        }}
       />
 
       <Tabs.Screen
         name="announcements"
-        options={{ href: null, title: "Announcements" }}
+        options={{
+          tabBarItemStyle: { display: "none" },
+          title: "Announcements",
+        }}
       />
 
       <Tabs.Screen
         name="notification"
-        options={{ href: null, title: "Notifications" }}
+        options={{
+          tabBarItemStyle: { display: "none" },
+          title: "Notifications",
+        }}
       />
     </Tabs>
   );
