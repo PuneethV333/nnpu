@@ -8,7 +8,8 @@
 #      fees.service.spec.ts formatting error before it reached CI.
 #   2. The workspace's own suite, but only for the trees this commit touches:
 #      backend jest is ~17s and app tsc ~13s, so a docs-only commit pays neither
-#      and a backend-only commit does not wait on the app typecheck.
+#      and a backend-only commit does not wait on the app typecheck. Web is a
+#      typecheck too — it has no test suite yet.
 #
 # Bypass once with `git commit --no-verify` — git handles that flag itself, so
 # there is deliberately no environment variable here to switch this off
@@ -28,4 +29,8 @@ fi
 
 if echo "$staged" | grep -q '^app/'; then
   npm --prefix app run typecheck
+fi
+
+if echo "$staged" | grep -q '^web/'; then
+  npm --prefix web run typecheck
 fi

@@ -20,4 +20,7 @@ export default {
 
   // App: same idea, driven by `expo lint`'s eslint config.
   'app/**/*.{ts,tsx,js,jsx,mjs}': runIn('app'),
+
+  // Web: plain flat config, same `cd`-then-eslint dance.
+  'web/**/*.{ts,tsx,js,jsx}': runIn('web'),
 };

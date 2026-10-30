@@ -1,0 +1,133 @@
+@import 'tailwindcss';
+
+/*
+ * Theme taken from the app — from the code it actually renders with, not from
+ * app/global.css.
+ *
+ * That distinction matters here. `global.css` declares a cream/`#EA7A53`
+ * coral token set in an `@theme` block, but nothing in app/ or src/ references
+ * those token classes (`bg-accent`, `bg-background`, `text-primary` … all
+ * appear zero times in .tsx). Every screen is styled from `src/style/*.ts`
+ * StyleSheet files plus `constants/theme.ts`, and those say:
+ *
+ *   accent    #2563EB   (constants/theme.ts — "one accent for the whole app",
+ *                        set by the tab bar; primary buttons must match it)
+ *   pressed   #1D4ED8
+ *   danger    #DC2626 / pressed #B91C1C
+ *   screens   #F9FAFB   (Teacher.ts, Admin.ts, markAttendance.ts)
+ *   cards     #FFFFFF   (login.ts card, home.ts safeArea, every list card)
+ *   borders   #E5E7EB
+ *   field     #F9FAFB   (login.ts input row)
+ *   text      #111827 body / #374151 label / #6B7280 muted / #9CA3AF faint
+ *
+ * The most-used literals across the app confirm it: #FFFFFF ×79, #2563EB ×60,
+ * #F3F4F6 ×56, #E5E7EB ×49, #9CA3AF ×39, #DC2626 ×30.
+ *
+ * `--color-scrim` is the one dark value, taken from the login screen's own
+ * overlay gradient rgba(15, 23, 42, …).
+ */
+@theme {
+  --color-background: #f9fafb;
+  --color-foreground: #111827;
+  --color-card: #ffffff;
+  --color-surface: #f9fafb;
+  --color-muted: #f3f4f6;
+  --color-muted-foreground: #6b7280;
+  --color-subtle: #9ca3af;
+  /* Form labels: the app's #374151 (gray-700), distinct from body #111827. */
+  --color-label: #374151;
+
+  --color-primary: #111827;
+  --color-accent: #2563eb;
+  --color-accent-strong: #1d4ed8;
+  --color-accent-soft: #eff6ff;
+
+  --color-border: #e5e7eb;
+  --color-field: #f9fafb;
+
+  --color-success: #16a34a;
+  --color-warning: #d97706;
+
+  --color-destructive: #dc2626;
+  /* Text on the danger tint. #DC2626 on #FEF2F2 is 4.4:1 — just under the
+     4.5:1 floor — so the label uses the app's own darker pressed shade. */
+  --color-destructive-strong: #b91c1c;
+  --color-destructive-soft: #fef2f2;
+  --color-destructive-border: #fecaca;
+
+  /* The login screen's photo overlay: rgba(15, 23, 42, …). */
+  --color-scrim: #0f172a;
+
+  --font-sans: 'Inter', ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
+  /* One orchestrated load, then nothing moves again. */
+  --animate-rise: rise 520ms cubic-bezier(0.22, 0.68, 0.2, 1) both;
+  --animate-settle: settle 1.6s cubic-bezier(0.22, 0.68, 0.2, 1) both;
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes settle {
+  from {
+    transform: scale(1.05);
+  }
+  to {
+    transform: scale(1);
+  }
+}
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    @apply bg-background font-sans text-foreground antialiased;
+  }
+
+  /*
+   * A visible focus ring on every interactive element without repeating
+   * `focus-visible:` utilities. Components that need a different colour opt out
+   * by setting their own ring.
+   */
+  :focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
+  }
+
+  ::selection {
+    background-color: var(--color-accent);
+    color: #ffffff;
+  }
+}
+
+/* Chrome paints autofilled inputs blue-grey and ignores background-color. */
+@layer utilities {
+  .autofill-field:-webkit-autofill,
+  .autofill-field:-webkit-autofill:hover,
+  .autofill-field:-webkit-autofill:focus {
+    -webkit-text-fill-color: var(--color-foreground);
+    -webkit-box-shadow: 0 0 0 1000px var(--color-field) inset;
+    caret-color: var(--color-foreground);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
