@@ -48,7 +48,7 @@ export default function HomePage() {
 
   return (
     <div className="space-y-7">
-      <header className="flex flex-wrap items-end justify-between gap-x-6 gap-y-3">
+      <header className="flex flex-col gap-2.5 sm:flex-row sm:flex-wrap sm:items-end sm:justify-between sm:gap-x-6">
         <div className="min-w-0">
           <p className="text-[13px] text-muted-foreground">
             {greetingFor(todayDate)}

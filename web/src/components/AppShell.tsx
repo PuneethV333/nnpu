@@ -37,6 +37,15 @@ export const AppShell = () => {
 
   return (
     <div className="flex min-h-dvh flex-col bg-background">
+      {/* Keyboard users land here first: the top bar has half a dozen
+          interactive elements before the page content. */}
+      <a
+        href="#main-content"
+        className="sr-only focus:not-sr-only focus:absolute focus:top-3 focus:left-3 focus:z-50 focus:rounded-lg focus:border focus:border-border focus:bg-card focus:px-3 focus:py-2 focus:text-sm focus:font-semibold focus:text-primary focus:shadow-lg"
+      >
+        Skip to content
+      </a>
+
       <header className="sticky top-0 z-30 border-b border-border bg-card/90 backdrop-blur-md">
         <div className="mx-auto flex h-16 w-full max-w-6xl items-center gap-2 px-4 sm:px-6">
           <Link
@@ -120,7 +129,11 @@ export const AppShell = () => {
         </div>
       </header>
 
-      <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-6 sm:px-6 lg:py-8">
+      <main
+        id="main-content"
+        tabIndex={-1}
+        className="mx-auto w-full max-w-6xl flex-1 px-4 py-6 outline-none sm:px-6 lg:py-8"
+      >
         <Outlet />
       </main>
 

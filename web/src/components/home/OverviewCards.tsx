@@ -7,12 +7,19 @@ import { formatMoney } from '@/lib/money';
 import type { AdminDashboard } from '@/types/dashboard';
 
 /**
- * The Overview block: three figures and the calendar ahead.
+ * The Overview block: today's two operational figures and the calendar ahead.
  *
  * Card geometry is the app's `dashCard` (`app/src/style/Admin.ts`): 14px
  * radius, `#F3F4F6` border, 13px muted title, 20px bold value, 12px faint
  * subtext. The attendance card adds a progress bar, which the phone does not
- * need — "14/26" is legible at any width, "14/26 · 53.85% marked" is not.
+ * need — "13/24" and "54.17% marked" on separate lines is legible at any
+ * width, a bar is not, and the bar makes the ratio readable at a glance.
+ *
+ * The app also draws a "Teachers" card here. It is left out on web because the
+ * school totals sit directly above this block and the same number would appear
+ * twice in one viewport; on a phone the two are a scroll apart. Nothing is
+ * lost — `dashboard.totalTeachers` is the same count as `school.noOfTeacher`,
+ * both live `user.count()`s.
  */
 
 const MetricCard = ({
@@ -36,8 +43,8 @@ const MetricCard = ({
 
 const LoadingRows = () => (
   <div className="space-y-3">
-    <div className="grid gap-3 sm:grid-cols-3">
-      {[0, 1, 2].map((i) => (
+    <div className="grid gap-3 sm:grid-cols-2">
+      {[0, 1].map((i) => (
         <div
           key={i}
           className="rounded-[14px] border border-muted bg-card px-4 py-3.5"
@@ -125,13 +132,13 @@ export const OverviewCards = ({
 
   return (
     <div className="space-y-3">
-      <div className="grid gap-3 sm:grid-cols-3">
+      <div className="grid gap-3 sm:grid-cols-2">
         <MetricCard
           title="Attendance today"
           value={`${attendanceToday.marked}/${attendanceToday.totalStudents}`}
           sub={`${attendanceToday.percentage}% marked`}
         >
-          <div className="mt-2.5 h-1.5 overflow-hidden rounded-full bg-muted">
+          <div className="mt-2.5 h-1.5 w-full max-w-xs overflow-hidden rounded-full bg-muted">
             <div
               className="h-full rounded-full bg-accent transition-[width] duration-500"
               style={{
@@ -140,12 +147,6 @@ export const OverviewCards = ({
             />
           </div>
         </MetricCard>
-
-        <MetricCard
-          title="Teachers"
-          value={dashboard.totalTeachers.toLocaleString('en-IN')}
-          sub="Active staff"
-        />
 
         <MetricCard
           title="Pending fees"

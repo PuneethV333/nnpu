@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom';
 import {
   Building2,
+  ChevronRight,
   ClipboardCheck,
   Megaphone,
   Wallet,
@@ -54,6 +55,10 @@ export const QuickActions = () => (
           <Icon className="size-[18px]" strokeWidth={2} />
         </span>
         <span className="text-[13px] font-semibold text-primary">{label}</span>
+        <ChevronRight
+          aria-hidden="true"
+          className="ml-auto size-4 shrink-0 text-subtle transition-transform group-hover:translate-x-0.5"
+        />
       </Link>
     ))}
   </div>

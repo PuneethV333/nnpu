@@ -10,6 +10,6 @@ import { cn } from '@/lib/cn';
 export const Skeleton = ({ className }: { className?: string }) => (
   <div
     aria-hidden="true"
-    className={cn('animate-pulse rounded-lg bg-muted', className)}
+    className={cn('animate-pulse rounded-lg bg-border', className)}
   />
 );

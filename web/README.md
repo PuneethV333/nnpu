@@ -36,14 +36,14 @@ configuration only — no backend code change is needed.
 
 ## Stack
 
-| Concern    | Choice                                  |
-| ---------- | --------------------------------------- |
-| Build      | Vite 7 + React 19 + TypeScript          |
-| Styling    | Tailwind CSS v4 (`@theme` tokens)       |
-| Icons      | lucide-react                            |
-| Routing    | react-router-dom                        |
-| Validation | Zod — every response is parsed          |
-| HTTP       | axios with a refresh interceptor        |
+| Concern    | Choice                            |
+| ---------- | --------------------------------- |
+| Build      | Vite 7 + React 19 + TypeScript    |
+| Styling    | Tailwind CSS v4 (`@theme` tokens) |
+| Icons      | lucide-react                      |
+| Routing    | react-router-dom                  |
+| Validation | Zod — every response is parsed    |
+| HTTP       | axios with a refresh interceptor  |
 
 Deliberately **no SSR**: the backend runs on a 1 GB KVM1 box, so the web client
 ships as static files that nginx can serve without a Node process.
@@ -64,6 +64,56 @@ src/
 `api/` is never called from a component — it goes through a hook, same rule as
 the app (see the repo root AGENTS.md).
 
+## Screens
+
+| Route            | State                                                                     |
+| ---------------- | ------------------------------------------------------------------------- |
+| `/login`         | Built. School ID + password, handles 401 / 429 / offline.                 |
+| `/home`          | Built for `Admin`. Shows a "not built yet" panel for the other two roles. |
+| `/attendance`    | Stub (`ComingSoonPage`).                                                  |
+| `/announcements` | Stub.                                                                     |
+| `/fees`          | Stub.                                                                     |
+| `/school`        | Stub.                                                                     |
+| `/notifications` | Stub.                                                                     |
+
+`/` redirects to `/home`. Every stub is a real route so no link on the home page
+is dead; each is deleted as its screen is built.
+
+`RequireAuth` records the requested path in router state, so a deep link that
+bounces through `/login` comes back to where it was going instead of dumping the
+user on `/home`.
+
+### Home page data
+
+Three reads, all mirrored from the app:
+
+| Hook                     | Endpoint                   | Gated on           |
+| ------------------------ | -------------------------- | ------------------ |
+| `useAdminDashboard`      | `GET /dashboard/admin`     | `role === 'Admin'` |
+| `useLatestAnnouncements` | `GET /announcement/latest` | signed in          |
+| `useNotifications`       | `GET /notification`        | signed in          |
+
+The admin dashboard is an Admin-only route on the server (`@Roles('Admin')`), so
+the query is disabled for other roles rather than fired and 403'd. That is also
+why a Teacher's home renders the placeholder panel: there is no endpoint behind
+it to render.
+
+Differences from `app/components/home/main/Admin.tsx`, all deliberate:
+
+- **No `/calendar` call.** The app fetches today's day type separately; the
+  dashboard payload already carries `today.type`/`today.label`, resolved in the
+  school's timezone by the server. One request instead of two, and the chip
+  cannot disagree with the attendance figures.
+- **No "Teachers" card in Overview.** The school totals sit directly above it,
+  showing the same `user.count()` twice in one viewport. On a phone they are a
+  screen apart.
+- **Stats are a horizontal tile, not a centred one.** Two wide cards with a
+  centred number is a lot of white for two characters.
+- **Announcements are a grid, not a horizontal scroller.** Five cards fit in
+  three columns; a mouse has no swipe.
+- **The announcement card is white, not `#F9FAFB`.** The page background is that
+  same gray, so a gray card would be one border away from invisible.
+
 ## Theme
 
 The palette is taken from the code the app actually renders with —
@@ -76,21 +126,21 @@ references its token classes: `bg-accent`, `bg-background`, `text-primary` and
 friends appear **zero** times across the app's `.tsx`. Every screen is styled
 from `src/style/*.ts`. Those files say:
 
-| Token            | Value     | Where it comes from                          |
-| ---------------- | --------- | -------------------------------------------- |
-| `background`     | `#F9FAFB` | `Teacher.ts`, `Admin.ts`, `markAttendance.ts` |
-| `card`           | `#FFFFFF` | `login.ts` card, `home.ts`, every list card  |
-| `primary`        | `#111827` | body text                                    |
-| `label`          | `#374151` | form labels                                  |
-| `muted-fg`       | `#6B7280` | secondary text                               |
-| `subtle`         | `#9CA3AF` | placeholders, field icons                    |
-| `accent`         | `#2563EB` | `constants/theme.ts` — "one accent for the whole app" |
-| `accent-strong`  | `#1D4ED8` | `colors.accentPressed`                       |
-| `border`         | `#E5E7EB` | card and input borders                       |
-| `field`          | `#F9FAFB` | input rows (`login.ts`)                      |
-| `destructive`    | `#DC2626` | `colors.danger`                              |
-| `destructive-str`| `#B91C1C` | `colors.dangerPressed` — used for error text |
-| `scrim`          | `#0F172A` | the login photo overlay `rgba(15,23,42,…)`    |
+| Token             | Value     | Where it comes from                                   |
+| ----------------- | --------- | ----------------------------------------------------- |
+| `background`      | `#F9FAFB` | `Teacher.ts`, `Admin.ts`, `markAttendance.ts`         |
+| `card`            | `#FFFFFF` | `login.ts` card, `home.ts`, every list card           |
+| `primary`         | `#111827` | body text                                             |
+| `label`           | `#374151` | form labels                                           |
+| `muted-fg`        | `#6B7280` | secondary text                                        |
+| `subtle`          | `#9CA3AF` | placeholders, field icons                             |
+| `accent`          | `#2563EB` | `constants/theme.ts` — "one accent for the whole app" |
+| `accent-strong`   | `#1D4ED8` | `colors.accentPressed`                                |
+| `border`          | `#E5E7EB` | card and input borders                                |
+| `field`           | `#F9FAFB` | input rows (`login.ts`)                               |
+| `destructive`     | `#DC2626` | `colors.danger`                                       |
+| `destructive-str` | `#B91C1C` | `colors.dangerPressed` — used for error text          |
+| `scrim`           | `#0F172A` | the login photo overlay `rgba(15,23,42,…)`            |
 
 The most-used literals in the app confirm it: `#FFFFFF` ×79, `#2563EB` ×60,
 `#F3F4F6` ×56, `#E5E7EB` ×49, `#9CA3AF` ×39, `#DC2626` ×30.
